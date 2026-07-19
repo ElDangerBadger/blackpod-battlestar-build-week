@@ -1,0 +1,10 @@
+{
+  "schema_version": "blackpod.operator_action_replay.v1",
+  "fixture_id": "operator-replay-approve-handoff-v1",
+  "run_mode": "REPLAY",
+  "action": "APPROVE_HANDOFF",
+  "operator_id": "demo-operator",
+  "reason": "Approved for deterministic Navigator SHADOW planning.",
+  "acted_at": "2026-07-18T18:06:00Z",
+  "expires_in_minutes": 120
+}

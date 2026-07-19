@@ -26,13 +26,24 @@ from blackpod_build_week.battlestar_config import (
     GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
     GOVERNOR_SENATE_INTAKE_ENTRY_POINT,
     GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH,
+    GOVERNOR_DECISION_CONSUMER_ENTRY_POINT,
+    GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH,
     MANDATE_ENTRY_POINT,
     MANDATE_MODULE_RELATIVE_PATH,
     ORACLE_ENTRY_POINT,
     ORACLE_FLEET_RELATIVE_PATH,
     ORACLE_MODULE_RELATIVE_PATH,
+    OPERATOR_ACTION_ENTRY_POINT,
+    OPERATOR_ACTION_MODULE_RELATIVE_PATH,
     RUNTIME_VALIDATION_ENTRY_POINT,
     RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
+    NAVIGATOR_HANDOFF_ENTRY_POINT,
+    NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH,
+    NAVIGATOR_INTAKE_ENTRY_POINT,
+    NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH,
+    NAVIGATOR_SHADOW_PLAN_ENTRY_POINT,
+    NAVIGATOR_SHADOW_WORKFLOW_ENTRY_POINT,
+    NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH,
     SENATE_DELIBERATION_ENTRY_POINT,
     SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
     SENATE_REVIEW_ENTRY_POINT,
@@ -41,6 +52,8 @@ from blackpod_build_week.battlestar_config import (
     load_battlestar_config,
     load_council_battlestar_config,
     load_governor_battlestar_config,
+    load_navigator_battlestar_config,
+    load_operator_battlestar_config,
 )
 
 
@@ -61,6 +74,15 @@ GOVERNOR_MODULES = (
     GOVERNOR_READINESS_MODULE_RELATIVE_PATH,
     GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
 )
+OPERATOR_MODULES = (
+    GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH,
+    OPERATOR_ACTION_MODULE_RELATIVE_PATH,
+)
+NAVIGATOR_MODULES = (
+    NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH,
+    NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH,
+    NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH,
+)
 
 
 class BattlestarConfigurationTests(unittest.TestCase):
@@ -78,6 +100,8 @@ class BattlestarConfigurationTests(unittest.TestCase):
         *,
         include_council: bool = False,
         include_governor: bool = False,
+        include_operator: bool = False,
+        include_navigator: bool = False,
     ) -> Path:
         root = self.base / name
         (root / ORACLE_MODULE_RELATIVE_PATH).parent.mkdir(parents=True)
@@ -97,6 +121,16 @@ class BattlestarConfigurationTests(unittest.TestCase):
                 module.write_text("# deterministic test module\n", encoding="utf-8")
         if include_governor:
             for relative_path in GOVERNOR_MODULES:
+                module = root / relative_path
+                module.parent.mkdir(parents=True, exist_ok=True)
+                module.write_text("# deterministic test module\n", encoding="utf-8")
+        if include_operator or include_navigator:
+            for relative_path in OPERATOR_MODULES:
+                module = root / relative_path
+                module.parent.mkdir(parents=True, exist_ok=True)
+                module.write_text("# deterministic test module\n", encoding="utf-8")
+        if include_navigator:
+            for relative_path in NAVIGATOR_MODULES:
                 module = root / relative_path
                 module.parent.mkdir(parents=True, exist_ok=True)
                 module.write_text("# deterministic test module\n", encoding="utf-8")
@@ -185,6 +219,29 @@ class BattlestarConfigurationTests(unittest.TestCase):
         self.assertEqual(
             GOVERNOR_RENDERING_ENTRY_POINT,
             "blackpod.governor.governor_decision.build_governor_decision",
+        )
+
+    def test_public_operator_and_navigator_entry_points_are_stable(self) -> None:
+        self.assertEqual(
+            GOVERNOR_DECISION_CONSUMER_ENTRY_POINT,
+            "blackpod.runtime.governor_decision_consumer.consume_run_dir",
+        )
+        self.assertEqual(
+            OPERATOR_ACTION_ENTRY_POINT,
+            "blackpod.runtime.operator_inbox_action.record_operator_action",
+        )
+        self.assertEqual(
+            NAVIGATOR_HANDOFF_ENTRY_POINT,
+            "blackpod.runtime.navigator_handoff.stage_navigator_handoff",
+        )
+        self.assertEqual(
+            NAVIGATOR_INTAKE_ENTRY_POINT,
+            "blackpod.runtime.navigator_intake.accept_handoff_envelope",
+        )
+        self.assertEqual(NAVIGATOR_SHADOW_PLAN_ENTRY_POINT, NAVIGATOR_INTAKE_ENTRY_POINT)
+        self.assertEqual(
+            NAVIGATOR_SHADOW_WORKFLOW_ENTRY_POINT,
+            "blackpod.runtime.navigator_shadow_workflow.run_workflow",
         )
 
     def test_missing_environment_variable_is_rejected(self) -> None:
@@ -392,6 +449,82 @@ class BattlestarConfigurationTests(unittest.TestCase):
                     load_governor_battlestar_config(
                         artifacts_root=self.artifacts_root,
                         environ={BATTLESTAR_PATH_ENV: str(root)},
+                    )
+
+    def test_operator_preflight_reports_and_requires_current_modules(self) -> None:
+        root = self.make_repository(
+            include_council=True,
+            include_governor=True,
+            include_operator=True,
+        )
+        config = load_operator_battlestar_config(
+            artifacts_root=self.artifacts_root,
+            environ={BATTLESTAR_PATH_ENV: str(root)},
+        )
+        self.assertEqual(
+            config.governor_decision_consumer_module_path,
+            (root / GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH).resolve(),
+        )
+        self.assertEqual(
+            config.operator_action_module_path,
+            (root / OPERATOR_ACTION_MODULE_RELATIVE_PATH).resolve(),
+        )
+        for index, (relative_path, message) in enumerate(
+            (
+                (GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH, "Governor decision-consumer module is missing"),
+                (OPERATOR_ACTION_MODULE_RELATIVE_PATH, "operator-action module is missing"),
+            )
+        ):
+            with self.subTest(module=str(relative_path)):
+                incomplete = self.make_repository(
+                    f"battlestar-operator-{index}",
+                    include_council=True,
+                    include_governor=True,
+                    include_operator=True,
+                )
+                (incomplete / relative_path).unlink()
+                with self.assertRaisesRegex(BattlestarConfigurationError, message):
+                    load_operator_battlestar_config(
+                        artifacts_root=self.artifacts_root,
+                        environ={BATTLESTAR_PATH_ENV: str(incomplete)},
+                    )
+
+    def test_navigator_preflight_reports_and_requires_current_modules(self) -> None:
+        root = self.make_repository(
+            include_council=True,
+            include_governor=True,
+            include_navigator=True,
+        )
+        config = load_navigator_battlestar_config(
+            artifacts_root=self.artifacts_root,
+            environ={BATTLESTAR_PATH_ENV: str(root)},
+        )
+        expected = {
+            "navigator_handoff_module_path": NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH,
+            "navigator_intake_module_path": NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH,
+            "navigator_shadow_workflow_module_path": NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH,
+        }
+        for field_name, relative_path in expected.items():
+            self.assertEqual(getattr(config, field_name), (root / relative_path).resolve())
+        for index, (relative_path, message) in enumerate(
+            (
+                (NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH, "Navigator handoff module is missing"),
+                (NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH, "Navigator intake module is missing"),
+                (NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH, "Navigator SHADOW workflow module is missing"),
+            )
+        ):
+            with self.subTest(module=str(relative_path)):
+                incomplete = self.make_repository(
+                    f"battlestar-navigator-{index}",
+                    include_council=True,
+                    include_governor=True,
+                    include_navigator=True,
+                )
+                (incomplete / relative_path).unlink()
+                with self.assertRaisesRegex(BattlestarConfigurationError, message):
+                    load_navigator_battlestar_config(
+                        artifacts_root=self.artifacts_root,
+                        environ={BATTLESTAR_PATH_ENV: str(incomplete)},
                     )
 
     def test_dirty_worktree_is_reported_without_rejecting_development(self) -> None:

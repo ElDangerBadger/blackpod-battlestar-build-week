@@ -353,7 +353,7 @@ class MissionStore:
         target = self._contained_target(paths.mission_root, relative_path)
         if target.is_symlink() or not target.is_file():
             raise UnsafePathError(
-                f"Oracle artifact is missing, not regular, or a symlink: {relative_path}"
+                f"mission artifact is missing, not regular, or a symlink: {relative_path}"
             )
         return ArtifactReference.from_mapping(
             {

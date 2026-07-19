@@ -1,7 +1,7 @@
 """Read-only configuration and preflight checks for Battlestar stages.
 
-Only paths needed by the narrow Oracle, Council, and Governor adapters are
-exposed. Local absolute paths are intentionally kept in this in-memory
+Only paths needed by the narrow Oracle, Council, Governor, operator, and
+Navigator adapters are exposed. Local absolute paths are intentionally kept in this in-memory
 configuration object; callers must not serialize them into canonical mission
 artifacts.
 """
@@ -98,6 +98,39 @@ GOVERNOR_RENDERING_ENTRY_POINT = (
 GOVERNOR_RENDERING_MODULE_RELATIVE_PATH = Path(
     "blackpod/governor/governor_decision.py"
 )
+GOVERNOR_DECISION_CONSUMER_ENTRY_POINT = (
+    "blackpod.runtime.governor_decision_consumer.consume_run_dir"
+)
+GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/governor_decision_consumer.py"
+)
+OPERATOR_ACTION_ENTRY_POINT = (
+    "blackpod.runtime.operator_inbox_action.record_operator_action"
+)
+OPERATOR_ACTION_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/operator_inbox_action.py"
+)
+NAVIGATOR_HANDOFF_ENTRY_POINT = (
+    "blackpod.runtime.navigator_handoff.stage_navigator_handoff"
+)
+NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/navigator_handoff.py"
+)
+NAVIGATOR_INTAKE_ENTRY_POINT = (
+    "blackpod.runtime.navigator_intake.accept_handoff_envelope"
+)
+# The current intake entry point creates the non-executable SHADOW plan after
+# accepting the envelope; Battlestar exposes no separate public plan builder.
+NAVIGATOR_SHADOW_PLAN_ENTRY_POINT = NAVIGATOR_INTAKE_ENTRY_POINT
+NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/navigator_intake.py"
+)
+NAVIGATOR_SHADOW_WORKFLOW_ENTRY_POINT = (
+    "blackpod.runtime.navigator_shadow_workflow.run_workflow"
+)
+NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/navigator_shadow_workflow.py"
+)
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _GIT_REVISION_PATTERN = re.compile(r"[0-9a-fA-F]{40,64}\Z")
@@ -130,6 +163,11 @@ class BattlestarConfig:
     governor_deliberation_module_path: Path | None = None
     governor_readiness_module_path: Path | None = None
     governor_rendering_module_path: Path | None = None
+    governor_decision_consumer_module_path: Path | None = None
+    operator_action_module_path: Path | None = None
+    navigator_handoff_module_path: Path | None = None
+    navigator_intake_module_path: Path | None = None
+    navigator_shadow_workflow_module_path: Path | None = None
 
 
 def load_battlestar_config(
@@ -139,6 +177,8 @@ def load_battlestar_config(
     strict_clean: bool = False,
     require_council: bool = False,
     require_governor: bool = False,
+    require_operator: bool = False,
+    require_navigator: bool = False,
 ) -> BattlestarConfig:
     """Validate ``BATTLESTAR_PATH`` and collect read-only Git provenance.
 
@@ -279,6 +319,46 @@ def load_battlestar_config(
                 description="Governor rendering module",
             ),
         }
+    operator_paths: dict[str, Path | None] = {
+        "governor_decision_consumer_module_path": None,
+        "operator_action_module_path": None,
+    }
+    if require_operator or require_navigator:
+        operator_paths = {
+            "governor_decision_consumer_module_path": _required_repository_file(
+                root,
+                GOVERNOR_DECISION_CONSUMER_MODULE_RELATIVE_PATH,
+                description="Governor decision-consumer module",
+            ),
+            "operator_action_module_path": _required_repository_file(
+                root,
+                OPERATOR_ACTION_MODULE_RELATIVE_PATH,
+                description="operator-action module",
+            ),
+        }
+    navigator_paths: dict[str, Path | None] = {
+        "navigator_handoff_module_path": None,
+        "navigator_intake_module_path": None,
+        "navigator_shadow_workflow_module_path": None,
+    }
+    if require_navigator:
+        navigator_paths = {
+            "navigator_handoff_module_path": _required_repository_file(
+                root,
+                NAVIGATOR_HANDOFF_MODULE_RELATIVE_PATH,
+                description="Navigator handoff module",
+            ),
+            "navigator_intake_module_path": _required_repository_file(
+                root,
+                NAVIGATOR_INTAKE_MODULE_RELATIVE_PATH,
+                description="Navigator intake module",
+            ),
+            "navigator_shadow_workflow_module_path": _required_repository_file(
+                root,
+                NAVIGATOR_SHADOW_WORKFLOW_MODULE_RELATIVE_PATH,
+                description="Navigator SHADOW workflow module",
+            ),
+        }
 
     revision = _git_revision(root)
     branch = _git_branch(root)
@@ -297,6 +377,8 @@ def load_battlestar_config(
         dirty_worktree=dirty_worktree,
         **council_paths,
         **governor_paths,
+        **operator_paths,
+        **navigator_paths,
     )
 
 
@@ -330,6 +412,43 @@ def load_governor_battlestar_config(
         strict_clean=strict_clean,
         require_council=True,
         require_governor=True,
+    )
+
+
+def load_operator_battlestar_config(
+    *,
+    artifacts_root: Path,
+    environ: Mapping[str, str] | None = None,
+    strict_clean: bool = False,
+) -> BattlestarConfig:
+    """Run Phase 4 preflight plus the explicit operator-gate checks."""
+
+    return load_battlestar_config(
+        artifacts_root=artifacts_root,
+        environ=environ,
+        strict_clean=strict_clean,
+        require_council=True,
+        require_governor=True,
+        require_operator=True,
+    )
+
+
+def load_navigator_battlestar_config(
+    *,
+    artifacts_root: Path,
+    environ: Mapping[str, str] | None = None,
+    strict_clean: bool = False,
+) -> BattlestarConfig:
+    """Run operator-compatible preflight plus current SHADOW workflow checks."""
+
+    return load_battlestar_config(
+        artifacts_root=artifacts_root,
+        environ=environ,
+        strict_clean=strict_clean,
+        require_council=True,
+        require_governor=True,
+        require_operator=True,
+        require_navigator=True,
     )
 
 

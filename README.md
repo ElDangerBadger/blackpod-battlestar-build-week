@@ -5,7 +5,8 @@ initializes a mission through Harbormaster. Phase 2 runs the existing
 Battlestar Oracle. Phase 3 adds Battlestar's existing candidate, Senate,
 Council synthesis, and Council executive-summary interfaces. Phase 4 adds the
 current Battlestar Governor preparation, deliberation, readiness, and rendered
-decision flow, then stops at the rendered disposition and operator placeholder.
+decision flow. Phase 5 closes Stage 1 with an explicit operator approval gate
+and the current Navigator handoff, intake, and non-executing SHADOW plan.
 
 Harbormaster owns:
 
@@ -15,18 +16,22 @@ Harbormaster owns:
 - contained, immutable, hashed mission artifacts and atomic current-snapshot
   publication;
 - the narrow Build Week adapters that invoke the sibling Battlestar Oracle,
-  Council evidence chain, and Governor decision flow; and
+  Council evidence chain, Governor decision flow, operator gate, and Navigator
+  SHADOW workflow; and
 - correlation, stage transitions, artifact lineage, and Battlestar provenance
   for one immutable attempt per implemented stage.
 
 Battlestar remains the owner of Oracle acquisition, candidate generation,
 Senate deliberation, advisor-health validation, Council synthesis, and
 executive-summary logic, as well as Governor preparation, deliberation,
-readiness, and decision rendering. The Build Week adapters do not reproduce
+readiness, and decision rendering. Battlestar also owns the current operator
+action, Navigator handoff, intake, and SHADOW-plan contracts. The Build Week
+adapters do not reproduce
 calculations, introduce voting rules, add risk formulas, or add market-analysis
-policy. Operator actions, Navigator, ModelDock, UI, and broker execution are
-explicitly outside Phase 4. This repository still provides no web service,
-database, queue, daemon, scheduler, or UI.
+policy. Stage 1 contains no broker execution, order submission, order
+cancellation, portfolio modification, ModelDock integration, or UI. This
+repository still provides no web service, database, queue, daemon, scheduler,
+or UI.
 
 ## Python and setup
 
@@ -54,7 +59,9 @@ required native modules exist, and that Git revision and worktree state can be
 reported. Council preflight additionally checks the candidate, Senate,
 Mandate, runtime-validation, advisor-health, synthesis, and executive-summary
 modules. Governor preflight checks the current Senate-intake, preparation,
-deliberation, readiness, and decision-rendering modules. A dirty worktree is
+deliberation, readiness, and decision-rendering modules. Phase 5 additionally
+checks the Governor decision consumer, explicit operator action, Navigator
+handoff, Navigator intake, and documented SHADOW workflow modules. A dirty worktree is
 allowed for development and recorded clearly. Use
 `--strict-battlestar-clean` on a stage command when a dirty checkout must be
 rejected. Neither preflight nor execution writes to the Battlestar checkout.
@@ -436,12 +443,212 @@ Governor `RUNNING` or `FAILED` state is a conflict and exits nonzero. There is
 no force, retry, resume, or overwrite option in Phase 4; snapshot revisions and
 Governor artifacts are created exclusively.
 
-## Mission directory
+## Phase 5: operator gate and Navigator SHADOW plan
 
-After the deterministic Phase 4 PROCEED example, the mission layout is:
+Phase 5 deliberately separates human authorization from Navigator work. A
+Governor `PROCEED` result leaves the mission `HELD` at
+`PENDING_APPROVAL`. It cannot start Navigator and is never interpreted as an
+approval. The operator must issue a separate, explicit action:
 
 ```text
-artifacts/phase4-demo-proceed/
+PROCEED
+  -> PENDING_APPROVAL
+  -> APPROVE_HANDOFF
+  -> APPROVED_FOR_HANDOFF
+  -> handoff STAGED
+  -> intake ACCEPTED
+  -> SHADOW plan CREATED
+  -> APPROVED
+```
+
+The operator adapter accepts only the current native actions supported for a
+`PENDING_APPROVAL` route:
+
+- `APPROVE_HANDOFF` produces `APPROVED_FOR_HANDOFF`, advances to
+  `NAVIGATOR`, and keeps the mission `HELD`;
+- `REJECT` produces `REJECTED`, leaves Navigator `NOT_STARTED`, and closes the
+  mission as `VETOED`.
+
+`LEAVE_PENDING` is a control option in Battlestar's combined interactive
+workflow, not a recorded native operator action. Phase 5 does not invent it as
+an action contract. `ACKNOWLEDGE` applies only to `PENDING_REVIEW`, so it is not
+eligible for the Phase 5 `PROCEED` path.
+
+The exact native action entry point is:
+
+```text
+blackpod.runtime.operator_inbox_action.record_operator_action
+```
+
+Battlestar's decision consumer has no public standalone review-packet builder
+and requires a `live_governor_run` manifest. Build Week therefore validates the
+current Governor decision, readiness, and deliberation contracts and adapts
+their existing `operator_review_packet.v1` fields without pretending a Build
+Week REPLAY mission was a live Governor run. All source paths are
+mission-relative. The persisted `operator_inbox_action.v1` is the exact native
+action payload; Build Week does not add mission, request, decision, or transport
+fields under that native schema. Those correlations, plus `observed_at`, are
+recorded explicitly in the versioned operator provenance and lineage sidecars.
+The native decision-consumer receipt shape is likewise preserved. Its current
+ledger event is unversioned, so the artifact and lineage records report a null
+schema version instead of claiming a Build Week contract for native data.
+
+Navigator can run only after the stored operator result is exactly
+`APPROVED_FOR_HANDOFF`. It invokes these current interfaces separately:
+
+```text
+blackpod.runtime.navigator_handoff.stage_navigator_handoff
+blackpod.runtime.navigator_intake.accept_handoff_envelope
+```
+
+`accept_handoff_envelope` is both the current intake interface and the current
+public SHADOW-plan creation entry point. The combined
+`navigator_shadow_workflow.run_workflow` is not invoked because operator action
+must remain a separately visible mission event.
+
+Navigator mode is always `SHADOW`, regardless of whether the mission transport
+is `LIVE` or `REPLAY`. The final approval means only that a validated,
+operator-approved decision context completed a non-executing SHADOW handoff
+and plan. Its scope is exactly `NAVIGATOR_SHADOW_HANDOFF`.
+
+Allowed operations are exactly:
+
+```text
+VALIDATE
+PLAN_ONLY
+```
+
+Prohibited operations are exactly:
+
+```text
+SUBMIT_ORDER
+CANCEL_ORDER
+MODIFY_PORTFOLIO
+BROKER_CALL
+```
+
+No `ExecutionIntent`, broker client, order, position, or portfolio interface is
+imported or invoked.
+
+### Explicit commands
+
+Record approval, then run Navigator as a separate command:
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster operator-action \
+  --mission-id <mission-id> \
+  --action APPROVE_HANDOFF \
+  --operator-id <operator-id> \
+  --reason "Approved for Navigator SHADOW planning." \
+  --expires-in-minutes 30 \
+  --artifacts-root artifacts
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-navigator \
+  --mission-id <mission-id> \
+  --artifacts-root artifacts
+```
+
+LIVE uses the same current operator and Navigator Python interfaces against
+the current mission artifacts and never performs market acquisition in Phase
+5. A LIVE `APPROVE_HANDOFF` requires a positive `--expires-in-minutes`; a
+REPLAY approval takes its deterministic expiry from the fixture. LIVE rejects
+replay fixtures. REPLAY requires the committed deterministic fixture for each
+command and never falls back to LIVE. Expiry in REPLAY is evaluated against
+the fixture's deterministic observed time, while LIVE uses the current UTC
+clock.
+
+### Deterministic Stage 1 replays
+
+Each scenario starts from the same deterministic PROCEED mission in a different
+unused artifact root. From the repository root, the following block is an exact
+three-scenario verification sequence:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+
+phase5_prepare_proceed() {
+  local phase5_artifacts_root="$1"
+  .venv/bin/python3.11 -m blackpod_build_week.harbormaster \
+    --request examples/mission_request.replay.json \
+    --artifacts-root "$phase5_artifacts_root"
+  .venv/bin/python3.11 -m blackpod_build_week.harbormaster run-oracle \
+    --mission-id mission-buildweek-replay-001 \
+    --artifacts-root "$phase5_artifacts_root" \
+    --replay-fixture fixtures/oracle_replay_quotes.v1.json
+  .venv/bin/python3.11 -m blackpod_build_week.harbormaster run-council \
+    --mission-id mission-buildweek-replay-001 \
+    --artifacts-root "$phase5_artifacts_root" \
+    --replay-fixture fixtures/council_replay_policy.v1.json
+  .venv/bin/python3.11 -m blackpod_build_week.harbormaster run-governor \
+    --mission-id mission-buildweek-replay-001 \
+    --artifacts-root "$phase5_artifacts_root" \
+    --replay-fixture fixtures/governor_replay_context.proceed.v1.json
+}
+
+# A. Approved SHADOW mission (all commands exit 0).
+phase5_prepare_proceed artifacts/phase5-demo-approved
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster operator-action \
+  --mission-id mission-buildweek-replay-001 \
+  --action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --reason "Approved for deterministic Navigator SHADOW planning." \
+  --artifacts-root artifacts/phase5-demo-approved \
+  --replay-fixture fixtures/operator_replay_action.approve.v1.json
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-navigator \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/phase5-demo-approved \
+  --replay-fixture fixtures/navigator_replay.shadow.v1.json
+
+# B. Operator rejection (the action exits 0 and Navigator remains NOT_STARTED).
+phase5_prepare_proceed artifacts/phase5-demo-rejected
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster operator-action \
+  --mission-id mission-buildweek-replay-001 \
+  --action REJECT \
+  --operator-id demo-operator \
+  --reason "Rejected at the deterministic operator gate." \
+  --artifacts-root artifacts/phase5-demo-rejected \
+  --replay-fixture fixtures/operator_replay_action.reject.v1.json
+
+# C. Controlled Navigator intake failure (the final command exits 9).
+phase5_prepare_proceed artifacts/phase5-demo-navigator-failure
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster operator-action \
+  --mission-id mission-buildweek-replay-001 \
+  --action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --reason "Approved for deterministic Navigator SHADOW planning." \
+  --artifacts-root artifacts/phase5-demo-navigator-failure \
+  --replay-fixture fixtures/operator_replay_action.approve.v1.json
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-navigator \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/phase5-demo-navigator-failure \
+  --replay-fixture fixtures/navigator_replay.intake-failure.v1.json
+```
+
+The controlled failure fixture does not contain a final snapshot or plan. It
+stages through the native handoff interface with a replay-only unsupported
+schema injection, then exercises the actual native intake rejection path. LIVE
+cannot enable this seam. The command exits nonzero, records Navigator
+`FAILED`, and creates no plan.
+
+### Phase 5 restart and idempotency
+
+Revisions 8 and 9 record the operator action beginning and result. Revisions
+10 and 11 record Navigator beginning and completion or technical failure.
+Repeating an identical completed approval or successful Navigator command
+returns an explicit no-op and writes no new artifact or snapshot. A conflicting
+second operator action, an interrupted `RUNNING` state, or a prior technical
+`FAILED` state is an explicit conflict. Immutable artifacts and revision files
+are never overwritten; there is no force or repair mode. If interruption leaves
+only a staged handoff or an accepted intake artifact beneath a `RUNNING`
+Navigator attempt, restart also fails explicitly: Phase 5 preserves those
+partial immutable records but does not infer completion, overwrite them, or
+silently resume past the operator gate.
+
+## Mission directory
+
+After the deterministic approved Phase 5 example, the mission layout is:
+
+```text
+artifacts/phase5-demo-approved/
 └── missions/
     └── mission-buildweek-replay-001/
         ├── mission_snapshot.json
@@ -454,7 +661,11 @@ artifacts/phase4-demo-proceed/
         │   ├── mission_snapshot-r0004.json
         │   ├── mission_snapshot-r0005.json
         │   ├── mission_snapshot-r0006.json
-        │   └── mission_snapshot-r0007.json
+        │   ├── mission_snapshot-r0007.json
+        │   ├── mission_snapshot-r0008.json
+        │   ├── mission_snapshot-r0009.json
+        │   ├── mission_snapshot-r0010.json
+        │   └── mission_snapshot-r0011.json
         ├── oracle/
         │   ├── inputs/
         │   │   ├── oracle_replay_input.json
@@ -480,25 +691,50 @@ artifacts/phase4-demo-proceed/
         │       ├── council_executive_summary.json
         │       ├── council_provenance.json
         │       └── council_lineage_manifest.json
-        └── governor/
+        ├── governor/
+        │   ├── inputs/
+        │   │   └── governor_supporting_context.json
+        │   └── attempt-0001/
+        │       ├── governor_input_context.json
+        │       ├── governor_senate_intake.json
+        │       ├── governor_deliberation_prep.json
+        │       ├── governor_deliberation.json
+        │       ├── governor_decision_readiness.json
+        │       ├── governor_decision.json
+        │       ├── governor_rendered_decision.json
+        │       ├── secretary_outcome_summary.json
+        │       ├── warning_classification.json
+        │       ├── governor_provenance.json
+        │       └── lineage_manifest.json
+        ├── operator/
+        │   ├── inputs/
+        │   │   └── operator_replay_action.json
+        │   └── attempt-0001/
+        │       ├── review_packet.json
+        │       ├── operator_action.json
+        │       ├── operator_receipt.json
+        │       ├── operator_ledger_entry.json
+        │       ├── operator_provenance.json
+        │       └── lineage_manifest.json
+        └── navigator/
             ├── inputs/
-            │   └── governor_supporting_context.json
+            │   └── navigator_replay.json
             └── attempt-0001/
-                ├── governor_input_context.json
-                ├── governor_senate_intake.json
-                ├── governor_deliberation_prep.json
-                ├── governor_deliberation.json
-                ├── governor_decision_readiness.json
-                ├── governor_decision.json
-                ├── governor_rendered_decision.json
-                ├── secretary_outcome_summary.json
-                ├── warning_classification.json
-                ├── governor_provenance.json
+                ├── handoff/
+                │   ├── pending/<handoff-id>.json
+                │   ├── staging_receipts/<handoff-id>.json
+                │   └── handoff_ledger.jsonl
+                ├── intake/
+                │   ├── intake_receipts/<handoff-id>.json
+                │   ├── shadow_plans/<handoff-id>.json
+                │   └── navigator_ledger.jsonl
+                ├── navigator_provenance.json
                 └── lineage_manifest.json
 ```
 
 The request, immutable snapshots, captured inputs, Oracle outputs, Council
-outputs, and Governor outputs are never overwritten. `mission_snapshot.json`
+outputs, Governor outputs, operator records, and Navigator outputs are never
+overwritten. `mission_snapshot.json`
 is written via a same-directory temporary file followed by atomic replace.
 Every artifact record contains a
 mission-relative path, producer, SHA-256 digest, byte size, observed timestamp,
@@ -554,7 +790,23 @@ checked beneath the mission root.
   seam; it is not a precomputed Governor decision.
 - The Governor deadline is enforced at the adapter process boundary because
   the native interfaces expose no internal timeout.
-- Phase 4 records Secretary/accountability context and an operator route but
-  does not take an operator action. Operator action, Navigator, ModelDock, UI,
-  broker execution, web services, databases, queues, daemons, and schedulers
-  are not included in Phase 4.
+- Battlestar's current Governor consumer exposes no public standalone review
+  packet builder and accepts only a `live_governor_run` directory. Phase 5
+  therefore adapts the already validated current Governor contracts into the
+  existing packet/hash shape and records the mismatch in provenance instead
+  of fabricating a live-run manifest.
+- The current public Navigator intake call also creates the SHADOW plan; Phase
+  5 still records handoff staging, intake acceptance, and plan creation as
+  distinct native states and artifacts. That native contract has no separate
+  intake-receipt ID or idempotency-key field, so Build Week derives stable
+  values from the validated handoff correlation and records that derivation in
+  Navigator provenance rather than changing the native receipt.
+- Native operator IDs are local audit identities, not cryptographic
+  authentication. The Build Week spine proves an explicit, correlated action
+  was recorded; it does not provide an identity service.
+- Stage 1 `APPROVED` is scoped only to `NAVIGATOR_SHADOW_HANDOFF`. It never
+  authorizes a trade and cannot be consumed as broker approval.
+- Operator action, Navigator SHADOW planning, and their immutable audit
+  artifacts are included in Phase 5. ModelDock, UI, live broker execution,
+  order submission/cancellation, portfolio changes, web services, databases,
+  queues, daemons, and schedulers remain explicitly absent.
