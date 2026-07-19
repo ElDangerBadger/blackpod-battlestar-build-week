@@ -1,4 +1,4 @@
-"""Harbormaster CLI for mission initialization, Oracle, and Council."""
+"""Harbormaster CLI for mission initialization, Oracle, Council, and Governor."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ from .council_workflow import (
     run_council,
 )
 from .identifiers import IdentifierError, allocate_mission_id
+from .governor_workflow import (
+    GovernorInvocationError,
+    GovernorRunSettings,
+    GovernorStateConflictError,
+    GovernorWorkflowError,
+    GovernorWorkflowResult,
+    run_governor,
+)
 from .mission_store import (
     DuplicateMissionError,
     MissionInitialization,
@@ -45,6 +53,7 @@ EXIT_DUPLICATE_MISSION = 3
 EXIT_PERSISTENCE_FAILURE = 4
 EXIT_ORACLE_FAILURE = 5
 EXIT_COUNCIL_FAILURE = 6
+EXIT_GOVERNOR_FAILURE = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +175,45 @@ def build_council_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_governor_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster run-governor",
+        description=(
+            "Run Battlestar Governor for a mission with a completed Council stage."
+        ),
+    )
+    parser.add_argument("--mission-id", required=True, help="initialized mission ID")
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts"),
+        help="artifact root containing missions/ (default: artifacts)",
+    )
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument(
+        "--replay-fixture",
+        type=Path,
+        help="deterministic Governor context; required for REPLAY missions",
+    )
+    transport.add_argument(
+        "--context-input",
+        type=Path,
+        help="explicit Governor context; required for LIVE missions",
+    )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=60.0,
+        help="hard Governor worker deadline in seconds (default: 60)",
+    )
+    parser.add_argument(
+        "--strict-battlestar-clean",
+        action="store_true",
+        help="reject a dirty Battlestar worktree during preflight",
+    )
+    return parser
+
+
 def _print_summary(result: MissionInitialization) -> None:
     print(f"mission_id={result.snapshot.mission_id}")
     print(f"run_mode={result.snapshot.run_mode.value}")
@@ -214,6 +262,42 @@ def _print_council_summary(result: CouncilWorkflowResult) -> None:
     print(f"snapshot_path={result.paths.current_snapshot.resolve()}")
     print(f"council_artifact_directory={result.council_artifact_directory.resolve()}")
     print(f"council_action={result.action.value}")
+    print(f"battlestar_revision={provenance.git_revision}")
+    print(
+        "battlestar_branch="
+        + (provenance.git_branch if provenance.git_branch is not None else "DETACHED")
+    )
+    print(f"battlestar_dirty={str(provenance.dirty_worktree).lower()}")
+
+
+def _print_governor_summary(result: GovernorWorkflowResult) -> None:
+    snapshot = result.snapshot
+    governor = snapshot.stages["governor"]
+    provenance = snapshot.components["battlestar_governor"]
+    print(f"mission_id={snapshot.mission_id}")
+    print(f"run_mode={snapshot.run_mode.value}")
+    print(f"governor_status={governor.status.value}")
+    print(
+        "governor_disposition="
+        + (governor.native_state if governor.native_state is not None else "null")
+    )
+    print(
+        "governor_readiness_state="
+        + (result.readiness_state if result.readiness_state is not None else "null")
+    )
+    print(
+        "allowed_next_step="
+        + (
+            result.allowed_next_step
+            if result.allowed_next_step is not None
+            else "null"
+        )
+    )
+    print(f"current_phase={snapshot.current_phase.value}")
+    print(f"mission_outcome={snapshot.mission_outcome.value}")
+    print(f"snapshot_path={result.paths.current_snapshot.resolve()}")
+    print(f"governor_artifact_directory={result.governor_artifact_directory.resolve()}")
+    print(f"governor_action={result.action.value}")
     print(f"battlestar_revision={provenance.git_revision}")
     print(
         "battlestar_branch="
@@ -309,12 +393,58 @@ def _run_council_command(argv: Sequence[str]) -> int:
     return EXIT_SUCCESS
 
 
+def _run_governor_command(argv: Sequence[str]) -> int:
+    args = build_governor_parser().parse_args(argv)
+    settings = GovernorRunSettings(
+        mission_id=args.mission_id,
+        artifacts_root=args.artifacts_root,
+        replay_fixture=args.replay_fixture,
+        context_input=args.context_input,
+        deadline_seconds=args.deadline_seconds,
+        strict_battlestar_clean=args.strict_battlestar_clean,
+    )
+    try:
+        result = run_governor(settings)
+    except (
+        BattlestarConfigurationError,
+        ContractValidationError,
+        IdentifierError,
+        GovernorInvocationError,
+        UnsafePathError,
+    ) as exc:
+        print(f"harbormaster: invalid Governor invocation: {exc}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    except GovernorStateConflictError as exc:
+        print(f"harbormaster: Governor state conflict: {exc}", file=sys.stderr)
+        return EXIT_GOVERNOR_FAILURE
+    except (PersistenceError, MissionStoreError, OSError) as exc:
+        print(f"harbormaster: persistence failure: {exc}", file=sys.stderr)
+        return EXIT_PERSISTENCE_FAILURE
+    except GovernorWorkflowError as exc:
+        print(f"harbormaster: Governor workflow failure: {exc}", file=sys.stderr)
+        return EXIT_GOVERNOR_FAILURE
+
+    _print_governor_summary(result)
+    governor = result.snapshot.stages["governor"]
+    if governor.status.value != "SUCCEEDED":
+        if governor.error is not None:
+            print(
+                f"harbormaster: Governor technical failure: "
+                f"{governor.error.code}: {governor.error.message}",
+                file=sys.stderr,
+            )
+        return EXIT_GOVERNOR_FAILURE
+    return EXIT_SUCCESS
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == "run-oracle":
         return _run_oracle_command(arguments[1:])
     if arguments and arguments[0] == "run-council":
         return _run_council_command(arguments[1:])
+    if arguments and arguments[0] == "run-governor":
+        return _run_governor_command(arguments[1:])
 
     args = build_parser().parse_args(arguments)
     settings = HarbormasterSettings(

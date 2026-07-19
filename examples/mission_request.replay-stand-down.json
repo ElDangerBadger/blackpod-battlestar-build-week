@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "fixture": "oracle-replay-build-week-v1",
+    "governor_context": "governor-replay-context-stand-down-v1",
+    "purpose": "build-week-phase-4-governor-stand-down-replay-example"
+  },
+  "mission_id": "mission-buildweek-replay-stand-down-001",
+  "operator_id": "build-week-operator",
+  "request_id": "request-replay-stand-down-example-001",
+  "requested_at": "2026-07-18T18:05:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "AAPL"
+}

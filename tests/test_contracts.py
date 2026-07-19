@@ -12,9 +12,13 @@ from blackpod_build_week.contracts import (
     CouncilComponentProvenance,
     CouncilTransportKind,
     CurrentPhase,
+    GovernorComponentProvenance,
+    GovernorTransportKind,
     MissionOutcome,
     MissionRequest,
     MissionSnapshot,
+    OperatorRoute,
+    OperatorState,
     RunMode,
     StageStatus,
 )
@@ -188,6 +192,30 @@ class MissionSnapshotContractTests(unittest.TestCase):
         self.assertIs(self.snapshot.current_phase, CurrentPhase.ORACLE)
         self.assertFalse(self.snapshot.terminal)
         self.assertIsNone(self.snapshot.previous_snapshot_sha256)
+        self.assertEqual(self.snapshot.operator, OperatorState.empty())
+
+    def test_operator_state_is_backward_compatible_and_rejects_actions(self) -> None:
+        legacy = self.snapshot.to_dict()
+        del legacy["operator"]
+
+        parsed = MissionSnapshot.from_mapping(legacy)
+
+        self.assertEqual(parsed.operator, OperatorState.empty())
+        self.assertEqual(
+            parsed.to_dict()["operator"],
+            {
+                "route": None,
+                "action": None,
+                "result": None,
+                "operator_id": None,
+                "acted_at": None,
+            },
+        )
+
+        action = self.snapshot.to_dict()
+        action["operator"]["action"] = "APPROVE_HANDOFF"
+        with self.assertRaisesRegex(ContractValidationError, "must remain null"):
+            MissionSnapshot.from_mapping(action)
 
     def test_snapshot_contract_can_represent_all_outcome_enum_values(self) -> None:
         base = self.snapshot.to_dict()
@@ -333,6 +361,55 @@ class MissionSnapshotContractTests(unittest.TestCase):
             "replay_fixture_sha256": None,
         }
         with self.assertRaisesRegex(ContractValidationError, "run_mode must match"):
+            MissionSnapshot.from_mapping(candidate)
+
+    def test_governor_provenance_transport_and_dependency_rules(self) -> None:
+        governor_mapping = {
+            "git_revision": "d" * 40,
+            "git_branch": "main",
+            "dirty_worktree": False,
+            "senate_intake_entry_point": "native.governor_senate_intake",
+            "preparation_entry_point": "native.governor_preparation",
+            "deliberation_entry_point": "native.governor_deliberation",
+            "readiness_entry_point": "native.governor_readiness",
+            "rendering_entry_point": "native.governor_rendering",
+            "run_mode": "REPLAY",
+            "transport": "REPLAY_FIXTURE",
+            "replay_fixture_id": "governor-fixture-v1",
+            "replay_fixture_sha256": "e" * 64,
+        }
+        provenance = GovernorComponentProvenance.from_mapping(governor_mapping)
+        self.assertIs(provenance.transport, GovernorTransportKind.REPLAY_FIXTURE)
+
+        candidate = self.snapshot.to_dict()
+        candidate["components"] = {"battlestar_governor": governor_mapping}
+        with self.assertRaisesRegex(
+            ContractValidationError, "requires Battlestar Oracle and Council"
+        ):
+            MissionSnapshot.from_mapping(candidate)
+
+        invalid = dict(governor_mapping)
+        invalid.update(
+            {
+                "run_mode": "LIVE",
+                "transport": "LIVE_MISSION_INPUTS",
+            }
+        )
+        with self.assertRaisesRegex(ContractValidationError, "no replay fixture"):
+            GovernorComponentProvenance.from_mapping(invalid)
+
+    def test_operator_routes_require_matching_rendered_governor_state(self) -> None:
+        candidate = self.snapshot.to_dict()
+        candidate["operator"] = {
+            "route": OperatorRoute.PENDING_APPROVAL.value,
+            "action": None,
+            "result": None,
+            "operator_id": None,
+            "acted_at": None,
+        }
+        with self.assertRaisesRegex(
+            ContractValidationError, "successful Governor stage"
+        ):
             MissionSnapshot.from_mapping(candidate)
 
 

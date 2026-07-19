@@ -1,8 +1,9 @@
 """Read-only configuration and preflight checks for Battlestar stages.
 
-Only paths needed by the narrow Oracle and Council adapters are exposed. Local
-absolute paths are intentionally kept in this in-memory configuration object;
-callers must not serialize them into canonical mission artifacts.
+Only paths needed by the narrow Oracle, Council, and Governor adapters are
+exposed. Local absolute paths are intentionally kept in this in-memory
+configuration object; callers must not serialize them into canonical mission
+artifacts.
 """
 
 from __future__ import annotations
@@ -65,6 +66,38 @@ RUNTIME_VALIDATION_ENTRY_POINT = (
 RUNTIME_VALIDATION_MODULE_RELATIVE_PATH = Path(
     "blackpod/runtime/validation_report.py"
 )
+GOVERNOR_SENATE_INTAKE_ENTRY_POINT = (
+    "blackpod.governor.governor_senate_intake.build_governor_senate_intake"
+)
+GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/governor_senate_intake.py"
+)
+GOVERNOR_PREPARATION_ENTRY_POINT = (
+    "blackpod.governor.governor_deliberation_prep."
+    "build_governor_deliberation_prep"
+)
+GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/governor_deliberation_prep.py"
+)
+GOVERNOR_DELIBERATION_ENTRY_POINT = (
+    "blackpod.governor.governor_deliberation.build_governor_deliberation"
+)
+GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/governor_deliberation.py"
+)
+GOVERNOR_READINESS_ENTRY_POINT = (
+    "blackpod.governor.governor_decision_readiness."
+    "build_governor_decision_readiness"
+)
+GOVERNOR_READINESS_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/governor_decision_readiness.py"
+)
+GOVERNOR_RENDERING_ENTRY_POINT = (
+    "blackpod.governor.governor_decision.build_governor_decision"
+)
+GOVERNOR_RENDERING_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/governor_decision.py"
+)
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _GIT_REVISION_PATTERN = re.compile(r"[0-9a-fA-F]{40,64}\Z")
@@ -92,6 +125,11 @@ class BattlestarConfig:
     council_executive_summary_module_path: Path | None = None
     advisor_health_module_path: Path | None = None
     runtime_validation_module_path: Path | None = None
+    governor_senate_intake_module_path: Path | None = None
+    governor_preparation_module_path: Path | None = None
+    governor_deliberation_module_path: Path | None = None
+    governor_readiness_module_path: Path | None = None
+    governor_rendering_module_path: Path | None = None
 
 
 def load_battlestar_config(
@@ -100,6 +138,7 @@ def load_battlestar_config(
     environ: Mapping[str, str] | None = None,
     strict_clean: bool = False,
     require_council: bool = False,
+    require_governor: bool = False,
 ) -> BattlestarConfig:
     """Validate ``BATTLESTAR_PATH`` and collect read-only Git provenance.
 
@@ -205,6 +244,41 @@ def load_battlestar_config(
                 description="runtime-validation module",
             ),
         }
+    governor_paths: dict[str, Path | None] = {
+        "governor_senate_intake_module_path": None,
+        "governor_preparation_module_path": None,
+        "governor_deliberation_module_path": None,
+        "governor_readiness_module_path": None,
+        "governor_rendering_module_path": None,
+    }
+    if require_governor:
+        governor_paths = {
+            "governor_senate_intake_module_path": _required_repository_file(
+                root,
+                GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH,
+                description="Governor Senate-intake module",
+            ),
+            "governor_preparation_module_path": _required_repository_file(
+                root,
+                GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH,
+                description="Governor preparation module",
+            ),
+            "governor_deliberation_module_path": _required_repository_file(
+                root,
+                GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH,
+                description="Governor deliberation module",
+            ),
+            "governor_readiness_module_path": _required_repository_file(
+                root,
+                GOVERNOR_READINESS_MODULE_RELATIVE_PATH,
+                description="Governor readiness module",
+            ),
+            "governor_rendering_module_path": _required_repository_file(
+                root,
+                GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
+                description="Governor rendering module",
+            ),
+        }
 
     revision = _git_revision(root)
     branch = _git_branch(root)
@@ -222,6 +296,7 @@ def load_battlestar_config(
         git_branch=branch,
         dirty_worktree=dirty_worktree,
         **council_paths,
+        **governor_paths,
     )
 
 
@@ -238,6 +313,23 @@ def load_council_battlestar_config(
         environ=environ,
         strict_clean=strict_clean,
         require_council=True,
+    )
+
+
+def load_governor_battlestar_config(
+    *,
+    artifacts_root: Path,
+    environ: Mapping[str, str] | None = None,
+    strict_clean: bool = False,
+) -> BattlestarConfig:
+    """Run Phase 3-compatible preflight plus Phase 4 Governor module checks."""
+
+    return load_battlestar_config(
+        artifacts_root=artifacts_root,
+        environ=environ,
+        strict_clean=strict_clean,
+        require_council=True,
+        require_governor=True,
     )
 
 
