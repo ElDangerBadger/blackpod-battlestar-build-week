@@ -60,23 +60,44 @@ def load_strict_json_object(path: Path) -> dict[str, Any]:
     """Load one strict JSON object, rejecting duplicates and NaN values."""
 
     try:
-        source = path.read_text(encoding="utf-8")
+        source = path.read_bytes()
     except OSError as exc:
         raise ContractValidationError(f"cannot read request file {path}: {exc}") from exc
 
+    return parse_strict_json_object_bytes(source, document_name="mission request")
+
+
+def parse_strict_json_object_bytes(
+    source: bytes, *, document_name: str = "JSON document"
+) -> dict[str, Any]:
+    """Parse exact UTF-8 bytes as one strict JSON object."""
+
+    if not isinstance(source, bytes):
+        raise ContractValidationError(f"{document_name} source must be bytes")
+    try:
+        text = source.decode("utf-8")
+    except UnicodeError as exc:
+        raise ContractValidationError(
+            f"{document_name} is not valid UTF-8: {exc}"
+        ) from exc
+
     try:
         value = json.loads(
-            source,
+            text,
             object_pairs_hook=_object_without_duplicate_keys,
             parse_constant=_reject_json_constant,
         )
     except ContractValidationError:
         raise
-    except (json.JSONDecodeError, UnicodeError) as exc:
-        raise ContractValidationError(f"request is not valid JSON: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ContractValidationError(
+            f"{document_name} is not valid JSON: {exc}"
+        ) from exc
 
     if not isinstance(value, dict):
-        raise ContractValidationError("mission request root must be a JSON object")
+        raise ContractValidationError(
+            f"{document_name} root must be a JSON object"
+        )
     return value
 
 

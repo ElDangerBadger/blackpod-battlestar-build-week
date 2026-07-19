@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "BlackPod" }]
-dependencies = []
+dependencies = ["PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+live = ["yfinance>=0.2,<2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
