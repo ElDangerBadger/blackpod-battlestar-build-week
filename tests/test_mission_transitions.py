@@ -5,6 +5,18 @@ import unittest
 from pathlib import Path
 
 from blackpod_build_week.contracts import (
+    MODELDOCK_NARRATIVE_ARTIFACT_NAME,
+    MODELDOCK_NARRATIVE_ARTIFACT_PATH,
+    MODELDOCK_NARRATIVE_SCHEMA_VERSION,
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+    MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+    MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_REQUEST_ARTIFACT_PATH,
+    MODELDOCK_REQUEST_SCHEMA_VERSION,
+    MODELDOCK_RESPONSE_ARTIFACT_NAME,
+    MODELDOCK_RESPONSE_ARTIFACT_PATH,
+    MODELDOCK_RESPONSE_SCHEMA_VERSION,
     NAVIGATOR_ALLOWED_OPERATIONS,
     NAVIGATOR_PROHIBITED_OPERATIONS,
     ApprovalScope,
@@ -15,6 +27,9 @@ from blackpod_build_week.contracts import (
     GovernorComponentProvenance,
     MissionOutcome,
     MissionRequest,
+    ModelDockCall,
+    ModelDockCallStatus,
+    ModelDockComponentProvenance,
     NavigatorHandoffStatus,
     NavigatorIntakeStatus,
     NavigatorMode,
@@ -37,16 +52,19 @@ from blackpod_build_week.mission_transitions import (
     begin_navigator,
     begin_operator_action,
     begin_oracle,
+    begin_oracle_enrichment,
     complete_council,
     complete_governor,
     complete_navigator,
     complete_operator_action,
     complete_oracle,
+    complete_oracle_enrichment,
     fail_council,
     fail_governor,
     fail_navigator,
     fail_operator_action,
     fail_oracle,
+    fail_oracle_enrichment,
 )
 
 
@@ -289,6 +307,369 @@ class OracleTransitionTests(unittest.TestCase):
             )
         with self.assertRaises(ImmutableArtifactError):
             self.store.commit_snapshot(self.initialized.paths, running)
+
+
+class OracleEnrichmentTransitionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.store = MissionStore(Path(self.temporary_directory.name) / "artifacts")
+        mission_request = request()
+        self.initialized = self.store.initialize(
+            mission_request,
+            mission_id=mission_request.mission_id or "",
+            started_at=OBSERVED_AT,
+            observed_at=OBSERVED_AT,
+        )
+        oracle_input = self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path="oracle/inputs/oracle_replay_input.json",
+            payload=b'{"fixture":"deterministic"}\n',
+            name="oracle_replay_input",
+            producer="harbormaster",
+            schema_version="blackpod.oracle_replay_input.v1",
+            observed_at=OBSERVED_AT,
+        )
+        oracle_running = begin_oracle(
+            self.initialized.snapshot,
+            previous_snapshot_sha256=self.initialized.snapshot_sha256,
+            observed_at=OBSERVED_AT,
+            provenance=provenance(),
+            input_artifacts=(oracle_input,),
+        )
+        oracle_running_sha = self.store.commit_snapshot(
+            self.initialized.paths, oracle_running
+        )
+        self.oracle_report = self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path="oracle/attempt-0001/oracle_report_live.json",
+            payload=b'{"readiness":"READY"}\n',
+            name="oracle_report",
+            producer="oracle",
+            schema_version="blackpod.contracts.OracleReport",
+            observed_at=OBSERVED_AT,
+        )
+        self.oracle_complete = complete_oracle(
+            oracle_running,
+            previous_snapshot_sha256=oracle_running_sha,
+            observed_at=OBSERVED_AT,
+            native_state="READY",
+            output_artifacts=(self.oracle_report,),
+        )
+        self.oracle_complete_sha = self.store.commit_snapshot(
+            self.initialized.paths, self.oracle_complete
+        )
+        self.request_payload = b'{"request_type":"text.generate"}\n'
+        self.modeldock_request = self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path=MODELDOCK_REQUEST_ARTIFACT_PATH,
+            payload=self.request_payload,
+            name=MODELDOCK_REQUEST_ARTIFACT_NAME,
+            producer="harbormaster",
+            schema_version=MODELDOCK_REQUEST_SCHEMA_VERSION,
+            observed_at=OBSERVED_AT,
+        )
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def modeldock_provenance(self) -> ModelDockComponentProvenance:
+        return ModelDockComponentProvenance.from_mapping(
+            {
+                "endpoint": "http://127.0.0.1:8000/text/generate",
+                "profile": "local-demo",
+                "expected_provider": "mlx",
+                "requested_model": "mlx-community/test-model",
+                "timeout_seconds": 15,
+                "max_response_bytes": 262144,
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": "modeldock-transition-fixture-v1",
+                "replay_fixture_sha256": "f" * 64,
+                "failure_policy": "STRICT_REQUIRED",
+            }
+        )
+
+    def running_call(self) -> ModelDockCall:
+        return ModelDockCall.from_mapping(
+            {
+                "call_id": "modeldock-call-transition-001",
+                "status": "RUNNING",
+                "mission_id": "mission-transition-001",
+                "request_id": "request-transition-001",
+                "run_mode": "REPLAY",
+                "endpoint": "http://127.0.0.1:8000/text/generate",
+                "provider": None,
+                "model": None,
+                "model_revision": None,
+                "trace_id": None,
+                "mocked": None,
+                "latency_ms": None,
+                "request_sha256": self.modeldock_request.sha256,
+                "response_sha256": None,
+                "response_byte_size": None,
+                "started_at": OBSERVED_AT,
+                "observed_at": OBSERVED_AT,
+                "artifacts": [self.modeldock_request.name],
+                "error": None,
+            }
+        )
+
+    def begin_enrichment(self):
+        return begin_oracle_enrichment(
+            self.oracle_complete,
+            previous_snapshot_sha256=self.oracle_complete_sha,
+            observed_at=OBSERVED_AT,
+            provenance=self.modeldock_provenance(),
+            request_artifact=self.modeldock_request,
+            call=self.running_call(),
+        )
+
+    def terminal_outputs(self):
+        values = (
+            (
+                MODELDOCK_RESPONSE_ARTIFACT_NAME,
+                MODELDOCK_RESPONSE_ARTIFACT_PATH,
+                b'{"status":"ok","provider":"mlx"}\n',
+                MODELDOCK_RESPONSE_SCHEMA_VERSION,
+            ),
+            (
+                MODELDOCK_NARRATIVE_ARTIFACT_NAME,
+                MODELDOCK_NARRATIVE_ARTIFACT_PATH,
+                b'{"schema_version":"blackpod.oracle_narrative.v1"}\n',
+                MODELDOCK_NARRATIVE_SCHEMA_VERSION,
+            ),
+            (
+                MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+                MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+                b'{"failure_policy":"STRICT_REQUIRED"}\n',
+                MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+            ),
+        )
+        return tuple(
+            self.store.write_immutable_artifact(
+                "mission-transition-001",
+                relative_path=filename,
+                payload=payload,
+                name=name,
+                producer="modeldock",
+                schema_version=schema_version,
+                observed_at=OBSERVED_AT,
+            )
+            for name, filename, payload, schema_version in values
+        )
+
+    def succeeded_call(self, outputs) -> ModelDockCall:
+        response = outputs[0]
+        return ModelDockCall.from_mapping(
+            {
+                **self.running_call().to_dict(),
+                "status": "SUCCEEDED",
+                "provider": "mlx",
+                "model": "mlx-community/test-model",
+                "model_revision": "revision-transition-001",
+                "trace_id": "trace-transition-001",
+                "mocked": False,
+                "latency_ms": 8.25,
+                # These describe the raw HTTP body. The committed response
+                # artifact is a safe projection with an independent digest.
+                "response_sha256": "d" * 64,
+                "response_byte_size": (response.byte_size or 0) + 100,
+                "artifacts": [
+                    self.modeldock_request.name,
+                    *(item.name for item in outputs),
+                ],
+            }
+        )
+
+    def test_begin_preserves_oracle_facts_and_commits_hash_chain(self) -> None:
+        running = self.begin_enrichment()
+        digest = self.store.commit_snapshot(self.initialized.paths, running)
+        loaded = self.store.load_mission("mission-transition-001")
+
+        self.assertEqual(running.revision, 4)
+        self.assertEqual(running.previous_snapshot_sha256, self.oracle_complete_sha)
+        self.assertEqual(loaded.current_snapshot_sha256, digest)
+        self.assertIs(running.stages["oracle"].status, StageStatus.RUNNING)
+        self.assertEqual(running.stages["oracle"].native_state, "READY")
+        self.assertEqual(
+            running.stages["oracle"].outputs,
+            self.oracle_complete.stages["oracle"].outputs,
+        )
+        self.assertIs(
+            running.stages["oracle"].modeldock_calls[0].status,
+            ModelDockCallStatus.RUNNING,
+        )
+        self.assertEqual(running.current_phase, CurrentPhase.ORACLE)
+
+        with self.assertRaises(ImmutableArtifactError):
+            self.store.commit_snapshot(self.initialized.paths, running)
+
+    def test_success_adds_only_validated_narrative_to_oracle_outputs_and_persists(self) -> None:
+        running = self.begin_enrichment()
+        running_sha = self.store.commit_snapshot(self.initialized.paths, running)
+        outputs = self.terminal_outputs()
+        complete = complete_oracle_enrichment(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            call=self.succeeded_call(outputs),
+            output_artifacts=outputs,
+        )
+        complete_sha = self.store.commit_snapshot(self.initialized.paths, complete)
+
+        self.assertEqual(complete.previous_snapshot_sha256, running_sha)
+        self.assertEqual(complete.revision, 5)
+        self.assertEqual(
+            complete.stages["oracle"].outputs,
+            ("oracle_report", MODELDOCK_NARRATIVE_ARTIFACT_NAME),
+        )
+        self.assertIs(complete.stages["oracle"].status, StageStatus.SUCCEEDED)
+        self.assertEqual(complete.stages["oracle"].native_state, "READY")
+        self.assertEqual(complete.current_phase, CurrentPhase.COUNCIL)
+        self.assertIs(complete.mission_outcome, MissionOutcome.INCOMPLETE)
+        response_reference = next(
+            item
+            for item in complete.artifacts
+            if item.name == MODELDOCK_RESPONSE_ARTIFACT_NAME
+        )
+        call = complete.stages["oracle"].modeldock_calls[0]
+        self.assertNotEqual(call.response_sha256, response_reference.sha256)
+        self.assertNotEqual(call.response_byte_size, response_reference.byte_size)
+
+        mandate = self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path="council/inputs/modeldock-transition-mandate.json",
+            payload=b'{"mandate":"test"}\n',
+            name="modeldock_transition_mandate",
+            producer="harbormaster",
+            schema_version="blackpod.council_replay_input.v1",
+            observed_at=OBSERVED_AT,
+        )
+        council_running = begin_council(
+            complete,
+            previous_snapshot_sha256=complete_sha,
+            observed_at=OBSERVED_AT,
+            provenance=council_provenance(),
+            existing_input_names=(
+                "oracle_report",
+                MODELDOCK_NARRATIVE_ARTIFACT_NAME,
+            ),
+            input_artifacts=(mandate,),
+        )
+        self.assertEqual(
+            council_running.stages["oracle"].modeldock_calls,
+            complete.stages["oracle"].modeldock_calls,
+        )
+        self.assertEqual(
+            council_running.components["modeldock"],
+            complete.components["modeldock"],
+        )
+
+    def test_strict_failure_preserves_original_oracle_outputs(self) -> None:
+        running = self.begin_enrichment()
+        running_sha = self.store.commit_snapshot(self.initialized.paths, running)
+        failure_payload = b'{"status":"FAILED"}\n'
+        failure_artifact = self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path=MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+            payload=failure_payload,
+            name=MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+            producer="modeldock",
+            schema_version=MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+            observed_at=OBSERVED_AT,
+        )
+        error = StageError.from_mapping(
+            {
+                "code": "MODELDOCK_TIMEOUT",
+                "error_type": "DeadlineExceeded",
+                "message": "ModelDock narrative request timed out",
+                "resumable": True,
+                "observed_at": OBSERVED_AT,
+            }
+        )
+        failed_call = ModelDockCall.from_mapping(
+            {
+                **self.running_call().to_dict(),
+                "status": "FAILED",
+                "artifacts": [
+                    self.modeldock_request.name,
+                    failure_artifact.name,
+                ],
+                "error": error.to_dict(),
+            }
+        )
+        failed = fail_oracle_enrichment(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            call=failed_call,
+            error=error,
+            output_artifacts=(failure_artifact,),
+        )
+        self.store.commit_snapshot(self.initialized.paths, failed)
+
+        self.assertIs(failed.stages["oracle"].status, StageStatus.FAILED)
+        self.assertEqual(failed.stages["oracle"].native_state, "READY")
+        self.assertEqual(failed.stages["oracle"].outputs, ("oracle_report",))
+        self.assertIs(failed.mission_outcome, MissionOutcome.FAILED)
+        self.assertEqual(failed.current_phase, CurrentPhase.ORACLE)
+        self.assertFalse(failed.terminal)
+        self.assertEqual(
+            self.store.load_mission("mission-transition-001").snapshot,
+            failed,
+        )
+
+    def test_repeated_start_and_terminal_call_identity_change_are_rejected(self) -> None:
+        running = self.begin_enrichment()
+        with self.assertRaisesRegex(MissionTransitionError, "COUNCIL phase"):
+            begin_oracle_enrichment(
+                running,
+                previous_snapshot_sha256="a" * 64,
+                observed_at=OBSERVED_AT,
+                provenance=self.modeldock_provenance(),
+                request_artifact=self.modeldock_request,
+                call=self.running_call(),
+            )
+
+        outputs = self.terminal_outputs()
+        changed = self.succeeded_call(outputs).to_dict()
+        changed["call_id"] = "modeldock-call-changed"
+        with self.assertRaisesRegex(MissionTransitionError, "immutable call identity"):
+            complete_oracle_enrichment(
+                running,
+                previous_snapshot_sha256="b" * 64,
+                observed_at=OBSERVED_AT,
+                call=ModelDockCall.from_mapping(changed),
+                output_artifacts=outputs,
+            )
+
+    def test_canonical_modeldock_artifact_metadata_is_enforced(self) -> None:
+        changed_request = self.modeldock_request.to_dict()
+        changed_request["producer"] = "modeldock"
+        with self.assertRaisesRegex(MissionTransitionError, "canonical artifact"):
+            begin_oracle_enrichment(
+                self.oracle_complete,
+                previous_snapshot_sha256=self.oracle_complete_sha,
+                observed_at=OBSERVED_AT,
+                provenance=self.modeldock_provenance(),
+                request_artifact=ArtifactReference.from_mapping(changed_request),
+                call=self.running_call(),
+            )
+
+        running = self.begin_enrichment()
+        outputs = list(self.terminal_outputs())
+        changed_response = outputs[0].to_dict()
+        changed_response["schema_version"] = "untrusted.response.v1"
+        outputs[0] = ArtifactReference.from_mapping(changed_response)
+        call_mapping = self.succeeded_call(outputs).to_dict()
+        with self.assertRaisesRegex(MissionTransitionError, "canonical artifact"):
+            complete_oracle_enrichment(
+                running,
+                previous_snapshot_sha256="f" * 64,
+                observed_at=OBSERVED_AT,
+                call=ModelDockCall.from_mapping(call_mapping),
+                output_artifacts=outputs,
+            )
 
 
 class CouncilTransitionTests(unittest.TestCase):

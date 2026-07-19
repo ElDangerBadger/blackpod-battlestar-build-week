@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 from blackpod_build_week.contracts import (
+    MODELDOCK_FAILURE_ARTIFACT_NAMES,
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_SUCCESS_ARTIFACT_NAMES,
     NAVIGATOR_ALLOWED_OPERATIONS,
     NAVIGATOR_PROHIBITED_OPERATIONS,
     ApprovalScope,
@@ -20,6 +23,10 @@ from blackpod_build_week.contracts import (
     MissionOutcome,
     MissionRequest,
     MissionSnapshot,
+    ModelDockCall,
+    ModelDockCallStatus,
+    ModelDockComponentProvenance,
+    ModelDockTransportKind,
     NavigatorHandoffStatus,
     NavigatorIntakeStatus,
     NavigatorMode,
@@ -596,6 +603,181 @@ class MissionSnapshotContractTests(unittest.TestCase):
         premature["terminal"] = True
         with self.assertRaisesRegex(ContractValidationError, "approved Navigator"):
             MissionSnapshot.from_mapping(premature)
+
+    def test_modeldock_call_contract_is_typed_and_terminal_states_are_strict(self) -> None:
+        running_mapping = {
+            "call_id": "modeldock-call-contract-001",
+            "status": "RUNNING",
+            "mission_id": "mission-contract-001",
+            "request_id": "request-contract-001",
+            "run_mode": "REPLAY",
+            "endpoint": "http://127.0.0.1:8000/text/generate",
+            "provider": None,
+            "model": None,
+            "model_revision": None,
+            "trace_id": None,
+            "mocked": None,
+            "latency_ms": None,
+            "request_sha256": "a" * 64,
+            "response_sha256": None,
+            "response_byte_size": None,
+            "started_at": "2026-07-18T18:01:00Z",
+            "observed_at": "2026-07-18T18:01:00Z",
+            "artifacts": [MODELDOCK_REQUEST_ARTIFACT_NAME],
+            "error": None,
+        }
+        running = ModelDockCall.from_mapping(running_mapping)
+        self.assertIs(running.status, ModelDockCallStatus.RUNNING)
+
+        illegal_running = dict(running_mapping, provider="mlx")
+        with self.assertRaisesRegex(ContractValidationError, "RUNNING"):
+            ModelDockCall.from_mapping(illegal_running)
+
+        succeeded_mapping = dict(
+            running_mapping,
+            status="SUCCEEDED",
+            provider="mlx",
+            model="mlx-community/test-model",
+            model_revision="revision-001",
+            trace_id="trace-contract-001",
+            mocked=False,
+            latency_ms=12.5,
+            response_sha256="b" * 64,
+            response_byte_size=128,
+            observed_at="2026-07-18T18:02:00Z",
+            artifacts=list(MODELDOCK_SUCCESS_ARTIFACT_NAMES),
+        )
+        succeeded = ModelDockCall.from_mapping(succeeded_mapping)
+        self.assertIs(succeeded.status, ModelDockCallStatus.SUCCEEDED)
+        self.assertEqual(succeeded.latency_ms, 12.5)
+
+        mocked_live = dict(succeeded_mapping, run_mode="LIVE", mocked=True)
+        with self.assertRaisesRegex(ContractValidationError, "mocked"):
+            ModelDockCall.from_mapping(mocked_live)
+
+        failed_without_error = dict(running_mapping, status="FAILED")
+        with self.assertRaisesRegex(ContractValidationError, "structured error"):
+            ModelDockCall.from_mapping(failed_without_error)
+
+        failure_error = {
+            "code": "MODELDOCK_TIMEOUT",
+            "error_type": "TimeoutError",
+            "message": "ModelDock timed out",
+            "resumable": True,
+            "observed_at": "2026-07-18T18:02:00Z",
+        }
+        failed = ModelDockCall.from_mapping(
+            dict(
+                running_mapping,
+                status="FAILED",
+                observed_at="2026-07-18T18:02:00Z",
+                artifacts=list(MODELDOCK_FAILURE_ARTIFACT_NAMES),
+                error=failure_error,
+            )
+        )
+        self.assertIs(failed.status, ModelDockCallStatus.FAILED)
+
+        leaked_metadata = (
+            ("provider", "/Users/demo/provider"),
+            ("model", "/Users/demo/model"),
+            ("model", "../outside/model"),
+            ("model_revision", "token=secret-value"),
+            ("trace_id", "sk-secret-value"),
+        )
+        for field_name, unsafe_value in leaked_metadata:
+            with self.subTest(field=field_name, value=unsafe_value):
+                candidate = dict(succeeded_mapping, **{field_name: unsafe_value})
+                with self.assertRaises(ContractValidationError):
+                    ModelDockCall.from_mapping(candidate)
+
+    def test_modeldock_component_provenance_enforces_strict_transport_rules(self) -> None:
+        replay_mapping = {
+            "endpoint": "http://127.0.0.1:8000/text/generate",
+            "profile": "local-demo",
+            "expected_provider": "mlx",
+            "requested_model": None,
+            "timeout_seconds": 15,
+            "max_response_bytes": 262144,
+            "run_mode": "REPLAY",
+            "transport": "REPLAY_FIXTURE",
+            "replay_fixture_id": "modeldock-contract-fixture-v1",
+            "replay_fixture_sha256": "c" * 64,
+            "failure_policy": "STRICT_REQUIRED",
+        }
+        provenance = ModelDockComponentProvenance.from_mapping(replay_mapping)
+        self.assertIs(provenance.transport, ModelDockTransportKind.REPLAY_FIXTURE)
+        self.assertEqual(provenance.timeout_seconds, 15.0)
+
+        live_mapping = dict(
+            replay_mapping,
+            run_mode="LIVE",
+            transport="LIVE_HTTP",
+            replay_fixture_id=None,
+            replay_fixture_sha256=None,
+        )
+        live = ModelDockComponentProvenance.from_mapping(live_mapping)
+        self.assertIs(live.transport, ModelDockTransportKind.LIVE_HTTP)
+
+        for invalid in (
+            dict(replay_mapping, failure_policy="OPTIONAL"),
+            dict(replay_mapping, replay_fixture_id=None),
+            dict(live_mapping, expected_provider="mock"),
+            dict(live_mapping, endpoint="file:///tmp/text/generate"),
+            dict(live_mapping, endpoint="https://modeldock.example/text/generate"),
+            dict(replay_mapping, profile="/Users/demo/profile"),
+            dict(replay_mapping, requested_model="../../outside/model"),
+            dict(replay_mapping, requested_model="api_key=secret-value"),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ContractValidationError):
+                    ModelDockComponentProvenance.from_mapping(invalid)
+
+    def test_modeldock_stage_field_is_backward_compatible_and_oracle_only(self) -> None:
+        legacy = self.snapshot.to_dict()
+        for stage in legacy["stages"].values():
+            del stage["modeldock_calls"]
+
+        parsed = MissionSnapshot.from_mapping(legacy)
+
+        self.assertEqual(parsed.stages["oracle"].modeldock_calls, ())
+        self.assertIn("modeldock_calls", parsed.to_dict()["stages"]["oracle"])
+
+        wrong_stage = self.snapshot.to_dict()
+        running_call = {
+            "call_id": "modeldock-call-contract-002",
+            "status": "RUNNING",
+            "mission_id": "mission-contract-001",
+            "request_id": "request-contract-001",
+            "run_mode": "REPLAY",
+            "endpoint": "http://127.0.0.1:8000/text/generate",
+            "provider": None,
+            "model": None,
+            "model_revision": None,
+            "trace_id": None,
+            "mocked": None,
+            "latency_ms": None,
+            "request_sha256": "a" * 64,
+            "response_sha256": None,
+            "response_byte_size": None,
+            "started_at": "2026-07-18T18:00:00Z",
+            "observed_at": "2026-07-18T18:00:00Z",
+            "artifacts": [MODELDOCK_REQUEST_ARTIFACT_NAME],
+            "error": None,
+        }
+        wrong_stage["stages"]["council"]["modeldock_calls"] = [running_call]
+        wrong_stage["stages"]["council"]["status"] = "RUNNING"
+        with self.assertRaisesRegex(ContractValidationError, "only inside the Oracle"):
+            MissionSnapshot.from_mapping(wrong_stage)
+
+        duplicate = self.snapshot.to_dict()
+        duplicate["stages"]["oracle"].update(
+            {
+                "status": "RUNNING",
+                "modeldock_calls": [running_call, running_call],
+            }
+        )
+        with self.assertRaisesRegex(ContractValidationError, "at most one"):
+            MissionSnapshot.from_mapping(duplicate)
 
 
 if __name__ == "__main__":

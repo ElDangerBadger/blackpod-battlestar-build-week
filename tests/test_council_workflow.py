@@ -110,10 +110,14 @@ class SuccessfulCouncilAdapter:
         self.calls = 0
         self.native_state = native_state
         self.received_mode = None
+        self.received_modeldock_narrative_path = None
 
     def execute(self, request, context, *, supporting_input):
         self.calls += 1
         self.received_mode = supporting_input.run_mode
+        self.received_modeldock_narrative_path = (
+            context.oracle_modeldock_narrative_path
+        )
         for filename in COUNCIL_NATIVE_OUTPUT_ARTIFACTS:
             payload = {
                 "artifact": filename,
@@ -154,6 +158,11 @@ class SuccessfulCouncilAdapter:
             conflicts=("Senate and Oracle remain divided.",),
             source_lineage=(
                 *(REQUIRED_ORACLE_INPUTS[name] for name in REQUIRED_ORACLE_INPUTS),
+                *(
+                    (context.oracle_modeldock_narrative_path,)
+                    if context.oracle_modeldock_narrative_path is not None
+                    else ()
+                ),
                 COUNCIL_SUPPORTING_INPUT_PATH,
             ),
         )
@@ -634,6 +643,58 @@ class CouncilWorkflowTests(unittest.TestCase):
             success["previous_snapshot_sha256"],
             sha256_file(revisions / "mission_snapshot-r0004.json"),
         )
+
+    def test_modeldock_narrative_is_validated_carry_forward_not_native_policy(self) -> None:
+        from tests.test_oracle_enrichment_workflow import (
+            OracleEnrichmentWorkflowTests,
+        )
+
+        harness = OracleEnrichmentWorkflowTests(methodName="runTest")
+        harness.setUp()
+        try:
+            enriched = harness.execute()
+            replay_fixture = harness.base / "council-after-modeldock-replay.json"
+            replay_fixture.write_bytes(supporting_payload())
+            adapter = SuccessfulCouncilAdapter(native_state="ALIGNED")
+
+            result = run_council(
+                CouncilRunSettings(
+                    mission_id=enriched.request.mission_id or "",
+                    artifacts_root=harness.artifacts_root,
+                    replay_fixture=replay_fixture,
+                ),
+                adapter=adapter,
+                config_loader=self.config_loader,
+            )
+
+            self.assertEqual(result.snapshot.revision, 7)
+            self.assertEqual(
+                adapter.received_modeldock_narrative_path,
+                "oracle/modeldock/oracle_narrative.json",
+            )
+            lineage = json.loads(
+                (result.paths.mission_root / COUNCIL_LINEAGE_PATH).read_text()
+            )
+            inputs = {item["name"]: item for item in lineage["inputs"]}
+            self.assertEqual(
+                inputs["oracle_modeldock_narrative"]["usage"],
+                "VALIDATED_CARRY_FORWARD_CONTEXT",
+            )
+            self.assertEqual(
+                lineage["validated_carry_forward_context_names"],
+                ["oracle_modeldock_narrative"],
+            )
+            outputs = {item["name"]: item for item in lineage["outputs"]}
+            self.assertNotIn(
+                "oracle_modeldock_narrative",
+                outputs["council_synthesis"]["source_input_names"],
+            )
+            self.assertNotIn(
+                "oracle_modeldock_narrative",
+                outputs["council_executive_summary"]["source_input_names"],
+            )
+        finally:
+            harness.tearDown()
 
     def test_lineage_hashes_correlation_and_dissent_are_preserved(self) -> None:
         result = self.execute_workflow(

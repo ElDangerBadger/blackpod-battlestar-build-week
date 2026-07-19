@@ -318,6 +318,7 @@ class CouncilMissionContext:
     oracle_report_path: str = "oracle/attempt-0001/oracle_report_live.json"
     oracle_assessment_path: str = "oracle/attempt-0001/oracle_assessment_live.json"
     oracle_narrative_path: str = "oracle/attempt-0001/oracle_narrative_live.json"
+    oracle_modeldock_narrative_path: str | None = None
     output_dir: str = "council/attempt-0001"
 
     def __post_init__(self) -> None:
@@ -333,7 +334,7 @@ class CouncilMissionContext:
                 "mission_root must be an existing non-symlink directory"
             )
         root = root_input.resolve(strict=True)
-        path_fields = (
+        required_path_fields = (
             "normalized_path",
             "readiness_path",
             "oracle_report_path",
@@ -343,10 +344,24 @@ class CouncilMissionContext:
         )
         values = {
             name: _validate_relative_path(getattr(self, name), name)
-            for name in path_fields
+            for name in required_path_fields
         }
+        if self.oracle_modeldock_narrative_path is not None:
+            values["oracle_modeldock_narrative_path"] = _validate_relative_path(
+                self.oracle_modeldock_narrative_path,
+                "oracle_modeldock_narrative_path",
+            )
         output = (root / values["output_dir"]).resolve(strict=False)
-        for field_name in path_fields[:-1]:
+        for field_name in (
+            "normalized_path",
+            "readiness_path",
+            "oracle_report_path",
+            "oracle_assessment_path",
+            "oracle_narrative_path",
+            "oracle_modeldock_narrative_path",
+        ):
+            if field_name not in values:
+                continue
             candidate = (root / values[field_name]).resolve(strict=False)
             if not _is_relative_to(candidate, root) or _is_relative_to(candidate, output):
                 raise CouncilAdapterValidationError(
@@ -381,6 +396,7 @@ class CouncilTransportRequest:
     output_dir: str
     generated_at: str
     supporting_input: dict[str, object]
+    oracle_modeldock_narrative_path: str | None = None
 
 
 class CouncilTransport(Protocol):
@@ -603,6 +619,9 @@ class CouncilAdapter:
             output_dir=context.output_dir,
             generated_at=supporting_input.generated_at,
             supporting_input=supporting_input.to_dict(),
+            oracle_modeldock_narrative_path=(
+                context.oracle_modeldock_narrative_path
+            ),
         )
         try:
             raw = self._run_transport(transport_request)
@@ -681,6 +700,11 @@ class CouncilAdapter:
                 context.oracle_report_path,
                 context.oracle_assessment_path,
                 context.oracle_narrative_path,
+                *(
+                    (context.oracle_modeldock_narrative_path,)
+                    if context.oracle_modeldock_narrative_path is not None
+                    else ()
+                ),
                 COUNCIL_SUPPORTING_INPUT_RELATIVE_PATH,
             ),
         )
@@ -704,6 +728,11 @@ class CouncilAdapter:
             context.oracle_report_path,
             context.oracle_assessment_path,
             context.oracle_narrative_path,
+            *(
+                (context.oracle_modeldock_narrative_path,)
+                if context.oracle_modeldock_narrative_path is not None
+                else ()
+            ),
         ):
             path = context.absolute(relative)
             if (
@@ -1071,6 +1100,14 @@ def _run_native_council(request: CouncilTransportRequest) -> dict[str, object]:
         oracle_payload = _read_json(Path(request.oracle_report_path))
         assessment_payload = _read_json(Path(request.oracle_assessment_path))
         narrative_payload = _read_json(Path(request.oracle_narrative_path))
+        if request.oracle_modeldock_narrative_path is not None:
+            modeldock_narrative = _read_json(
+                Path(request.oracle_modeldock_narrative_path)
+            )
+            if modeldock_narrative.get("schema_version") != "blackpod.oracle_narrative.v1":
+                raise CouncilMalformedResultError(
+                    "ModelDock Oracle narrative uses an unsupported contract"
+                )
         oracle_report = senate_deliberation_module.load_oracle_report(
             request.oracle_report_path
         )

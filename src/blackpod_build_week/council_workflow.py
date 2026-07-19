@@ -31,10 +31,12 @@ from .contracts import (
     MissionOutcome,
     MissionRequest,
     MissionSnapshot,
+    ModelDockCallStatus,
     RunMode,
     StageError,
     StageStatus,
 )
+from .contracts.oracle_narrative import OracleNarrative
 from .contracts.mission_request import format_rfc3339, parse_rfc3339
 from .council_adapter import (
     COUNCIL_SUPPORTING_INPUT_SCHEMA_VERSION,
@@ -71,6 +73,9 @@ REQUIRED_ORACLE_INPUTS: Mapping[str, str] = {
     "oracle_report": "oracle/attempt-0001/oracle_report_live.json",
     "oracle_assessment": "oracle/attempt-0001/oracle_assessment_live.json",
     "oracle_narrative": "oracle/attempt-0001/oracle_narrative_live.json",
+}
+MODELDOCK_ORACLE_NARRATIVE_INPUT: Mapping[str, str] = {
+    "oracle_modeldock_narrative": "oracle/modeldock/oracle_narrative.json",
 }
 
 COUNCIL_NATIVE_OUTPUT_ARTIFACTS: Mapping[str, tuple[str, str, str]] = {
@@ -132,6 +137,7 @@ _ORACLE_NATIVE_CONTRACTS: Mapping[str, str] = {
     "oracle_report": "blackpod.contracts.OracleReport",
     "oracle_assessment": "blackpod.contracts.OracleAssessment",
     "oracle_narrative": "blackpod.contracts.OracleNarrative",
+    "oracle_modeldock_narrative": "blackpod.oracle_narrative.v1",
 }
 
 
@@ -250,7 +256,11 @@ def run_council(
             f"Council cannot run from status {council_status.value}"
         )
 
-    oracle_inputs = _validate_council_preconditions(loaded.request, loaded.snapshot)
+    oracle_inputs = _validate_council_preconditions(
+        loaded.request,
+        loaded.snapshot,
+        mission_root=loaded.paths.mission_root,
+    )
 
     try:
         executor: CouncilExecutor = adapter or CouncilAdapter(
@@ -277,7 +287,7 @@ def run_council(
         previous_snapshot_sha256=loaded.current_snapshot_sha256,
         observed_at=begin_observed_at,
         provenance=provenance,
-        existing_input_names=tuple(REQUIRED_ORACLE_INPUTS),
+        existing_input_names=tuple(oracle_inputs),
         input_artifacts=(supporting_artifact,),
     )
     running_digest = store.commit_snapshot(loaded.paths, running)
@@ -293,6 +303,11 @@ def run_council(
             oracle_report_path=oracle_inputs["oracle_report"].path,
             oracle_assessment_path=oracle_inputs["oracle_assessment"].path,
             oracle_narrative_path=oracle_inputs["oracle_narrative"].path,
+            oracle_modeldock_narrative_path=(
+                oracle_inputs.get("oracle_modeldock_narrative").path
+                if "oracle_modeldock_narrative" in oracle_inputs
+                else None
+            ),
             output_dir=COUNCIL_ATTEMPT_DIRECTORY,
         )
         execution_result = executor.execute(
@@ -305,6 +320,7 @@ def run_council(
             loaded.request,
             provenance,
             supporting_input=supporting_input,
+            oracle_inputs=oracle_inputs,
         )
     except Exception as exc:
         execution_result = _synthetic_failure(
@@ -344,7 +360,10 @@ def run_council(
             supporting_artifact=supporting_artifact,
             native_outputs=native_outputs,
             provenance_artifact=provenance_artifact,
-            oracle_revision=_oracle_revision(loaded.snapshot),
+            oracle_revisions=_oracle_input_revisions(
+                loaded.snapshot,
+                oracle_inputs,
+            ),
             council_revision=config.git_revision,
             observed_at=finish_observed_at,
         )
@@ -476,6 +495,8 @@ def _load_supporting_input(
 def _validate_council_preconditions(
     request: MissionRequest,
     snapshot: MissionSnapshot,
+    *,
+    mission_root: Path,
 ) -> dict[str, ArtifactReference]:
     if request.mission_id is None or request.mission_id != snapshot.mission_id:
         raise CouncilPreconditionError("mission correlation metadata is inconsistent")
@@ -497,19 +518,39 @@ def _validate_council_preconditions(
 
     artifacts = {artifact.name: artifact for artifact in snapshot.artifacts}
     oracle_output_names = set(snapshot.stages["oracle"].outputs)
+    required_inputs = _required_oracle_inputs(snapshot)
     selected: dict[str, ArtifactReference] = {}
-    for name, expected_path in REQUIRED_ORACLE_INPUTS.items():
+    for name, expected_path in required_inputs.items():
         artifact = artifacts.get(name)
+        expected_producer = "modeldock" if name == "oracle_modeldock_narrative" else "oracle"
         if (
             artifact is None
             or name not in oracle_output_names
             or artifact.path != expected_path
-            or artifact.producer != "oracle"
+            or artifact.producer != expected_producer
         ):
             raise CouncilPreconditionError(
                 f"required Oracle artifact is missing or noncanonical: {name}"
             )
         selected[name] = artifact
+    narrative_reference = selected.get("oracle_modeldock_narrative")
+    if narrative_reference is not None:
+        try:
+            narrative = OracleNarrative.from_file(
+                mission_root / narrative_reference.path
+            )
+        except (ContractValidationError, OSError) as exc:
+            raise CouncilPreconditionError(
+                "ModelDock Oracle narrative failed its canonical contract"
+            ) from exc
+        if (
+            narrative.mission_id != snapshot.mission_id
+            or narrative.request_id != snapshot.request_id
+            or narrative.symbol != request.symbol
+        ):
+            raise CouncilPreconditionError(
+                "ModelDock Oracle narrative correlation is inconsistent"
+            )
     if "battlestar" not in snapshot.components:
         raise CouncilPreconditionError("Oracle component provenance is missing")
     return selected
@@ -649,7 +690,7 @@ def _write_lineage_artifact(
     supporting_artifact: ArtifactReference,
     native_outputs: tuple[ArtifactReference, ...],
     provenance_artifact: ArtifactReference,
-    oracle_revision: str,
+    oracle_revisions: Mapping[str, str],
     council_revision: str,
     observed_at: str,
 ) -> ArtifactReference:
@@ -659,10 +700,10 @@ def _write_lineage_artifact(
         _lineage_entry(
             oracle_inputs[name],
             native_contract=_ORACLE_NATIVE_CONTRACTS[name],
-            component_revision=oracle_revision,
+            component_revision=oracle_revisions[name],
             request=request,
         )
-        for name in REQUIRED_ORACLE_INPUTS
+        for name in oracle_inputs
     ]
     input_entries.append(
         _lineage_entry(
@@ -693,8 +734,19 @@ def _write_lineage_artifact(
             request=request,
         )
     )
-    oracle_source_names = list(REQUIRED_ORACLE_INPUTS)
-    root_source_names = [*oracle_source_names, "council_supporting_input"]
+    native_oracle_source_names = [
+        name for name in oracle_inputs if name != "oracle_modeldock_narrative"
+    ]
+    carry_forward_context_names = [
+        name for name in oracle_inputs if name == "oracle_modeldock_narrative"
+    ]
+    root_source_names = [*native_oracle_source_names, "council_supporting_input"]
+    for entry in input_entries:
+        entry["usage"] = (
+            "VALIDATED_CARRY_FORWARD_CONTEXT"
+            if entry["name"] in carry_forward_context_names
+            else "NATIVE_COUNCIL_INPUT"
+        )
     dependency_names: dict[str, list[str]] = {
         "council_mandate_policy": ["council_supporting_input"],
         "council_candidate_evidence": [
@@ -766,6 +818,7 @@ def _write_lineage_artifact(
             "request_id": request.request_id,
             "run_mode": request.run_mode.value,
             "observed_at": observed_at,
+            "validated_carry_forward_context_names": carry_forward_context_names,
             "inputs": input_entries,
             "outputs": output_entries,
         }
@@ -809,6 +862,7 @@ def _validate_execution_correlation(
     provenance: CouncilComponentProvenance,
     *,
     supporting_input: CouncilSupportingInput,
+    oracle_inputs: Mapping[str, ArtifactReference],
 ) -> CouncilExecutionResult:
     if not isinstance(result, CouncilExecutionResult):
         raise ContractValidationError("Council adapter returned an unsupported result")
@@ -831,7 +885,7 @@ def _validate_execution_correlation(
         raise ContractValidationError("Council result contains duplicate artifact paths")
     if result.status is StageStatus.SUCCEEDED:
         expected_source_lineage = (
-            *(REQUIRED_ORACLE_INPUTS[name] for name in REQUIRED_ORACLE_INPUTS),
+            *(oracle_inputs[name].path for name in oracle_inputs),
             COUNCIL_SUPPORTING_INPUT_PATH,
         )
         if result.native_state is None:
@@ -930,6 +984,34 @@ def _oracle_revision(snapshot: MissionSnapshot) -> str:
     return revision
 
 
+def _required_oracle_inputs(snapshot: MissionSnapshot) -> dict[str, str]:
+    required = dict(REQUIRED_ORACLE_INPUTS)
+    calls = snapshot.stages["oracle"].modeldock_calls
+    if calls:
+        if len(calls) != 1 or calls[0].status is not ModelDockCallStatus.SUCCEEDED:
+            raise CouncilPreconditionError(
+                "Council requires a technically successful ModelDock narrative call"
+            )
+        required.update(MODELDOCK_ORACLE_NARRATIVE_INPUT)
+    return required
+
+
+def _oracle_input_revisions(
+    snapshot: MissionSnapshot,
+    oracle_inputs: Mapping[str, ArtifactReference],
+) -> dict[str, str]:
+    revisions = {name: _oracle_revision(snapshot) for name in oracle_inputs}
+    if "oracle_modeldock_narrative" in oracle_inputs:
+        call = snapshot.stages["oracle"].modeldock_calls[0]
+        model_identity = call.model_revision or call.model or call.provider
+        if model_identity is None:
+            raise CouncilPreconditionError(
+                "ModelDock narrative originating revision is missing"
+            )
+        revisions["oracle_modeldock_narrative"] = f"modeldock:{model_identity}"
+    return revisions
+
+
 def _validate_completed_invocation(
     snapshot: MissionSnapshot,
     *,
@@ -956,13 +1038,17 @@ def _validate_completed_invocation(
             )
     artifacts = {item.name: item for item in snapshot.artifacts}
     oracle_outputs = set(snapshot.stages["oracle"].outputs)
-    for artifact_name, expected_path in REQUIRED_ORACLE_INPUTS.items():
+    required_inputs = _required_oracle_inputs(snapshot)
+    for artifact_name, expected_path in required_inputs.items():
         artifact = artifacts.get(artifact_name)
+        expected_producer = (
+            "modeldock" if artifact_name == "oracle_modeldock_narrative" else "oracle"
+        )
         if (
             artifact is None
             or artifact_name not in oracle_outputs
             or artifact.path != expected_path
-            or artifact.producer != "oracle"
+            or artifact.producer != expected_producer
         ):
             raise CouncilStateConflictError(
                 "completed Council Oracle inputs are not canonical"
@@ -981,7 +1067,7 @@ def _validate_completed_invocation(
         raise CouncilStateConflictError(
             "Council supporting input differs from the completed invocation"
         )
-    expected_inputs = {*REQUIRED_ORACLE_INPUTS, "council_supporting_input"}
+    expected_inputs = {*required_inputs, "council_supporting_input"}
     if set(council.inputs) != expected_inputs:
         raise CouncilStateConflictError("completed Council inputs are not canonical")
     expected_outputs = {

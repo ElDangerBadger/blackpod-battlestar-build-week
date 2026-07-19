@@ -7,6 +7,9 @@ Council synthesis, and Council executive-summary interfaces. Phase 4 adds the
 current Battlestar Governor preparation, deliberation, readiness, and rendered
 decision flow. Phase 5 closes Stage 1 with an explicit operator approval gate
 and the current Navigator handoff, intake, and non-executing SHADOW plan.
+Stage 2, Phase 1 adds a strictly bounded ModelDock narrative-enrichment step
+after Oracle succeeds and before Council runs. ModelDock is a local LLM
+appliance in this path; it does not become an analytical or decision authority.
 
 Harbormaster owns:
 
@@ -17,7 +20,9 @@ Harbormaster owns:
   publication;
 - the narrow Build Week adapters that invoke the sibling Battlestar Oracle,
   Council evidence chain, Governor decision flow, operator gate, and Navigator
-  SHADOW workflow; and
+  SHADOW workflow;
+- the strict local ModelDock client and Oracle narrative-enrichment
+  contract; and
 - correlation, stage transitions, artifact lineage, and Battlestar provenance
   for one immutable attempt per implemented stage.
 
@@ -28,10 +33,15 @@ readiness, and decision rendering. Battlestar also owns the current operator
 action, Navigator handoff, intake, and SHADOW-plan contracts. The Build Week
 adapters do not reproduce
 calculations, introduce voting rules, add risk formulas, or add market-analysis
-policy. Stage 1 contains no broker execution, order submission, order
-cancellation, portfolio modification, ModelDock integration, or UI. This
-repository still provides no web service, database, queue, daemon, scheduler,
-or UI.
+policy. ModelDock may explain validated Oracle evidence, but Oracle remains
+authoritative for every measurement, market fact, diagnostic, readiness state,
+and typed analytical conclusion. ModelDock cannot approve a mission, render a
+Governor disposition, recommend or execute an order, or call Council,
+Governor, operator, Navigator, ModelDock-external providers, or broker APIs.
+Stage 1 contains no ModelDock integration. Stage 2 adds only this local,
+structured narrative seam. The repository contains no broker execution, order
+submission, order cancellation, portfolio modification, web service,
+database, queue, daemon, scheduler, or UI.
 
 ## Python and setup
 
@@ -741,6 +751,257 @@ mission-relative path, producer, SHA-256 digest, byte size, observed timestamp,
 and a schema or contract version when available. All paths are containment
 checked beneath the mission root.
 
+## Stage 2, Phase 1: ModelDock Oracle narrative enrichment
+
+ModelDock is the local LLM appliance for one bounded task: turning validated
+Oracle evidence into a concise, structured explanation. Oracle runs and
+materializes its typed analysis first. The `enrich-oracle` command then builds a
+versioned request from an explicit projection of those recorded artifacts,
+validates ModelDock's structured response, and attaches the narrative and call
+provenance to the Oracle stage. It never overwrites the original Oracle report
+or changes Oracle's native readiness state.
+
+The authority boundary is strict:
+
+- Oracle remains authoritative for measurements, market facts, diagnostics,
+  readiness evidence, warnings, and typed analytical conclusions.
+- ModelDock may distinguish observed facts from interpretation, explain
+  uncertainty, and summarize the already validated evidence.
+- ModelDock cannot fill in missing market facts, add unsupported numerical
+  claims, produce a Governor disposition, approve a mission, recommend an
+  order, or authorize execution.
+- The enrichment path does not call Council, Governor, operator, Navigator,
+  ModelDock-external providers, or any broker or order interface.
+
+Council continues to require the original Oracle fact artifacts. When a
+successful ModelDock call is recorded, Council additionally validates and
+lineages the narrative as an explicit Oracle input. Battlestar's current native
+Council synthesis policy interface has no separate narrative parameter, so the
+adapter does not invent one or reinterpret the narrative as a score, vote, or
+policy signal.
+
+### Configuration and separate startup
+
+Both of these environment variables are required, including for deterministic
+REPLAY, so configuration is always explicit:
+
+```bash
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+```
+
+`MODELDOCK_PROFILE` and `MODELDOCK_PROVIDER` are optional policy settings:
+
+```bash
+export MODELDOCK_PROFILE=default
+export MODELDOCK_PROVIDER=mlx
+```
+
+`MODELDOCK_MODEL` is optional for deterministic REPLAY, which performs no
+network call. It is deliberately required for LIVE and deep preflight:
+
+```bash
+export MODELDOCK_MODEL=gemma-4-e4b-it-4bit
+```
+
+The current ModelDock request schema has no provider-selection field. Pinning
+a registered model, then verifying through `/models` that it maps to `mlx`
+with text capability, is therefore the only supported pre-dispatch guarantee
+that Oracle evidence cannot be routed to another configured provider.
+
+`MODELDOCK_BASE_URL` must be a loopback HTTP(S) origin with no credentials,
+path, query, or fragment. Stage 2 LIVE accepts only the local `mlx` provider.
+The timeout must be a finite positive value no greater than 300 seconds. A
+configured model is a registry name, not an absolute filesystem path.
+
+Build Week does not start ModelDock. In a separate terminal and the separately
+managed, read-only sibling ModelDock checkout, use ModelDock's documented
+startup command:
+
+```bash
+python -m src.server
+```
+
+Starting, configuring, and provisioning the ModelDock runtime remain outside
+this repository. Do not point the Build Week client at a remote host.
+
+### Deep preflight
+
+Preflight checks `/health` and `/models`, then performs a real structured
+`POST /text/generate` smoke inference. A shallow health response alone never
+counts as inference readiness, and a mocked smoke response fails LIVE
+readiness.
+
+```bash
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+export MODELDOCK_MODEL=gemma-4-e4b-it-4bit
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster modeldock-preflight
+```
+
+The report includes the configured origin and timeout, health and endpoint
+state, selected provider/model, mocked state, trace ID, and latency. The smoke
+call must be non-mocked MLX inference for the command to report ready.
+
+### LIVE and REPLAY behavior
+
+LIVE first performs a metadata-only `GET /models` route check, then sends one
+strictly validated request to `POST /text/generate`. No Oracle facts are sent
+until the explicitly configured model is proven to be a registered MLX text
+model. The generation response requires
+HTTP `200`, envelope status `ok`, request type `text.generate`, provider `mlx`,
+`mocked: false`, matching mission/request correlation, and nonempty structured
+JSON content conforming to `blackpod.oracle_narrative.v1`. The client enforces
+the configured deadline and a one-MiB response limit. It rejects malformed or
+truncated JSON, unsupported schemas, missing fields, provider substitution,
+correlation mismatches, numeric facts absent from the Oracle input, and claims
+of approval or execution authority. There is no retry through another provider
+and no LIVE-to-REPLAY fallback.
+
+ModelDock may report either native text engine supported by its current MLX
+provider: `mlx-lm`, or `mlx-vlm` when a Gemma/multimodal model is deliberately
+routed through the VLM runtime for text generation. Engine acceptance does not
+relax the LIVE checks: the provider must still be `mlx`, the response must be
+non-mocked, and the real MLX completion and token metadata must validate.
+
+REPLAY uses the committed request/response pack and performs no network call.
+It exercises the same request construction, response-envelope parsing,
+narrative validation, correlation checks, hashing, provenance, artifact
+capture, and snapshot transitions as LIVE. It does not load a precomputed
+mission snapshot and never falls back to LIVE.
+
+ModelDock narrative is required under the Stage 2 strict policy. An unavailable
+service, timeout, non-`200` response, mocked LIVE output, malformed envelope,
+or invalid narrative is a technical failure. Build Week preserves every valid
+Oracle artifact, writes a new immutable failure snapshot with a sanitized
+ModelDock issue, marks the strict enrichment attempt failed, and exits nonzero.
+It never silently degrades to an unvalidated or missing narrative.
+
+### Deterministic replay verification
+
+Use a new artifact root and run exactly:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+export MODELDOCK_PROFILE=default
+export MODELDOCK_PROVIDER=mlx
+unset MODELDOCK_MODEL
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase1-modeldock-replay
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-oracle \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/stage2-phase1-modeldock-replay \
+  --replay-fixture fixtures/oracle_replay_quotes.v1.json
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster enrich-oracle \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/stage2-phase1-modeldock-replay \
+  --replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json
+```
+
+The replay pack contains the selected Oracle input, exact ModelDock request and
+response envelopes, expected narrative, expected provider/model/trace
+provenance identity, and expected snapshot changes. It is evidence for
+validation, not a final mission snapshot.
+A successful enrichment leaves Oracle `SUCCEEDED`, the mission in `COUNCIL`
+phase with outcome `INCOMPLETE`, and records the ModelDock call as `SUCCEEDED`.
+
+### Optional real local canary
+
+The canary is explicitly LIVE. Start ModelDock separately, run deep preflight,
+and use a new artifact root. This sequence also runs Battlestar's LIVE Oracle
+acquisition path, so its optional LIVE dependencies and market provider/network
+access must be available:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+export MODELDOCK_PROVIDER=mlx
+export MODELDOCK_MODEL=gemma-4-e4b-it-4bit
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster modeldock-preflight
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster \
+  --request examples/mission_request.live.json \
+  --artifacts-root artifacts/stage2-phase1-modeldock-live-canary
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-oracle \
+  --mission-id mission-live-064ef6b3f2d8a73dc4ec2b36 \
+  --artifacts-root artifacts/stage2-phase1-modeldock-live-canary
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster enrich-oracle \
+  --mission-id mission-live-064ef6b3f2d8a73dc4ec2b36 \
+  --artifacts-root artifacts/stage2-phase1-modeldock-live-canary
+```
+
+The final command prints the provider, model, trace ID, latency, narrative path,
+mission phase/outcome, and current snapshot path. It rejects mocked output and
+never calls a broker or external execution API.
+
+### Stage 2 artifacts and snapshots
+
+The enrichment output is contained beneath the existing Oracle directory:
+
+```text
+artifacts/stage2-phase1-modeldock-replay/
+└── missions/
+    └── mission-buildweek-replay-001/
+        ├── mission_snapshot.json
+        ├── snapshots/
+        │   ├── mission_snapshot-r0001.json
+        │   ├── mission_snapshot-r0002.json
+        │   ├── mission_snapshot-r0003.json
+        │   ├── mission_snapshot-r0004.json
+        │   └── mission_snapshot-r0005.json
+        └── oracle/
+            ├── attempt-0001/
+            │   └── ... original Oracle artifacts remain unchanged
+            └── modeldock/
+                ├── request.json
+                ├── response.json
+                ├── oracle_narrative.json
+                └── provenance.json
+```
+
+Every ModelDock artifact is immutable, containment-checked, hashed with
+SHA-256, sized, timestamped, correlated to the mission and request, and listed
+with its schema or contract version. The canonical snapshot stores only
+mission-relative paths. The response artifact is a safe validated projection:
+authorization headers, credentials, secrets, and absolute local model paths
+are never persisted. A model revision is recorded only when it can be derived
+without exposing a local path.
+
+### Security and privacy boundary
+
+`oracle/modeldock/request.json` contains the exact narrative instruction and
+the deliberately selected Oracle evidence and correlation identifiers sent to
+the local appliance. Treat the mission artifact root as sensitive mission data
+even though the request excludes arbitrary filesystem content, absolute paths,
+credentials, authorization headers, and secrets. The client accepts only a
+loopback origin, verifies the explicitly selected model's MLX route before
+sending LIVE evidence, and persists only a validated, path-sanitized response
+projection. `MODELDOCK_PROVIDER` is an acceptance policy for that verified
+route and response; it is not a provider selector in ModelDock's request
+schema.
+
+ModelDock output remains explanatory data. It cannot approve a mission, change
+Oracle facts or readiness, issue a Governor disposition, recommend an order,
+or authorize or execute any trade.
+
+When enrichment immediately follows Oracle, revision 4 records the enrichment
+attempt running and revision 5 records success or strict failure. Repeating an
+identical completed command validates the stored request, call provenance,
+artifacts, and snapshot state, then returns an explicit no-op without writing a
+new revision. An existing `RUNNING` or `FAILED` enrichment is an explicit
+one-attempt conflict. There is no force, overwrite, silent resume, alternate
+provider retry, or transport fallback.
+
+Run the complete test suite, which uses injected transports and does not
+require a running ModelDock service:
+
+```bash
+.venv/bin/python3.11 -m unittest discover -s tests -v
+```
+
 ## Known limitations
 
 - Oracle runs Battlestar's complete fixed 21-symbol example fleet. The mission
@@ -806,7 +1067,23 @@ checked beneath the mission root.
   was recorded; it does not provide an identity service.
 - Stage 1 `APPROVED` is scoped only to `NAVIGATOR_SHADOW_HANDOFF`. It never
   authorizes a trade and cannot be consumed as broker approval.
+- Stage 2 enrichment must run after Oracle and before Council. It does not
+  retrofit a completed Council, Governor, operator, or Navigator mission.
+- ModelDock's response can expose an absolute MLX `model_path`. Build Week does
+  not persist that field; it records a safe model identifier and derives a
+  revision only when the value can be represented without a local path.
+- Battlestar's current Council synthesis signature has no distinct narrative
+  argument. Build Week validates and lineages the narrative alongside the
+  original Oracle artifacts but does not alter the native policy interface.
+- ModelDock lifecycle and model provisioning remain external. The normal test
+  suite and deterministic replay need no running appliance; deep preflight and
+  the optional LIVE canary do.
+- Structural, correlation, numeric-source, authority-language, and bounded
+  vocabulary checks materially constrain narrative output, but no local
+  validator can prove every qualitative sentence is semantically entailed.
+  Oracle's typed artifacts therefore remain authoritative in every case.
 - Operator action, Navigator SHADOW planning, and their immutable audit
-  artifacts are included in Phase 5. ModelDock, UI, live broker execution,
-  order submission/cancellation, portfolio changes, web services, databases,
-  queues, daemons, and schedulers remain explicitly absent.
+  artifacts are included in Phase 5. Stage 2 adds only ModelDock narrative
+  enrichment. UI, live broker execution, order submission/cancellation,
+  portfolio changes, web services, databases, queues, daemons, and schedulers
+  remain explicitly absent.

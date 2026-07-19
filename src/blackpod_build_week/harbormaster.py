@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .battlestar_config import BattlestarConfigurationError
-from .contracts import ContractValidationError, MissionRequest, RunMode
+from .contracts import ContractValidationError, MissionRequest, RunMode, StageStatus
 from .contracts.mission_request import format_rfc3339
 from .council_workflow import (
     CouncilInvocationError,
@@ -37,6 +38,11 @@ from .mission_store import (
     PersistenceError,
     UnsafePathError,
 )
+from .modeldock_config import (
+    ModelDockConfigurationError,
+    load_modeldock_config,
+)
+from .modeldock_preflight import run_modeldock_preflight
 from .oracle_workflow import (
     OracleInvocationError,
     OracleRunSettings,
@@ -44,6 +50,15 @@ from .oracle_workflow import (
     OracleWorkflowError,
     OracleWorkflowResult,
     run_oracle,
+)
+from .oracle_enrichment_workflow import (
+    OracleEnrichmentInvocationError,
+    OracleEnrichmentPreconditionError,
+    OracleEnrichmentSettings,
+    OracleEnrichmentStateConflictError,
+    OracleEnrichmentWorkflowError,
+    OracleEnrichmentWorkflowResult,
+    run_oracle_enrichment,
 )
 from .operator_workflow import (
     OperatorInvocationError,
@@ -74,6 +89,7 @@ EXIT_COUNCIL_FAILURE = 6
 EXIT_GOVERNOR_FAILURE = 7
 EXIT_OPERATOR_FAILURE = 8
 EXIT_NAVIGATOR_FAILURE = 9
+EXIT_MODELDOCK_FAILURE = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +172,35 @@ def build_oracle_parser() -> argparse.ArgumentParser:
         help="reject a dirty Battlestar worktree during preflight",
     )
     return parser
+
+
+def build_oracle_enrichment_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster enrich-oracle",
+        description=(
+            "Enrich a completed Oracle stage with one strict local ModelDock narrative."
+        ),
+    )
+    parser.add_argument("--mission-id", required=True, help="completed Oracle mission ID")
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts"),
+        help="artifact root containing missions/ (default: artifacts)",
+    )
+    parser.add_argument(
+        "--replay-fixture",
+        type=Path,
+        help="deterministic ModelDock replay pack; required for REPLAY missions",
+    )
+    return parser
+
+
+def build_modeldock_preflight_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster modeldock-preflight",
+        description="Check ModelDock health and one real, non-mocked MLX inference.",
+    )
 
 
 def build_council_parser() -> argparse.ArgumentParser:
@@ -348,6 +393,36 @@ def _print_oracle_summary(result: OracleWorkflowResult) -> None:
     print(f"battlestar_dirty={str(provenance.dirty_worktree).lower()}")
 
 
+def _print_oracle_enrichment_summary(
+    result: OracleEnrichmentWorkflowResult,
+) -> None:
+    snapshot = result.snapshot
+    oracle = snapshot.stages["oracle"]
+    call = result.call
+    print(f"mission_id={snapshot.mission_id}")
+    print(f"oracle_status={oracle.status.value}")
+    print(
+        "modeldock_call_status="
+        + (call.status.value if call is not None else "null")
+    )
+    print(f"provider={call.provider if call and call.provider else 'null'}")
+    print(f"model={call.model if call and call.model else 'null'}")
+    print(f"trace_id={call.trace_id if call and call.trace_id else 'null'}")
+    print(f"latency_ms={call.latency_ms if call and call.latency_ms is not None else 'null'}")
+    print(
+        "narrative_artifact_path="
+        + (result.narrative_artifact_path or "null")
+    )
+    print(f"current_phase={snapshot.current_phase.value}")
+    print(f"mission_outcome={snapshot.mission_outcome.value}")
+    print(f"snapshot_path={result.paths.current_snapshot.resolve()}")
+    print(
+        "modeldock_artifact_directory="
+        f"{result.modeldock_artifact_directory.resolve()}"
+    )
+    print(f"modeldock_action={result.action.value}")
+
+
 def _print_council_summary(result: CouncilWorkflowResult) -> None:
     snapshot = result.snapshot
     council = snapshot.stages["council"]
@@ -485,6 +560,102 @@ def _run_oracle_command(argv: Sequence[str]) -> int:
             )
         return EXIT_ORACLE_FAILURE
     return EXIT_SUCCESS
+
+
+def _run_oracle_enrichment_command(argv: Sequence[str]) -> int:
+    args = build_oracle_enrichment_parser().parse_args(argv)
+    settings = OracleEnrichmentSettings(
+        mission_id=args.mission_id,
+        artifacts_root=args.artifacts_root,
+        replay_fixture=args.replay_fixture,
+    )
+    try:
+        result = run_oracle_enrichment(settings)
+    except (
+        ModelDockConfigurationError,
+        ContractValidationError,
+        IdentifierError,
+        OracleEnrichmentInvocationError,
+        UnsafePathError,
+    ) as exc:
+        print(f"harbormaster: invalid ModelDock invocation: {exc}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    except (
+        OracleEnrichmentPreconditionError,
+        OracleEnrichmentStateConflictError,
+    ) as exc:
+        print(f"harbormaster: ModelDock state conflict: {exc}", file=sys.stderr)
+        return EXIT_MODELDOCK_FAILURE
+    except (PersistenceError, MissionStoreError, OSError) as exc:
+        print(f"harbormaster: persistence failure: {exc}", file=sys.stderr)
+        return EXIT_PERSISTENCE_FAILURE
+    except OracleEnrichmentWorkflowError as exc:
+        print(f"harbormaster: ModelDock workflow failure: {exc}", file=sys.stderr)
+        return EXIT_MODELDOCK_FAILURE
+
+    _print_oracle_enrichment_summary(result)
+    call = result.call
+    if (
+        result.snapshot.stages["oracle"].status is not StageStatus.SUCCEEDED
+        or call is None
+        or call.status.value != "SUCCEEDED"
+    ):
+        if call is not None and call.error is not None:
+            print(
+                "harbormaster: ModelDock technical failure: "
+                f"{call.error.code}: {call.error.message}",
+                file=sys.stderr,
+            )
+        return EXIT_MODELDOCK_FAILURE
+    return EXIT_SUCCESS
+
+
+def _run_modeldock_preflight_command(argv: Sequence[str]) -> int:
+    build_modeldock_preflight_parser().parse_args(argv)
+    try:
+        config = load_modeldock_config()
+        report = run_modeldock_preflight(config)
+    except ModelDockConfigurationError as exc:
+        print(f"harbormaster: invalid ModelDock configuration: {exc}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    print(f"base_url={report.base_url}")
+    print(f"service_reachable={str(report.service_reachable).lower()}")
+    print(f"health_ready={str(report.health_ready).lower()}")
+    print(
+        "health_response="
+        + (
+            json.dumps(report.health_response, sort_keys=True, separators=(",", ":"))
+            if report.health_response is not None
+            else "null"
+        )
+    )
+    print(
+        f"models_endpoint_ready={str(report.models_endpoint_ready).lower()}"
+    )
+    print(
+        "selected_model_available="
+        + (
+            str(report.selected_model_available).lower()
+            if report.selected_model_available is not None
+            else "null"
+        )
+    )
+    print(f"text_generate_available={str(report.text_generate_endpoint_available).lower()}")
+    print(f"provider={report.provider or 'null'}")
+    print(f"model={report.model or 'null'}")
+    print(f"model_revision={report.model_revision or 'null'}")
+    print(f"trace_id={report.trace_id or 'null'}")
+    print(f"mocked={str(report.mocked).lower() if report.mocked is not None else 'null'}")
+    print(f"latency_ms={report.latency_ms if report.latency_ms is not None else 'null'}")
+    print(f"timeout_seconds={report.timeout_seconds}")
+    print(f"inference_ready={str(report.inference_ready).lower()}")
+    print(f"ready={str(report.ready).lower()}")
+    for issue in report.issues:
+        print(
+            f"modeldock_preflight_issue={issue['code']}:{issue['message']}",
+            file=sys.stderr,
+        )
+    return EXIT_SUCCESS if report.ready else EXIT_MODELDOCK_FAILURE
 
 
 def _run_council_command(argv: Sequence[str]) -> int:
@@ -662,6 +833,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == "run-oracle":
         return _run_oracle_command(arguments[1:])
+    if arguments and arguments[0] == "enrich-oracle":
+        return _run_oracle_enrichment_command(arguments[1:])
+    if arguments and arguments[0] == "modeldock-preflight":
+        return _run_modeldock_preflight_command(arguments[1:])
     if arguments and arguments[0] == "run-council":
         return _run_council_command(arguments[1:])
     if arguments and arguments[0] == "run-governor":
