@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import math
+import ipaddress
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..identifiers import IdentifierError, validate_identifier, validate_mission_id
 from .mission_request import (
@@ -83,6 +86,17 @@ class GovernorTransportKind(str, Enum):
     REPLAY_FIXTURE = "REPLAY_FIXTURE"
 
 
+class ModelDockTransportKind(str, Enum):
+    LIVE_HTTP = "LIVE_HTTP"
+    REPLAY_FIXTURE = "REPLAY_FIXTURE"
+
+
+class ModelDockCallStatus(str, Enum):
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
 class OperatorRoute(str, Enum):
     PENDING_APPROVAL = "PENDING_APPROVAL"
     PENDING_REVIEW = "PENDING_REVIEW"
@@ -134,6 +148,66 @@ NAVIGATOR_PROHIBITED_OPERATIONS = (
     "CANCEL_ORDER",
     "MODIFY_PORTFOLIO",
     "BROKER_CALL",
+)
+
+MODELDOCK_REQUEST_ARTIFACT_NAME = "oracle_modeldock_request"
+MODELDOCK_RESPONSE_ARTIFACT_NAME = "oracle_modeldock_response"
+MODELDOCK_NARRATIVE_ARTIFACT_NAME = "oracle_modeldock_narrative"
+MODELDOCK_PROVENANCE_ARTIFACT_NAME = "oracle_modeldock_provenance"
+
+MODELDOCK_REQUEST_ARTIFACT_PATH = "oracle/modeldock/request.json"
+MODELDOCK_RESPONSE_ARTIFACT_PATH = "oracle/modeldock/response.json"
+MODELDOCK_NARRATIVE_ARTIFACT_PATH = "oracle/modeldock/oracle_narrative.json"
+MODELDOCK_PROVENANCE_ARTIFACT_PATH = "oracle/modeldock/provenance.json"
+
+MODELDOCK_REQUEST_SCHEMA_VERSION = "modeldock.api.TextGenerateRequest"
+MODELDOCK_RESPONSE_SCHEMA_VERSION = "blackpod.modeldock_response.v1"
+MODELDOCK_NARRATIVE_SCHEMA_VERSION = "blackpod.oracle_narrative.v1"
+MODELDOCK_PROVENANCE_SCHEMA_VERSION = "blackpod.modeldock_provenance.v1"
+
+MODELDOCK_SUCCESS_ARTIFACT_NAMES = (
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_RESPONSE_ARTIFACT_NAME,
+    MODELDOCK_NARRATIVE_ARTIFACT_NAME,
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+)
+MODELDOCK_FAILURE_ARTIFACT_NAMES = (
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+)
+MODELDOCK_FAILURE_WITH_RESPONSE_ARTIFACT_NAMES = (
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_RESPONSE_ARTIFACT_NAME,
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+)
+
+_MODELDOCK_ARTIFACT_CONTRACTS = {
+    MODELDOCK_REQUEST_ARTIFACT_NAME: (
+        MODELDOCK_REQUEST_ARTIFACT_PATH,
+        "harbormaster",
+        MODELDOCK_REQUEST_SCHEMA_VERSION,
+    ),
+    MODELDOCK_RESPONSE_ARTIFACT_NAME: (
+        MODELDOCK_RESPONSE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_RESPONSE_SCHEMA_VERSION,
+    ),
+    MODELDOCK_NARRATIVE_ARTIFACT_NAME: (
+        MODELDOCK_NARRATIVE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_NARRATIVE_SCHEMA_VERSION,
+    ),
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME: (
+        MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+    ),
+}
+
+_SAFE_METADATA_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,255}$")
+_SAFE_MODEL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,255}$")
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?:api[_-]?key|token|secret|password)\s*[:=]", re.IGNORECASE
 )
 
 
@@ -202,6 +276,103 @@ def _artifact_names(value: object, field_name: str) -> tuple[str, ...]:
     return tuple(names)
 
 
+def _validate_sha256(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: bool = False,
+) -> str | None:
+    if value is None and allow_none:
+        return None
+    if not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value):
+        nullable = "null or " if allow_none else ""
+        raise ContractValidationError(
+            f"{field_name} must be {nullable}64 lowercase hex characters"
+        )
+    return value
+
+
+def _validate_http_endpoint(value: object, field_name: str) -> str:
+    endpoint = str(_validate_text(value, field_name, max_length=2048))
+    try:
+        parsed = urlsplit(endpoint)
+        parsed.port
+    except ValueError as exc:
+        raise ContractValidationError(
+            f"{field_name} must contain a valid loopback HTTP(S) endpoint"
+        ) from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.rstrip("/") != "/text/generate"
+    ):
+        raise ContractValidationError(
+            f"{field_name} must be an HTTP(S) /text/generate endpoint without credentials, query, or fragment"
+        )
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname != "localhost":
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError as exc:
+            raise ContractValidationError(
+                f"{field_name} must target a loopback host"
+            ) from exc
+        if not address.is_loopback:
+            raise ContractValidationError(
+                f"{field_name} must target a loopback host"
+            )
+    return endpoint
+
+
+def _validate_safe_modeldock_metadata(
+    value: object,
+    field_name: str,
+    *,
+    allow_none: bool = False,
+    allow_model_path: bool = False,
+) -> str | None:
+    text = _validate_text(
+        value,
+        field_name,
+        allow_none=allow_none,
+        max_length=256,
+    )
+    if text is None:
+        return None
+    pattern = _SAFE_MODEL_NAME_PATTERN if allow_model_path else _SAFE_METADATA_TOKEN_PATTERN
+    if not pattern.fullmatch(text):
+        raise ContractValidationError(
+            f"{field_name} contains path-like or unsupported metadata"
+        )
+    path = PurePosixPath(text)
+    if (
+        text.startswith(("/", "~"))
+        or "\\" in text
+        or ".." in path.parts
+        or any(part in {"", "."} for part in path.parts)
+        or "://" in text
+        or re.match(r"^[A-Za-z]:", text)
+    ):
+        raise ContractValidationError(
+            f"{field_name} may not contain an absolute or traversing path"
+        )
+    lowered = text.lower()
+    if (
+        lowered.startswith(("sk-", "sk_", "bearer"))
+        or "-----begin" in lowered
+        or _SECRET_ASSIGNMENT_PATTERN.search(text)
+    ):
+        raise ContractValidationError(
+            f"{field_name} may not contain credential-like material"
+        )
+    return text
+
+
 @dataclass(frozen=True, slots=True)
 class StageError:
     code: str
@@ -245,12 +416,267 @@ class StageError:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelDockCall:
+    """One immutable, correlated ModelDock narrative-enrichment attempt.
+
+    ``response_sha256`` and ``response_byte_size`` describe the raw HTTP wire
+    body. The canonical response artifact is a sanitized projection and has
+    its own independent :class:`ArtifactReference` digest and byte size.
+    """
+
+    call_id: str
+    status: ModelDockCallStatus
+    mission_id: str
+    request_id: str
+    run_mode: RunMode
+    endpoint: str
+    provider: str | None
+    model: str | None
+    model_revision: str | None
+    trace_id: str | None
+    mocked: bool | None
+    latency_ms: float | None
+    request_sha256: str
+    response_sha256: str | None
+    response_byte_size: int | None
+    started_at: str
+    observed_at: str
+    artifacts: tuple[str, ...]
+    error: StageError | None
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "ModelDockCall":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError("ModelDock call must be an object")
+        fields = {
+            "call_id",
+            "status",
+            "mission_id",
+            "request_id",
+            "run_mode",
+            "endpoint",
+            "provider",
+            "model",
+            "model_revision",
+            "trace_id",
+            "mocked",
+            "latency_ms",
+            "request_sha256",
+            "response_sha256",
+            "response_byte_size",
+            "started_at",
+            "observed_at",
+            "artifacts",
+            "error",
+        }
+        _require_exact_fields(value, fields, "ModelDock call")
+        try:
+            call_id = validate_identifier(value["call_id"], "ModelDock call_id")
+            mission_id = validate_mission_id(value["mission_id"])
+            request_id = validate_identifier(
+                value["request_id"], "ModelDock request_id"
+            )
+        except IdentifierError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        if mission_id == request_id:
+            raise ContractValidationError(
+                "ModelDock mission_id must be distinct from request_id"
+            )
+        status = _parse_enum(
+            ModelDockCallStatus, value["status"], "ModelDock call status"
+        )
+        run_mode = _parse_enum(RunMode, value["run_mode"], "ModelDock run_mode")
+        endpoint = _validate_http_endpoint(value["endpoint"], "ModelDock endpoint")
+        provider = _validate_safe_modeldock_metadata(
+            value["provider"], "ModelDock provider", allow_none=True
+        )
+        model = _validate_safe_modeldock_metadata(
+            value["model"],
+            "ModelDock model",
+            allow_none=True,
+            allow_model_path=True,
+        )
+        model_revision = _validate_safe_modeldock_metadata(
+            value["model_revision"],
+            "ModelDock model_revision",
+            allow_none=True,
+        )
+        try:
+            trace_id = (
+                None
+                if value["trace_id"] is None
+                else validate_identifier(value["trace_id"], "ModelDock trace_id")
+            )
+        except IdentifierError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        if trace_id is not None:
+            trace_id = str(
+                _validate_safe_modeldock_metadata(trace_id, "ModelDock trace_id")
+            )
+        mocked_value = value["mocked"]
+        if mocked_value is not None and type(mocked_value) is not bool:
+            raise ContractValidationError("ModelDock mocked must be null or a boolean")
+        latency_value = value["latency_ms"]
+        if latency_value is not None and (
+            isinstance(latency_value, bool)
+            or not isinstance(latency_value, (int, float))
+            or not math.isfinite(latency_value)
+            or latency_value < 0
+        ):
+            raise ContractValidationError(
+                "ModelDock latency_ms must be null or a nonnegative number"
+            )
+        latency_ms = None if latency_value is None else float(latency_value)
+        request_sha256 = str(
+            _validate_sha256(value["request_sha256"], "ModelDock request_sha256")
+        )
+        response_sha256 = _validate_sha256(
+            value["response_sha256"],
+            "ModelDock response_sha256",
+            allow_none=True,
+        )
+        response_size_value = value["response_byte_size"]
+        if response_size_value is not None and (
+            isinstance(response_size_value, bool)
+            or not isinstance(response_size_value, int)
+            or response_size_value < 0
+        ):
+            raise ContractValidationError(
+                "ModelDock response_byte_size must be null or a nonnegative integer"
+            )
+        if (response_sha256 is None) != (response_size_value is None):
+            raise ContractValidationError(
+                "ModelDock response hash and byte size must appear together"
+            )
+        started_at = normalize_rfc3339(value["started_at"], "ModelDock started_at")
+        observed_at = normalize_rfc3339(value["observed_at"], "ModelDock observed_at")
+        if parse_rfc3339(observed_at, "ModelDock observed_at") < parse_rfc3339(
+            started_at, "ModelDock started_at"
+        ):
+            raise ContractValidationError(
+                "ModelDock observed_at may not precede started_at"
+            )
+        artifacts = _artifact_names(value["artifacts"], "ModelDock artifacts")
+        if not artifacts:
+            raise ContractValidationError(
+                "ModelDock call requires at least its immutable request artifact"
+            )
+        error_value = value["error"]
+        error = None if error_value is None else StageError.from_mapping(error_value)
+
+        response_identity = (
+            provider,
+            model,
+            model_revision,
+            trace_id,
+            mocked_value,
+            latency_ms,
+            response_sha256,
+            response_size_value,
+        )
+        if status is ModelDockCallStatus.RUNNING:
+            if any(item is not None for item in response_identity) or error is not None:
+                raise ContractValidationError(
+                    "RUNNING ModelDock call may not contain response metadata or an error"
+                )
+            if artifacts != (MODELDOCK_REQUEST_ARTIFACT_NAME,):
+                raise ContractValidationError(
+                    "RUNNING ModelDock call must reference only the canonical request artifact"
+                )
+        elif status is ModelDockCallStatus.SUCCEEDED:
+            if (
+                provider is None
+                or model is None
+                or trace_id is None
+                or mocked_value is None
+                or latency_ms is None
+                or response_sha256 is None
+                or response_size_value is None
+                or response_size_value == 0
+                or error is not None
+            ):
+                raise ContractValidationError(
+                    "SUCCEEDED ModelDock call requires provider, model, trace, mocked state, latency, and nonempty response metadata"
+                )
+            if run_mode is RunMode.LIVE and mocked_value:
+                raise ContractValidationError(
+                    "SUCCEEDED LIVE ModelDock call may not contain mocked output"
+                )
+            if artifacts != MODELDOCK_SUCCESS_ARTIFACT_NAMES:
+                raise ContractValidationError(
+                    "SUCCEEDED ModelDock call requires the exact canonical artifact set"
+                )
+        else:
+            if error is None:
+                raise ContractValidationError(
+                    "FAILED ModelDock call requires a structured error"
+                )
+            if error.observed_at != observed_at:
+                raise ContractValidationError(
+                    "ModelDock failure timestamp must match call observed_at"
+                )
+            if artifacts not in {
+                MODELDOCK_FAILURE_ARTIFACT_NAMES,
+                MODELDOCK_FAILURE_WITH_RESPONSE_ARTIFACT_NAMES,
+            }:
+                raise ContractValidationError(
+                    "FAILED ModelDock call requires request and provenance, permits one safe response, and forbids a narrative"
+                )
+
+        return cls(
+            call_id=call_id,
+            status=status,
+            mission_id=mission_id,
+            request_id=request_id,
+            run_mode=run_mode,
+            endpoint=endpoint,
+            provider=provider,
+            model=model,
+            model_revision=model_revision,
+            trace_id=trace_id,
+            mocked=mocked_value,
+            latency_ms=latency_ms,
+            request_sha256=request_sha256,
+            response_sha256=response_sha256,
+            response_byte_size=response_size_value,
+            started_at=started_at,
+            observed_at=observed_at,
+            artifacts=artifacts,
+            error=error,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "call_id": self.call_id,
+            "status": self.status.value,
+            "mission_id": self.mission_id,
+            "request_id": self.request_id,
+            "run_mode": self.run_mode.value,
+            "endpoint": self.endpoint,
+            "provider": self.provider,
+            "model": self.model,
+            "model_revision": self.model_revision,
+            "trace_id": self.trace_id,
+            "mocked": self.mocked,
+            "latency_ms": self.latency_ms,
+            "request_sha256": self.request_sha256,
+            "response_sha256": self.response_sha256,
+            "response_byte_size": self.response_byte_size,
+            "started_at": self.started_at,
+            "observed_at": self.observed_at,
+            "artifacts": list(self.artifacts),
+            "error": None if self.error is None else self.error.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class StageSnapshot:
     status: StageStatus
     native_state: str | None
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
     error: StageError | None = None
+    modeldock_calls: tuple[ModelDockCall, ...] = ()
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any], stage_name: str) -> "StageSnapshot":
@@ -258,19 +684,38 @@ class StageSnapshot:
             raise ContractValidationError(f"stage {stage_name} must be an object")
         fields = set(value)
         legacy_fields = {"status", "native_state"}
-        current_fields = legacy_fields | {"inputs", "outputs", "error"}
+        stage1_fields = legacy_fields | {"inputs", "outputs", "error"}
+        current_fields = stage1_fields | {"modeldock_calls"}
         if fields == legacy_fields:
             inputs: tuple[str, ...] = ()
             outputs: tuple[str, ...] = ()
             error = None
-        elif fields == current_fields:
+            modeldock_calls: tuple[ModelDockCall, ...] = ()
+        elif fields == stage1_fields or fields == current_fields:
             inputs = _artifact_names(value["inputs"], f"{stage_name}.inputs")
             outputs = _artifact_names(value["outputs"], f"{stage_name}.outputs")
             error_value = value["error"]
             error = None if error_value is None else StageError.from_mapping(error_value)
+            calls_value = value.get("modeldock_calls", [])
+            if not isinstance(calls_value, list):
+                raise ContractValidationError(
+                    f"{stage_name}.modeldock_calls must be an array"
+                )
+            modeldock_calls = tuple(
+                ModelDockCall.from_mapping(item) for item in calls_value
+            )
         else:
             _require_exact_fields(value, current_fields, f"stage {stage_name}")
             raise AssertionError("unreachable")
+
+        if stage_name != "oracle" and modeldock_calls:
+            raise ContractValidationError(
+                "ModelDock calls may be recorded only inside the Oracle stage"
+            )
+        if len(modeldock_calls) > 1:
+            raise ContractValidationError(
+                "Oracle supports at most one ModelDock narrative-enrichment call"
+            )
 
         status = _parse_enum(StageStatus, value["status"], f"{stage_name}.status")
         native_state = _validate_text(
@@ -280,7 +725,11 @@ class StageSnapshot:
             max_length=128,
         )
         if status is StageStatus.NOT_STARTED and (
-            native_state is not None or inputs or outputs or error is not None
+            native_state is not None
+            or inputs
+            or outputs
+            or error is not None
+            or modeldock_calls
         ):
             raise ContractValidationError(
                 f"{stage_name} NOT_STARTED may not contain native state, I/O, or an error"
@@ -297,6 +746,7 @@ class StageSnapshot:
             inputs=inputs,
             outputs=outputs,
             error=error,
+            modeldock_calls=modeldock_calls,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -306,6 +756,7 @@ class StageSnapshot:
             "inputs": list(self.inputs),
             "outputs": list(self.outputs),
             "error": None if self.error is None else self.error.to_dict(),
+            "modeldock_calls": [call.to_dict() for call in self.modeldock_calls],
         }
 
 
@@ -802,6 +1253,27 @@ class ArtifactReference:
         }
 
 
+def _validate_modeldock_artifact_contract(
+    artifact: ArtifactReference,
+    *,
+    expected_name: str,
+) -> None:
+    expected_path, expected_producer, expected_schema = (
+        _MODELDOCK_ARTIFACT_CONTRACTS[expected_name]
+    )
+    if (
+        artifact.name != expected_name
+        or artifact.path != expected_path
+        or artifact.producer != expected_producer
+        or artifact.schema_version != expected_schema
+        or artifact.byte_size is None
+        or artifact.observed_at is None
+    ):
+        raise ContractValidationError(
+            f"{expected_name} does not match its canonical path, producer, schema, and complete artifact metadata"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ComponentProvenance:
     git_revision: str
@@ -892,6 +1364,151 @@ class ComponentProvenance:
             "transport": self.transport.value,
             "replay_fixture_id": self.replay_fixture_id,
             "replay_fixture_sha256": self.replay_fixture_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ModelDockComponentProvenance:
+    """Immutable configuration provenance for Oracle narrative enrichment."""
+
+    endpoint: str
+    profile: str | None
+    expected_provider: str
+    requested_model: str | None
+    timeout_seconds: float
+    max_response_bytes: int
+    run_mode: RunMode
+    transport: ModelDockTransportKind
+    replay_fixture_id: str | None
+    replay_fixture_sha256: str | None
+    failure_policy: str
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any]
+    ) -> "ModelDockComponentProvenance":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError(
+                "ModelDock component provenance must be an object"
+            )
+        fields = {
+            "endpoint",
+            "profile",
+            "expected_provider",
+            "requested_model",
+            "timeout_seconds",
+            "max_response_bytes",
+            "run_mode",
+            "transport",
+            "replay_fixture_id",
+            "replay_fixture_sha256",
+            "failure_policy",
+        }
+        _require_exact_fields(value, fields, "ModelDock component provenance")
+        endpoint = _validate_http_endpoint(value["endpoint"], "ModelDock endpoint")
+        profile = _validate_safe_modeldock_metadata(
+            value["profile"], "ModelDock profile", allow_none=True
+        )
+        expected_provider = str(
+            _validate_safe_modeldock_metadata(
+                value["expected_provider"],
+                "ModelDock expected_provider",
+            )
+        )
+        requested_model = _validate_safe_modeldock_metadata(
+            value["requested_model"],
+            "ModelDock requested_model",
+            allow_none=True,
+            allow_model_path=True,
+        )
+        timeout_value = value["timeout_seconds"]
+        if (
+            isinstance(timeout_value, bool)
+            or not isinstance(timeout_value, (int, float))
+            or not math.isfinite(timeout_value)
+            or timeout_value <= 0
+        ):
+            raise ContractValidationError(
+                "ModelDock timeout_seconds must be a positive number"
+            )
+        max_response_bytes = value["max_response_bytes"]
+        if (
+            isinstance(max_response_bytes, bool)
+            or not isinstance(max_response_bytes, int)
+            or max_response_bytes <= 0
+        ):
+            raise ContractValidationError(
+                "ModelDock max_response_bytes must be a positive integer"
+            )
+        run_mode = _parse_enum(RunMode, value["run_mode"], "ModelDock run_mode")
+        transport = _parse_enum(
+            ModelDockTransportKind,
+            value["transport"],
+            "ModelDock transport",
+        )
+        try:
+            fixture_id = (
+                None
+                if value["replay_fixture_id"] is None
+                else validate_identifier(
+                    value["replay_fixture_id"], "ModelDock replay_fixture_id"
+                )
+            )
+        except IdentifierError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        fixture_sha = _validate_sha256(
+            value["replay_fixture_sha256"],
+            "ModelDock replay_fixture_sha256",
+            allow_none=True,
+        )
+        if value["failure_policy"] != "STRICT_REQUIRED":
+            raise ContractValidationError(
+                "ModelDock failure_policy must be STRICT_REQUIRED"
+            )
+        if transport is ModelDockTransportKind.REPLAY_FIXTURE:
+            if run_mode is not RunMode.REPLAY or fixture_id is None or fixture_sha is None:
+                raise ContractValidationError(
+                    "ModelDock REPLAY_FIXTURE provenance requires REPLAY mode and fixture identity"
+                )
+        elif (
+            run_mode is not RunMode.LIVE
+            or fixture_id is not None
+            or fixture_sha is not None
+        ):
+            raise ContractValidationError(
+                "ModelDock LIVE_HTTP provenance requires LIVE mode and no replay fixture"
+            )
+        if run_mode is RunMode.LIVE and expected_provider != "mlx":
+            raise ContractValidationError(
+                "ModelDock LIVE provenance requires expected_provider mlx"
+            )
+        return cls(
+            endpoint=endpoint,
+            profile=profile,
+            expected_provider=expected_provider,
+            requested_model=requested_model,
+            timeout_seconds=float(timeout_value),
+            max_response_bytes=max_response_bytes,
+            run_mode=run_mode,
+            transport=transport,
+            replay_fixture_id=fixture_id,
+            replay_fixture_sha256=fixture_sha,
+            failure_policy="STRICT_REQUIRED",
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "endpoint": self.endpoint,
+            "profile": self.profile,
+            "expected_provider": self.expected_provider,
+            "requested_model": self.requested_model,
+            "timeout_seconds": self.timeout_seconds,
+            "max_response_bytes": self.max_response_bytes,
+            "run_mode": self.run_mode.value,
+            "transport": self.transport.value,
+            "replay_fixture_id": self.replay_fixture_id,
+            "replay_fixture_sha256": self.replay_fixture_sha256,
+            "failure_policy": self.failure_policy,
         }
 
 
@@ -1375,6 +1992,165 @@ def _validate_operator_route(
         )
 
 
+def _validate_modeldock_enrichment(
+    *,
+    mission_id: str,
+    request_id: str,
+    run_mode: RunMode,
+    started_at: str,
+    observed_at: str,
+    stages: Mapping[str, StageSnapshot],
+    artifacts: tuple[ArtifactReference, ...],
+    components: Mapping[
+        str,
+        ComponentProvenance
+        | CouncilComponentProvenance
+        | GovernorComponentProvenance
+        | ModelDockComponentProvenance,
+    ],
+    current_phase: CurrentPhase,
+    mission_outcome: MissionOutcome,
+    terminal: bool,
+) -> None:
+    call_values = tuple(
+        (stage_name, call)
+        for stage_name, stage in stages.items()
+        for call in stage.modeldock_calls
+    )
+    component = components.get("modeldock")
+    if not call_values:
+        if component is not None:
+            raise ContractValidationError(
+                "ModelDock component provenance requires an Oracle ModelDock call"
+            )
+        return
+    if len(call_values) != 1 or call_values[0][0] != "oracle":
+        raise ContractValidationError(
+            "exactly one ModelDock call may be recorded inside Oracle"
+        )
+    if not isinstance(component, ModelDockComponentProvenance):
+        raise ContractValidationError(
+            "Oracle ModelDock call requires ModelDock component provenance"
+        )
+    if "battlestar" not in components:
+        raise ContractValidationError(
+            "ModelDock provenance requires Battlestar Oracle provenance"
+        )
+
+    call = call_values[0][1]
+    oracle = stages["oracle"]
+    if (
+        call.mission_id != mission_id
+        or call.request_id != request_id
+        or call.run_mode is not run_mode
+    ):
+        raise ContractValidationError(
+            "ModelDock call correlation must match the mission snapshot"
+        )
+    if component.run_mode is not run_mode:
+        raise ContractValidationError(
+            "ModelDock component run_mode must match mission run_mode"
+        )
+    if component.endpoint != call.endpoint:
+        raise ContractValidationError(
+            "ModelDock call endpoint must match component provenance"
+        )
+    if parse_rfc3339(call.started_at, "ModelDock started_at") < parse_rfc3339(
+        started_at, "mission started_at"
+    ) or parse_rfc3339(call.observed_at, "ModelDock observed_at") > parse_rfc3339(
+        observed_at, "snapshot observed_at"
+    ):
+        raise ContractValidationError(
+            "ModelDock call timestamps must remain inside the mission timeline"
+        )
+
+    artifacts_by_name = {artifact.name: artifact for artifact in artifacts}
+    unknown_artifacts = set(call.artifacts) - set(artifacts_by_name)
+    if unknown_artifacts:
+        raise ContractValidationError(
+            "ModelDock call references unknown artifacts: "
+            + ", ".join(sorted(unknown_artifacts))
+        )
+    call_artifacts = tuple(artifacts_by_name[name] for name in call.artifacts)
+    for artifact in call_artifacts:
+        _validate_modeldock_artifact_contract(
+            artifact,
+            expected_name=artifact.name,
+        )
+    request_artifact = artifacts_by_name[MODELDOCK_REQUEST_ARTIFACT_NAME]
+    if request_artifact.sha256 != call.request_sha256:
+        raise ContractValidationError(
+            "ModelDock request hash does not match the canonical exact-wire request artifact"
+        )
+    if (
+        call.status is ModelDockCallStatus.SUCCEEDED
+        and call.response_byte_size is not None
+        and call.response_byte_size > component.max_response_bytes
+    ):
+        raise ContractValidationError(
+            "ModelDock response exceeds the configured maximum response size"
+        )
+
+    downstream_not_started = all(
+        stages[name].status is StageStatus.NOT_STARTED
+        for name in ("council", "governor", "navigator")
+    )
+    if call.status is ModelDockCallStatus.RUNNING:
+        if (
+            oracle.status is not StageStatus.RUNNING
+            or oracle.error is not None
+            or current_phase is not CurrentPhase.ORACLE
+            or mission_outcome is not MissionOutcome.INCOMPLETE
+            or terminal
+            or not downstream_not_started
+        ):
+            raise ContractValidationError(
+                "RUNNING ModelDock enrichment conflicts with Oracle mission state"
+            )
+        return
+
+    if call.status is ModelDockCallStatus.FAILED:
+        if call.error is None:
+            raise AssertionError("validated failed ModelDock call lacks an error")
+        if (
+            oracle.status is not StageStatus.FAILED
+            or oracle.error != call.error
+            or current_phase is not CurrentPhase.ORACLE
+            or mission_outcome is not MissionOutcome.FAILED
+            or terminal is call.error.resumable
+            or not downstream_not_started
+        ):
+            raise ContractValidationError(
+                "FAILED ModelDock enrichment conflicts with Oracle mission state"
+            )
+        return
+
+    if oracle.status is not StageStatus.SUCCEEDED or oracle.error is not None:
+        raise ContractValidationError(
+            "SUCCEEDED ModelDock enrichment requires a successful Oracle stage"
+        )
+    if call.provider != component.expected_provider:
+        raise ContractValidationError(
+            "ModelDock provider does not match component provenance"
+        )
+    if component.requested_model is not None and call.model != component.requested_model:
+        raise ContractValidationError(
+            "ModelDock model does not match the requested model provenance"
+        )
+    if MODELDOCK_NARRATIVE_ARTIFACT_NAME not in oracle.outputs:
+        raise ContractValidationError(
+            "validated ModelDock narrative must be listed as an Oracle output"
+        )
+    if stages["council"].status is StageStatus.NOT_STARTED and (
+        current_phase is not CurrentPhase.COUNCIL
+        or mission_outcome is not MissionOutcome.INCOMPLETE
+        or terminal
+    ):
+        raise ContractValidationError(
+            "completed ModelDock enrichment must return the mission to Council"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class MissionSnapshot:
     schema_version: str
@@ -1395,7 +2171,8 @@ class MissionSnapshot:
         str,
         ComponentProvenance
         | CouncilComponentProvenance
-        | GovernorComponentProvenance,
+        | GovernorComponentProvenance
+        | ModelDockComponentProvenance,
     ]
     operator: OperatorState
     navigator: NavigatorState
@@ -1500,17 +2277,19 @@ class MissionSnapshot:
             "battlestar",
             "battlestar_council",
             "battlestar_governor",
+            "modeldock",
         }
         if set(components_value) - supported_components:
             raise ContractValidationError(
                 "components supports battlestar, battlestar_council, and "
-                "battlestar_governor only"
+                "battlestar_governor, and modeldock only"
             )
         components: dict[
             str,
             ComponentProvenance
             | CouncilComponentProvenance
-            | GovernorComponentProvenance,
+            | GovernorComponentProvenance
+            | ModelDockComponentProvenance,
         ] = {}
         if "battlestar" in components_value:
             components["battlestar"] = ComponentProvenance.from_mapping(
@@ -1538,6 +2317,14 @@ class MissionSnapshot:
                 GovernorComponentProvenance.from_mapping(
                     components_value["battlestar_governor"]
                 )
+            )
+        if "modeldock" in components_value:
+            if "battlestar" not in components_value:
+                raise ContractValidationError(
+                    "ModelDock provenance requires Battlestar Oracle provenance"
+                )
+            components["modeldock"] = ModelDockComponentProvenance.from_mapping(
+                components_value["modeldock"]
             )
 
         run_mode = _parse_enum(RunMode, value["run_mode"], "run_mode")
@@ -1571,6 +2358,19 @@ class MissionSnapshot:
                 approval_scope_value,
                 "approval_scope",
             )
+        )
+        _validate_modeldock_enrichment(
+            mission_id=mission_id,
+            request_id=request_id,
+            run_mode=run_mode,
+            started_at=started_at,
+            observed_at=observed_at,
+            stages=stages,
+            artifacts=artifacts,
+            components=components,
+            current_phase=current_phase,
+            mission_outcome=mission_outcome,
+            terminal=terminal,
         )
         _validate_operator_route(
             operator,

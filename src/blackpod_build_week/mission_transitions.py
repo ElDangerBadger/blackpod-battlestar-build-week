@@ -6,6 +6,21 @@ from collections.abc import Iterable
 from typing import Any
 
 from .contracts import (
+    MODELDOCK_FAILURE_ARTIFACT_NAMES,
+    MODELDOCK_FAILURE_WITH_RESPONSE_ARTIFACT_NAMES,
+    MODELDOCK_NARRATIVE_ARTIFACT_NAME,
+    MODELDOCK_NARRATIVE_ARTIFACT_PATH,
+    MODELDOCK_NARRATIVE_SCHEMA_VERSION,
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME,
+    MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+    MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+    MODELDOCK_REQUEST_ARTIFACT_NAME,
+    MODELDOCK_REQUEST_ARTIFACT_PATH,
+    MODELDOCK_REQUEST_SCHEMA_VERSION,
+    MODELDOCK_RESPONSE_ARTIFACT_NAME,
+    MODELDOCK_RESPONSE_ARTIFACT_PATH,
+    MODELDOCK_RESPONSE_SCHEMA_VERSION,
+    MODELDOCK_SUCCESS_ARTIFACT_NAMES,
     NAVIGATOR_ALLOWED_OPERATIONS,
     NAVIGATOR_PROHIBITED_OPERATIONS,
     ApprovalScope,
@@ -17,6 +32,9 @@ from .contracts import (
     GovernorComponentProvenance,
     MissionOutcome,
     MissionSnapshot,
+    ModelDockCall,
+    ModelDockCallStatus,
+    ModelDockComponentProvenance,
     NavigatorMode,
     NavigatorPlanStatus,
     NavigatorState,
@@ -265,6 +283,340 @@ def fail_oracle(
         "inputs": list(snapshot.stages["oracle"].inputs),
         "outputs": list(output_names),
         "error": error.to_dict(),
+    }
+    value["current_phase"] = CurrentPhase.ORACLE.value
+    value["mission_outcome"] = MissionOutcome.FAILED.value
+    value["terminal"] = not error.resumable
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_oracle_enrichment_start(snapshot: MissionSnapshot) -> None:
+    if snapshot.terminal:
+        raise MissionTransitionError(
+            "a terminal mission cannot start Oracle narrative enrichment"
+        )
+    if snapshot.current_phase is not CurrentPhase.COUNCIL:
+        raise MissionTransitionError(
+            "Oracle narrative enrichment requires the COUNCIL phase"
+        )
+    if snapshot.mission_outcome is not MissionOutcome.INCOMPLETE:
+        raise MissionTransitionError(
+            "Oracle narrative enrichment requires an INCOMPLETE mission"
+        )
+    if snapshot.stages["harbormaster"].status is not StageStatus.SUCCEEDED:
+        raise MissionTransitionError("Harbormaster must have succeeded")
+    oracle = snapshot.stages["oracle"]
+    if oracle.status is not StageStatus.SUCCEEDED:
+        raise MissionTransitionError(
+            "Oracle structured analysis must succeed before narrative enrichment"
+        )
+    if oracle.error is not None:
+        raise MissionTransitionError("successful Oracle state contains an error")
+    if oracle.modeldock_calls or "modeldock" in snapshot.components:
+        raise MissionTransitionError("ModelDock enrichment is already recorded")
+    if "battlestar" not in snapshot.components:
+        raise MissionTransitionError("Battlestar Oracle provenance is missing")
+    for stage_name in ("council", "governor", "navigator"):
+        if snapshot.stages[stage_name].status is not StageStatus.NOT_STARTED:
+            raise MissionTransitionError(
+                f"{stage_name} must be NOT_STARTED before Oracle enrichment"
+            )
+
+
+_MODELDOCK_TRANSITION_ARTIFACT_CONTRACTS = {
+    MODELDOCK_REQUEST_ARTIFACT_NAME: (
+        MODELDOCK_REQUEST_ARTIFACT_PATH,
+        "harbormaster",
+        MODELDOCK_REQUEST_SCHEMA_VERSION,
+    ),
+    MODELDOCK_RESPONSE_ARTIFACT_NAME: (
+        MODELDOCK_RESPONSE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_RESPONSE_SCHEMA_VERSION,
+    ),
+    MODELDOCK_NARRATIVE_ARTIFACT_NAME: (
+        MODELDOCK_NARRATIVE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_NARRATIVE_SCHEMA_VERSION,
+    ),
+    MODELDOCK_PROVENANCE_ARTIFACT_NAME: (
+        MODELDOCK_PROVENANCE_ARTIFACT_PATH,
+        "modeldock",
+        MODELDOCK_PROVENANCE_SCHEMA_VERSION,
+    ),
+}
+
+
+def _require_canonical_modeldock_artifact(
+    artifact: ArtifactReference,
+    *,
+    expected_name: str,
+) -> None:
+    expected_path, expected_producer, expected_schema = (
+        _MODELDOCK_TRANSITION_ARTIFACT_CONTRACTS[expected_name]
+    )
+    if (
+        artifact.name != expected_name
+        or artifact.path != expected_path
+        or artifact.producer != expected_producer
+        or artifact.schema_version != expected_schema
+        or artifact.byte_size is None
+        or artifact.observed_at is None
+    ):
+        raise MissionTransitionError(
+            f"{expected_name} does not match its canonical artifact contract"
+        )
+
+
+def _validate_begin_modeldock_call(
+    snapshot: MissionSnapshot,
+    *,
+    observed_at: str,
+    provenance: ModelDockComponentProvenance,
+    request_artifact: ArtifactReference,
+    call: ModelDockCall,
+) -> None:
+    _require_canonical_modeldock_artifact(
+        request_artifact,
+        expected_name=MODELDOCK_REQUEST_ARTIFACT_NAME,
+    )
+    if provenance.run_mode is not snapshot.run_mode:
+        raise MissionTransitionError("ModelDock run mode must match the mission")
+    if call.status is not ModelDockCallStatus.RUNNING:
+        raise MissionTransitionError("ModelDock call must begin in RUNNING status")
+    if (
+        call.mission_id != snapshot.mission_id
+        or call.request_id != snapshot.request_id
+        or call.run_mode is not snapshot.run_mode
+    ):
+        raise MissionTransitionError("ModelDock call correlation must match the mission")
+    if call.endpoint != provenance.endpoint:
+        raise MissionTransitionError(
+            "ModelDock call endpoint must match component provenance"
+        )
+    if call.observed_at != observed_at:
+        raise MissionTransitionError(
+            "ModelDock running call timestamp must match the snapshot"
+        )
+    if call.artifacts != (MODELDOCK_REQUEST_ARTIFACT_NAME,):
+        raise MissionTransitionError(
+            "RUNNING ModelDock call must reference exactly its request artifact"
+        )
+    if call.request_sha256 != request_artifact.sha256:
+        raise MissionTransitionError(
+            "ModelDock request hash must match the request artifact"
+        )
+
+
+def begin_oracle_enrichment(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    provenance: ModelDockComponentProvenance,
+    request_artifact: ArtifactReference,
+    call: ModelDockCall,
+) -> MissionSnapshot:
+    """Return Oracle to RUNNING while ModelDock enriches validated facts."""
+
+    _require_oracle_enrichment_start(snapshot)
+    _validate_begin_modeldock_call(
+        snapshot,
+        observed_at=observed_at,
+        provenance=provenance,
+        request_artifact=request_artifact,
+        call=call,
+    )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    _append_artifacts(value, (request_artifact,))
+    oracle = snapshot.stages["oracle"]
+    value["stages"]["oracle"] = {
+        "status": StageStatus.RUNNING.value,
+        "native_state": oracle.native_state,
+        "inputs": list(oracle.inputs),
+        "outputs": list(oracle.outputs),
+        "error": None,
+        "modeldock_calls": [call.to_dict()],
+    }
+    value["components"]["modeldock"] = provenance.to_dict()
+    value["current_phase"] = CurrentPhase.ORACLE.value
+    value["mission_outcome"] = MissionOutcome.INCOMPLETE.value
+    value["terminal"] = False
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_running_oracle_enrichment(
+    snapshot: MissionSnapshot,
+) -> ModelDockCall:
+    oracle = snapshot.stages["oracle"]
+    if snapshot.current_phase is not CurrentPhase.ORACLE:
+        raise MissionTransitionError(
+            "mission is not running Oracle narrative enrichment"
+        )
+    if oracle.status is not StageStatus.RUNNING:
+        raise MissionTransitionError("Oracle enrichment must be RUNNING")
+    if len(oracle.modeldock_calls) != 1:
+        raise MissionTransitionError(
+            "Oracle enrichment requires exactly one ModelDock call"
+        )
+    running_call = oracle.modeldock_calls[0]
+    if running_call.status is not ModelDockCallStatus.RUNNING:
+        raise MissionTransitionError("ModelDock call is not RUNNING")
+    if "modeldock" not in snapshot.components:
+        raise MissionTransitionError("ModelDock component provenance is missing")
+    for stage_name in ("council", "governor", "navigator"):
+        if snapshot.stages[stage_name].status is not StageStatus.NOT_STARTED:
+            raise MissionTransitionError(
+                f"{stage_name} must remain NOT_STARTED during Oracle enrichment"
+            )
+    return running_call
+
+
+def _validate_terminal_modeldock_call(
+    running_call: ModelDockCall,
+    call: ModelDockCall,
+    *,
+    observed_at: str,
+    output_names: tuple[str, ...],
+) -> None:
+    if (
+        call.call_id != running_call.call_id
+        or call.mission_id != running_call.mission_id
+        or call.request_id != running_call.request_id
+        or call.run_mode is not running_call.run_mode
+        or call.endpoint != running_call.endpoint
+        or call.started_at != running_call.started_at
+        or call.request_sha256 != running_call.request_sha256
+    ):
+        raise MissionTransitionError(
+            "terminal ModelDock call changed immutable call identity"
+        )
+    if call.observed_at != observed_at:
+        raise MissionTransitionError(
+            "terminal ModelDock call timestamp must match the snapshot"
+        )
+    if call.artifacts != (*running_call.artifacts, *output_names):
+        raise MissionTransitionError(
+            "terminal ModelDock call artifacts must extend the RUNNING call exactly"
+        )
+
+
+def complete_oracle_enrichment(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    call: ModelDockCall,
+    output_artifacts: Iterable[ArtifactReference],
+) -> MissionSnapshot:
+    """Commit a validated narrative without changing Oracle analytical state."""
+
+    running_call = _require_running_oracle_enrichment(snapshot)
+    if call.status is not ModelDockCallStatus.SUCCEEDED:
+        raise MissionTransitionError(
+            "successful Oracle enrichment requires a SUCCEEDED ModelDock call"
+        )
+    outputs = tuple(output_artifacts)
+    expected_output_names = MODELDOCK_SUCCESS_ARTIFACT_NAMES[1:]
+    if tuple(artifact.name for artifact in outputs) != expected_output_names:
+        raise MissionTransitionError(
+            "successful ModelDock enrichment requires response, narrative, and provenance in canonical order"
+        )
+    for artifact, expected_name in zip(outputs, expected_output_names, strict=True):
+        _require_canonical_modeldock_artifact(
+            artifact,
+            expected_name=expected_name,
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, outputs)
+    if not output_names:
+        raise MissionTransitionError(
+            "successful ModelDock enrichment produced no artifacts"
+        )
+    _validate_terminal_modeldock_call(
+        running_call,
+        call,
+        observed_at=observed_at,
+        output_names=output_names,
+    )
+    oracle = snapshot.stages["oracle"]
+    value["stages"]["oracle"] = {
+        "status": StageStatus.SUCCEEDED.value,
+        "native_state": oracle.native_state,
+        "inputs": list(oracle.inputs),
+        "outputs": [*oracle.outputs, MODELDOCK_NARRATIVE_ARTIFACT_NAME],
+        "error": None,
+        "modeldock_calls": [call.to_dict()],
+    }
+    value["current_phase"] = CurrentPhase.COUNCIL.value
+    value["mission_outcome"] = MissionOutcome.INCOMPLETE.value
+    value["terminal"] = False
+    return MissionSnapshot.from_mapping(value)
+
+
+def fail_oracle_enrichment(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    call: ModelDockCall,
+    error: StageError,
+    output_artifacts: Iterable[ArtifactReference],
+) -> MissionSnapshot:
+    """Commit a strict-policy ModelDock technical failure without losing facts."""
+
+    running_call = _require_running_oracle_enrichment(snapshot)
+    if call.status is not ModelDockCallStatus.FAILED or call.error != error:
+        raise MissionTransitionError(
+            "failed Oracle enrichment requires a matching FAILED ModelDock call"
+        )
+    if error.observed_at != observed_at:
+        raise MissionTransitionError(
+            "ModelDock error timestamp must match the snapshot"
+        )
+    outputs = tuple(output_artifacts)
+    output_names_supplied = tuple(artifact.name for artifact in outputs)
+    allowed_failure_outputs = {
+        MODELDOCK_FAILURE_ARTIFACT_NAMES[1:],
+        MODELDOCK_FAILURE_WITH_RESPONSE_ARTIFACT_NAMES[1:],
+    }
+    if output_names_supplied not in allowed_failure_outputs:
+        raise MissionTransitionError(
+            "failed ModelDock enrichment requires provenance, optionally preceded by a safe response, and never a narrative"
+        )
+    for artifact in outputs:
+        _require_canonical_modeldock_artifact(
+            artifact,
+            expected_name=artifact.name,
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, outputs)
+    _validate_terminal_modeldock_call(
+        running_call,
+        call,
+        observed_at=observed_at,
+        output_names=output_names,
+    )
+    oracle = snapshot.stages["oracle"]
+    value["stages"]["oracle"] = {
+        "status": StageStatus.FAILED.value,
+        "native_state": oracle.native_state,
+        "inputs": list(oracle.inputs),
+        "outputs": list(oracle.outputs),
+        "error": error.to_dict(),
+        "modeldock_calls": [call.to_dict()],
     }
     value["current_phase"] = CurrentPhase.ORACLE.value
     value["mission_outcome"] = MissionOutcome.FAILED.value
