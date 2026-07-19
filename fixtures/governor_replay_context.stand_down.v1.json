@@ -1,0 +1,13 @@
+{
+  "schema_version": "blackpod.governor_supporting_context.v1",
+  "context_id": "governor-replay-context-stand-down-v1",
+  "mission_id": "mission-buildweek-replay-stand-down-001",
+  "request_id": "request-replay-stand-down-example-001",
+  "run_mode": "REPLAY",
+  "generated_at": "2026-07-18T18:05:00Z",
+  "accountability": {
+    "outcomes": [],
+    "notes": "No prior accountability observations are available."
+  },
+  "replay_contract_case": "INVALID_STAND_DOWN"
+}

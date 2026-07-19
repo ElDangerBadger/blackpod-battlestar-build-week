@@ -1,0 +1,176 @@
+{
+  "schema_version": "blackpod.oracle_replay_input.v1",
+  "fixture_id": "oracle-replay-build-week-risk-off-v1",
+  "generated_at": "2026-07-18T18:05:00Z",
+  "fleet_id": "fleet-oracles-vapors-example",
+  "quotes": {
+    "XLK": {
+      "last_price": 98,
+      "previous_close": 100,
+      "open": 99,
+      "day_high": 101,
+      "day_low": 97,
+      "last_volume": 1000000
+    },
+    "XLF": {
+      "last_price": 101,
+      "previous_close": 100,
+      "open": 100.5,
+      "day_high": 102,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLE": {
+      "last_price": 101.5,
+      "previous_close": 100,
+      "open": 100.75,
+      "day_high": 102.5,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLV": {
+      "last_price": 103,
+      "previous_close": 100,
+      "open": 101.5,
+      "day_high": 104,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLI": {
+      "last_price": 100.5,
+      "previous_close": 100,
+      "open": 100.25,
+      "day_high": 101.5,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLP": {
+      "last_price": 104,
+      "previous_close": 100,
+      "open": 102,
+      "day_high": 105,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLY": {
+      "last_price": 97,
+      "previous_close": 100,
+      "open": 98.5,
+      "day_high": 101,
+      "day_low": 96,
+      "last_volume": 1000000
+    },
+    "XLU": {
+      "last_price": 105,
+      "previous_close": 100,
+      "open": 102.5,
+      "day_high": 106,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "XLB": {
+      "last_price": 99,
+      "previous_close": 100,
+      "open": 99.5,
+      "day_high": 101,
+      "day_low": 98,
+      "last_volume": 1000000
+    },
+    "XLRE": {
+      "last_price": 98.5,
+      "previous_close": 100,
+      "open": 99.25,
+      "day_high": 101,
+      "day_low": 97.5,
+      "last_volume": 1000000
+    },
+    "XLC": {
+      "last_price": 96,
+      "previous_close": 100,
+      "open": 98,
+      "day_high": 101,
+      "day_low": 95,
+      "last_volume": 1000000
+    },
+    "SPY": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "QQQ": {
+      "last_price": 95,
+      "previous_close": 100,
+      "open": 97.5,
+      "day_high": 101,
+      "day_low": 94,
+      "last_volume": 1000000
+    },
+    "DIA": {
+      "last_price": 102,
+      "previous_close": 100,
+      "open": 101,
+      "day_high": 103,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "VXZ": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "IWF": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "IWD": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "IWM": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "MTUM": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "USMV": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    },
+    "QUAL": {
+      "last_price": 100,
+      "previous_close": 100,
+      "open": 100,
+      "day_high": 101,
+      "day_low": 99,
+      "last_volume": 1000000
+    }
+  }
+}

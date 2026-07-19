@@ -1,4 +1,4 @@
-"""Pure, validated snapshot transitions for the Oracle and Council stages."""
+"""Pure, validated snapshot transitions for implemented mission stages."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from .contracts import (
     ContractValidationError,
     CouncilComponentProvenance,
     CurrentPhase,
+    GovernorComponentProvenance,
     MissionOutcome,
     MissionSnapshot,
+    OperatorRoute,
     StageError,
     StageStatus,
 )
@@ -68,22 +70,30 @@ def _append_artifacts(
 
 
 def _existing_artifact_names(
-    snapshot: MissionSnapshot, names: Iterable[str]
+    snapshot: MissionSnapshot,
+    names: Iterable[str],
+    *,
+    stage_name: str = "Council",
 ) -> tuple[str, ...]:
     selected = tuple(names)
     if len(set(selected)) != len(selected):
-        raise MissionTransitionError("existing Council input names must be unique")
+        raise MissionTransitionError(
+            f"existing {stage_name} input names must be unique"
+        )
     known_names = {artifact.name for artifact in snapshot.artifacts}
     for name in selected:
         if name not in known_names:
             raise MissionTransitionError(
-                f"Council references an unknown existing artifact: {name}"
+                f"{stage_name} references an unknown existing artifact: {name}"
             )
     return selected
 
 
 def _append_or_reuse_artifacts(
-    value: dict[str, Any], artifacts: Iterable[ArtifactReference]
+    value: dict[str, Any],
+    artifacts: Iterable[ArtifactReference],
+    *,
+    stage_name: str = "Council",
 ) -> tuple[str, ...]:
     """Append new artifacts while allowing exact references to existing inputs."""
 
@@ -97,7 +107,7 @@ def _append_or_reuse_artifacts(
         if existing_name is not None:
             if existing_name != serialized:
                 raise MissionTransitionError(
-                    f"existing Council input metadata changed: {artifact.name}"
+                    f"existing {stage_name} input metadata changed: {artifact.name}"
                 )
             selected_names.append(artifact.name)
             continue
@@ -111,7 +121,9 @@ def _append_or_reuse_artifacts(
         existing_by_path[artifact.path] = serialized
         selected_names.append(artifact.name)
     if len(set(selected_names)) != len(selected_names):
-        raise MissionTransitionError("Council input artifact references must be unique")
+        raise MissionTransitionError(
+            f"{stage_name} input artifact references must be unique"
+        )
     return tuple(selected_names)
 
 
@@ -393,6 +405,224 @@ def fail_council(
         "error": error.to_dict(),
     }
     value["current_phase"] = CurrentPhase.COUNCIL.value
+    value["mission_outcome"] = MissionOutcome.FAILED.value
+    value["terminal"] = not error.resumable
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_council_complete_for_governor(snapshot: MissionSnapshot) -> None:
+    if snapshot.terminal:
+        raise MissionTransitionError("a terminal mission cannot start Governor")
+    if snapshot.current_phase is not CurrentPhase.GOVERNOR:
+        raise MissionTransitionError("mission is not in the GOVERNOR phase")
+    if snapshot.mission_outcome is not MissionOutcome.INCOMPLETE:
+        raise MissionTransitionError(
+            "Governor can start only from an INCOMPLETE mission"
+        )
+    for stage_name in ("harbormaster", "oracle", "council"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} must have succeeded before Governor"
+            )
+    if snapshot.stages["governor"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError("Governor must be NOT_STARTED")
+    if snapshot.stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError(
+            "Navigator must remain NOT_STARTED during Phase 4"
+        )
+    if not {"battlestar", "battlestar_council"}.issubset(snapshot.components):
+        raise MissionTransitionError(
+            "Battlestar Oracle and Council provenance are required"
+        )
+    if "battlestar_governor" in snapshot.components:
+        raise MissionTransitionError(
+            "Battlestar Governor provenance is already recorded"
+        )
+    if snapshot.operator.route is not None:
+        raise MissionTransitionError("operator routing must not precede Governor")
+
+
+def begin_governor(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    provenance: GovernorComponentProvenance,
+    existing_input_names: Iterable[str] = (),
+    input_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Create the immutable Governor RUNNING revision after Council success."""
+
+    _require_council_complete_for_governor(snapshot)
+    if provenance.run_mode is not snapshot.run_mode:
+        raise MissionTransitionError(
+            "Battlestar Governor run mode must match the mission"
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    selected_existing = _existing_artifact_names(
+        snapshot, existing_input_names, stage_name="Governor"
+    )
+    selected_artifacts = _append_or_reuse_artifacts(
+        value, input_artifacts, stage_name="Governor"
+    )
+    input_names = tuple(dict.fromkeys((*selected_existing, *selected_artifacts)))
+    if not input_names:
+        raise MissionTransitionError("Governor requires at least one recorded input")
+    value["stages"]["governor"] = {
+        "status": StageStatus.RUNNING.value,
+        "native_state": None,
+        "inputs": list(input_names),
+        "outputs": [],
+        "error": None,
+    }
+    value["current_phase"] = CurrentPhase.GOVERNOR.value
+    value["mission_outcome"] = MissionOutcome.INCOMPLETE.value
+    value["terminal"] = False
+    value["components"]["battlestar_governor"] = provenance.to_dict()
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_running_governor(snapshot: MissionSnapshot) -> None:
+    if snapshot.current_phase is not CurrentPhase.GOVERNOR:
+        raise MissionTransitionError("mission is not in the GOVERNOR phase")
+    for stage_name in ("harbormaster", "oracle", "council"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} state changed unexpectedly"
+            )
+    if snapshot.stages["governor"].status is not StageStatus.RUNNING:
+        raise MissionTransitionError("Governor must be RUNNING")
+    if snapshot.stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError(
+            "Navigator must remain NOT_STARTED during Phase 4"
+        )
+    if not {
+        "battlestar",
+        "battlestar_council",
+        "battlestar_governor",
+    }.issubset(snapshot.components):
+        raise MissionTransitionError("Governor component provenance is incomplete")
+    if snapshot.operator.route is not None:
+        raise MissionTransitionError("operator routing must not precede completion")
+
+
+_GOVERNOR_COMPLETION_STATE: dict[
+    str, tuple[CurrentPhase, MissionOutcome, bool, OperatorRoute]
+] = {
+    "PROCEED": (
+        CurrentPhase.OPERATOR,
+        MissionOutcome.HELD,
+        False,
+        OperatorRoute.PENDING_APPROVAL,
+    ),
+    "HOLD": (
+        CurrentPhase.OPERATOR,
+        MissionOutcome.HELD,
+        False,
+        OperatorRoute.PENDING_REVIEW,
+    ),
+    "REVIEW_REQUIRED": (
+        CurrentPhase.OPERATOR,
+        MissionOutcome.HELD,
+        False,
+        OperatorRoute.PENDING_REVIEW,
+    ),
+    "BLOCKED": (
+        CurrentPhase.GOVERNOR,
+        MissionOutcome.HELD,
+        True,
+        OperatorRoute.CLOSED_BLOCKED,
+    ),
+    "STAND_DOWN": (
+        CurrentPhase.COMPLETE,
+        MissionOutcome.VETOED,
+        True,
+        OperatorRoute.CLOSED_NO_ACTION,
+    ),
+}
+
+
+def complete_governor(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    native_state: str,
+    output_artifacts: Iterable[ArtifactReference],
+) -> MissionSnapshot:
+    """Create a technically-successful rendered Governor revision."""
+
+    _require_running_governor(snapshot)
+    try:
+        phase, outcome, terminal, route = _GOVERNOR_COMPLETION_STATE[native_state]
+    except (KeyError, TypeError) as exc:
+        raise MissionTransitionError(
+            "Governor returned an unsupported rendered disposition"
+        ) from exc
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, output_artifacts)
+    if not output_names:
+        raise MissionTransitionError(
+            "successful Governor execution produced no artifacts"
+        )
+    value["stages"]["governor"] = {
+        "status": StageStatus.SUCCEEDED.value,
+        "native_state": native_state,
+        "inputs": list(snapshot.stages["governor"].inputs),
+        "outputs": list(output_names),
+        "error": None,
+    }
+    value["current_phase"] = phase.value
+    value["mission_outcome"] = outcome.value
+    value["terminal"] = terminal
+    value["operator"] = {
+        "route": route.value,
+        "action": None,
+        "result": None,
+        "operator_id": None,
+        "acted_at": None,
+    }
+    return MissionSnapshot.from_mapping(value)
+
+
+def fail_governor(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    native_state: str | None,
+    error: StageError,
+    output_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Create the immutable technical-failure Governor revision."""
+
+    _require_running_governor(snapshot)
+    if error.observed_at != observed_at:
+        raise MissionTransitionError(
+            "Governor error timestamp must match the snapshot"
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, output_artifacts)
+    value["stages"]["governor"] = {
+        "status": StageStatus.FAILED.value,
+        "native_state": native_state,
+        "inputs": list(snapshot.stages["governor"].inputs),
+        "outputs": list(output_names),
+        "error": error.to_dict(),
+    }
+    value["current_phase"] = CurrentPhase.GOVERNOR.value
     value["mission_outcome"] = MissionOutcome.FAILED.value
     value["terminal"] = not error.resumable
     return MissionSnapshot.from_mapping(value)

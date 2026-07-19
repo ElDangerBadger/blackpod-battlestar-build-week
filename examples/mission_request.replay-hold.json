@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "fixture": "oracle-replay-build-week-risk-off-v1",
+    "governor_context": "governor-replay-context-hold-v1",
+    "purpose": "build-week-phase-4-governor-hold-replay-example"
+  },
+  "mission_id": "mission-buildweek-replay-hold-001",
+  "operator_id": "build-week-operator",
+  "request_id": "request-replay-hold-example-001",
+  "requested_at": "2026-07-18T18:05:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "AAPL"
+}

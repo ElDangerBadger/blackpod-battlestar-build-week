@@ -78,6 +78,18 @@ class CouncilTransportKind(str, Enum):
     REPLAY_FIXTURE = "REPLAY_FIXTURE"
 
 
+class GovernorTransportKind(str, Enum):
+    LIVE_MISSION_INPUTS = "LIVE_MISSION_INPUTS"
+    REPLAY_FIXTURE = "REPLAY_FIXTURE"
+
+
+class OperatorRoute(str, Enum):
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    PENDING_REVIEW = "PENDING_REVIEW"
+    CLOSED_BLOCKED = "CLOSED_BLOCKED"
+    CLOSED_NO_ACTION = "CLOSED_NO_ACTION"
+
+
 def _require_exact_fields(
     value: Mapping[str, Any], expected: set[str], name: str
 ) -> None:
@@ -247,6 +259,52 @@ class StageSnapshot:
             "inputs": list(self.inputs),
             "outputs": list(self.outputs),
             "error": None if self.error is None else self.error.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorState:
+    """Phase 4 routing placeholder; it never records an operator action."""
+
+    route: OperatorRoute | None
+    action: None = None
+    result: None = None
+    operator_id: None = None
+    acted_at: None = None
+
+    @classmethod
+    def empty(cls) -> "OperatorState":
+        return cls(route=None)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "OperatorState":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError("operator state must be an object")
+        _require_exact_fields(
+            value,
+            {"route", "action", "result", "operator_id", "acted_at"},
+            "operator state",
+        )
+        route_value = value["route"]
+        route = (
+            None
+            if route_value is None
+            else _parse_enum(OperatorRoute, route_value, "operator route")
+        )
+        for field_name in ("action", "result", "operator_id", "acted_at"):
+            if value[field_name] is not None:
+                raise ContractValidationError(
+                    f"operator.{field_name} must remain null before operator actions"
+                )
+        return cls(route=route)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "route": None if self.route is None else self.route.value,
+            "action": self.action,
+            "result": self.result,
+            "operator_id": self.operator_id,
+            "acted_at": self.acted_at,
         }
 
 
@@ -589,6 +647,204 @@ class CouncilComponentProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class GovernorComponentProvenance:
+    """Immutable provenance for the current rendered Governor chain."""
+
+    git_revision: str
+    git_branch: str | None
+    dirty_worktree: bool
+    senate_intake_entry_point: str
+    preparation_entry_point: str
+    deliberation_entry_point: str
+    readiness_entry_point: str
+    rendering_entry_point: str
+    run_mode: RunMode
+    transport: GovernorTransportKind
+    replay_fixture_id: str | None
+    replay_fixture_sha256: str | None
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any]
+    ) -> "GovernorComponentProvenance":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError(
+                "Governor component provenance must be an object"
+            )
+        entry_point_fields = (
+            "senate_intake_entry_point",
+            "preparation_entry_point",
+            "deliberation_entry_point",
+            "readiness_entry_point",
+            "rendering_entry_point",
+        )
+        _require_exact_fields(
+            value,
+            {
+                "git_revision",
+                "git_branch",
+                "dirty_worktree",
+                *entry_point_fields,
+                "run_mode",
+                "transport",
+                "replay_fixture_id",
+                "replay_fixture_sha256",
+            },
+            "Governor component provenance",
+        )
+        revision = value["git_revision"]
+        if not isinstance(revision, str) or not _GIT_REVISION_PATTERN.fullmatch(
+            revision
+        ):
+            raise ContractValidationError(
+                "git_revision must be a hexadecimal Git object ID"
+            )
+        branch = _validate_text(
+            value["git_branch"], "git_branch", allow_none=True, max_length=256
+        )
+        if type(value["dirty_worktree"]) is not bool:
+            raise ContractValidationError("dirty_worktree must be a boolean")
+        entry_points = {
+            field_name: str(
+                _validate_text(value[field_name], field_name, max_length=256)
+            )
+            for field_name in entry_point_fields
+        }
+        run_mode = _parse_enum(RunMode, value["run_mode"], "component run_mode")
+        transport = _parse_enum(
+            GovernorTransportKind, value["transport"], "Governor transport"
+        )
+        fixture_id = _validate_text(
+            value["replay_fixture_id"],
+            "replay_fixture_id",
+            allow_none=True,
+            max_length=128,
+        )
+        fixture_sha = value["replay_fixture_sha256"]
+        if fixture_sha is not None and (
+            not isinstance(fixture_sha, str)
+            or not _SHA256_PATTERN.fullmatch(fixture_sha)
+        ):
+            raise ContractValidationError(
+                "replay_fixture_sha256 must be null or 64 lowercase hex characters"
+            )
+        if transport is GovernorTransportKind.REPLAY_FIXTURE:
+            if (
+                run_mode is not RunMode.REPLAY
+                or fixture_id is None
+                or fixture_sha is None
+            ):
+                raise ContractValidationError(
+                    "Governor REPLAY_FIXTURE provenance requires REPLAY mode and fixture identity"
+                )
+        elif (
+            run_mode is not RunMode.LIVE
+            or fixture_id is not None
+            or fixture_sha is not None
+        ):
+            raise ContractValidationError(
+                "Governor LIVE_MISSION_INPUTS provenance requires LIVE mode and no replay fixture"
+            )
+        return cls(
+            git_revision=revision,
+            git_branch=branch,
+            dirty_worktree=value["dirty_worktree"],
+            senate_intake_entry_point=entry_points["senate_intake_entry_point"],
+            preparation_entry_point=entry_points["preparation_entry_point"],
+            deliberation_entry_point=entry_points["deliberation_entry_point"],
+            readiness_entry_point=entry_points["readiness_entry_point"],
+            rendering_entry_point=entry_points["rendering_entry_point"],
+            run_mode=run_mode,
+            transport=transport,
+            replay_fixture_id=fixture_id,
+            replay_fixture_sha256=fixture_sha,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "git_revision": self.git_revision,
+            "git_branch": self.git_branch,
+            "dirty_worktree": self.dirty_worktree,
+            "senate_intake_entry_point": self.senate_intake_entry_point,
+            "preparation_entry_point": self.preparation_entry_point,
+            "deliberation_entry_point": self.deliberation_entry_point,
+            "readiness_entry_point": self.readiness_entry_point,
+            "rendering_entry_point": self.rendering_entry_point,
+            "run_mode": self.run_mode.value,
+            "transport": self.transport.value,
+            "replay_fixture_id": self.replay_fixture_id,
+            "replay_fixture_sha256": self.replay_fixture_sha256,
+        }
+
+
+def _validate_operator_route(
+    operator: OperatorState,
+    *,
+    stages: Mapping[str, StageSnapshot],
+    current_phase: CurrentPhase,
+    mission_outcome: MissionOutcome,
+    terminal: bool,
+) -> None:
+    route = operator.route
+    if route is None:
+        if stages["governor"].status is StageStatus.SUCCEEDED:
+            raise ContractValidationError(
+                "a technically successful Governor stage requires an operator route"
+            )
+        return
+    governor = stages["governor"]
+    if governor.status is not StageStatus.SUCCEEDED:
+        raise ContractValidationError(
+            "an operator route requires a technically successful Governor stage"
+        )
+    if stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise ContractValidationError(
+            "Phase 4 operator routing requires Navigator to remain NOT_STARTED"
+        )
+    expected = {
+        OperatorRoute.PENDING_APPROVAL: (
+            "PROCEED",
+            CurrentPhase.OPERATOR,
+            MissionOutcome.HELD,
+            False,
+        ),
+        OperatorRoute.PENDING_REVIEW: (
+            {"HOLD", "REVIEW_REQUIRED"},
+            CurrentPhase.OPERATOR,
+            MissionOutcome.HELD,
+            False,
+        ),
+        OperatorRoute.CLOSED_BLOCKED: (
+            "BLOCKED",
+            CurrentPhase.GOVERNOR,
+            MissionOutcome.HELD,
+            True,
+        ),
+        OperatorRoute.CLOSED_NO_ACTION: (
+            "STAND_DOWN",
+            CurrentPhase.COMPLETE,
+            MissionOutcome.VETOED,
+            True,
+        ),
+    }[route]
+    native_state, expected_phase, expected_outcome, expected_terminal = expected
+    native_matches = (
+        governor.native_state in native_state
+        if isinstance(native_state, set)
+        else governor.native_state == native_state
+    )
+    if (
+        not native_matches
+        or current_phase is not expected_phase
+        or mission_outcome is not expected_outcome
+        or terminal is not expected_terminal
+    ):
+        raise ContractValidationError(
+            "operator route conflicts with the rendered Governor disposition"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MissionSnapshot:
     schema_version: str
     snapshot_id: str
@@ -604,7 +860,13 @@ class MissionSnapshot:
     terminal: bool
     stages: dict[str, StageSnapshot]
     artifacts: tuple[ArtifactReference, ...]
-    components: dict[str, ComponentProvenance | CouncilComponentProvenance]
+    components: dict[
+        str,
+        ComponentProvenance
+        | CouncilComponentProvenance
+        | GovernorComponentProvenance,
+    ]
+    operator: OperatorState
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MissionSnapshot":
@@ -612,7 +874,7 @@ class MissionSnapshot:
             raise ContractValidationError("mission snapshot must be an object")
         fields = set(value)
         missing = set(_SNAPSHOT_BASE_FIELDS) - fields
-        unknown = fields - set(_SNAPSHOT_BASE_FIELDS) - {"components"}
+        unknown = fields - set(_SNAPSHOT_BASE_FIELDS) - {"components", "operator"}
         if missing:
             raise ContractValidationError(
                 f"mission snapshot is missing fields: {', '.join(sorted(missing))}"
@@ -696,12 +958,21 @@ class MissionSnapshot:
         components_value = value.get("components", {})
         if not isinstance(components_value, Mapping):
             raise ContractValidationError("components must be an object")
-        if set(components_value) - {"battlestar", "battlestar_council"}:
+        supported_components = {
+            "battlestar",
+            "battlestar_council",
+            "battlestar_governor",
+        }
+        if set(components_value) - supported_components:
             raise ContractValidationError(
-                "components supports battlestar and battlestar_council only"
+                "components supports battlestar, battlestar_council, and "
+                "battlestar_governor only"
             )
         components: dict[
-            str, ComponentProvenance | CouncilComponentProvenance
+            str,
+            ComponentProvenance
+            | CouncilComponentProvenance
+            | GovernorComponentProvenance,
         ] = {}
         if "battlestar" in components_value:
             components["battlestar"] = ComponentProvenance.from_mapping(
@@ -717,6 +988,19 @@ class MissionSnapshot:
                     components_value["battlestar_council"]
                 )
             )
+        if "battlestar_governor" in components_value:
+            if not {"battlestar", "battlestar_council"}.issubset(
+                components_value
+            ):
+                raise ContractValidationError(
+                    "battlestar_governor provenance requires Battlestar Oracle "
+                    "and Council provenance"
+                )
+            components["battlestar_governor"] = (
+                GovernorComponentProvenance.from_mapping(
+                    components_value["battlestar_governor"]
+                )
+            )
 
         run_mode = _parse_enum(RunMode, value["run_mode"], "run_mode")
         if any(component.run_mode is not run_mode for component in components.values()):
@@ -724,6 +1008,24 @@ class MissionSnapshot:
         terminal = value["terminal"]
         if type(terminal) is not bool:
             raise ContractValidationError("terminal must be a boolean")
+        mission_outcome = _parse_enum(
+            MissionOutcome, value["mission_outcome"], "mission_outcome"
+        )
+        current_phase = _parse_enum(
+            CurrentPhase, value["current_phase"], "current_phase"
+        )
+        operator = (
+            OperatorState.empty()
+            if "operator" not in value
+            else OperatorState.from_mapping(value["operator"])
+        )
+        _validate_operator_route(
+            operator,
+            stages=stages,
+            current_phase=current_phase,
+            mission_outcome=mission_outcome,
+            terminal=terminal,
+        )
 
         return cls(
             schema_version=MISSION_SNAPSHOT_SCHEMA_VERSION,
@@ -735,16 +1037,13 @@ class MissionSnapshot:
             run_mode=run_mode,
             started_at=started_at,
             observed_at=observed_at,
-            mission_outcome=_parse_enum(
-                MissionOutcome, value["mission_outcome"], "mission_outcome"
-            ),
-            current_phase=_parse_enum(
-                CurrentPhase, value["current_phase"], "current_phase"
-            ),
+            mission_outcome=mission_outcome,
+            current_phase=current_phase,
             terminal=terminal,
             stages=stages,
             artifacts=artifacts,
             components=components,
+            operator=operator,
         )
 
     @classmethod
@@ -787,6 +1086,7 @@ class MissionSnapshot:
                 "stages": {name: stage.to_dict() for name, stage in stages.items()},
                 "artifacts": [request_artifact.to_dict()],
                 "components": {},
+                "operator": OperatorState.empty().to_dict(),
             }
         )
 
@@ -809,6 +1109,7 @@ class MissionSnapshot:
             "components": {
                 name: self.components[name].to_dict() for name in sorted(self.components)
             },
+            "operator": self.operator.to_dict(),
         }
 
 

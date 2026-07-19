@@ -16,6 +16,16 @@ from blackpod_build_week.battlestar_config import (
     COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH,
     COUNCIL_SYNTHESIS_ENTRY_POINT,
     COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+    GOVERNOR_DELIBERATION_ENTRY_POINT,
+    GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH,
+    GOVERNOR_PREPARATION_ENTRY_POINT,
+    GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH,
+    GOVERNOR_READINESS_ENTRY_POINT,
+    GOVERNOR_READINESS_MODULE_RELATIVE_PATH,
+    GOVERNOR_RENDERING_ENTRY_POINT,
+    GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
+    GOVERNOR_SENATE_INTAKE_ENTRY_POINT,
+    GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH,
     MANDATE_ENTRY_POINT,
     MANDATE_MODULE_RELATIVE_PATH,
     ORACLE_ENTRY_POINT,
@@ -30,6 +40,7 @@ from blackpod_build_week.battlestar_config import (
     BattlestarConfigurationError,
     load_battlestar_config,
     load_council_battlestar_config,
+    load_governor_battlestar_config,
 )
 
 
@@ -43,6 +54,13 @@ COUNCIL_MODULES = (
     ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
     RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
 )
+GOVERNOR_MODULES = (
+    GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH,
+    GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH,
+    GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH,
+    GOVERNOR_READINESS_MODULE_RELATIVE_PATH,
+    GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
+)
 
 
 class BattlestarConfigurationTests(unittest.TestCase):
@@ -55,7 +73,11 @@ class BattlestarConfigurationTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def make_repository(
-        self, name: str = "battlestar", *, include_council: bool = False
+        self,
+        name: str = "battlestar",
+        *,
+        include_council: bool = False,
+        include_governor: bool = False,
     ) -> Path:
         root = self.base / name
         (root / ORACLE_MODULE_RELATIVE_PATH).parent.mkdir(parents=True)
@@ -70,6 +92,11 @@ class BattlestarConfigurationTests(unittest.TestCase):
         )
         if include_council:
             for relative_path in COUNCIL_MODULES:
+                module = root / relative_path
+                module.parent.mkdir(parents=True, exist_ok=True)
+                module.write_text("# deterministic test module\n", encoding="utf-8")
+        if include_governor:
+            for relative_path in GOVERNOR_MODULES:
                 module = root / relative_path
                 module.parent.mkdir(parents=True, exist_ok=True)
                 module.write_text("# deterministic test module\n", encoding="utf-8")
@@ -136,6 +163,28 @@ class BattlestarConfigurationTests(unittest.TestCase):
         self.assertEqual(
             RUNTIME_VALIDATION_ENTRY_POINT,
             "blackpod.runtime.validation_report.build_runtime_validation_report",
+        )
+
+    def test_public_governor_entry_points_are_stable(self) -> None:
+        self.assertEqual(
+            GOVERNOR_SENATE_INTAKE_ENTRY_POINT,
+            "blackpod.governor.governor_senate_intake.build_governor_senate_intake",
+        )
+        self.assertEqual(
+            GOVERNOR_PREPARATION_ENTRY_POINT,
+            "blackpod.governor.governor_deliberation_prep.build_governor_deliberation_prep",
+        )
+        self.assertEqual(
+            GOVERNOR_DELIBERATION_ENTRY_POINT,
+            "blackpod.governor.governor_deliberation.build_governor_deliberation",
+        )
+        self.assertEqual(
+            GOVERNOR_READINESS_ENTRY_POINT,
+            "blackpod.governor.governor_decision_readiness.build_governor_decision_readiness",
+        )
+        self.assertEqual(
+            GOVERNOR_RENDERING_ENTRY_POINT,
+            "blackpod.governor.governor_decision.build_governor_decision",
         )
 
     def test_missing_environment_variable_is_rejected(self) -> None:
@@ -269,6 +318,78 @@ class BattlestarConfigurationTests(unittest.TestCase):
                 (root / relative_path).unlink()
                 with self.assertRaisesRegex(BattlestarConfigurationError, message):
                     load_council_battlestar_config(
+                        artifacts_root=self.artifacts_root,
+                        environ={BATTLESTAR_PATH_ENV: str(root)},
+                    )
+
+    def test_governor_preflight_reports_all_required_native_modules(self) -> None:
+        root = self.make_repository(
+            include_council=True,
+            include_governor=True,
+        )
+
+        config = load_governor_battlestar_config(
+            artifacts_root=self.artifacts_root,
+            environ={BATTLESTAR_PATH_ENV: str(root)},
+        )
+
+        expected = {
+            "governor_senate_intake_module_path": (
+                GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH
+            ),
+            "governor_preparation_module_path": (
+                GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH
+            ),
+            "governor_deliberation_module_path": (
+                GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH
+            ),
+            "governor_readiness_module_path": (
+                GOVERNOR_READINESS_MODULE_RELATIVE_PATH
+            ),
+            "governor_rendering_module_path": (
+                GOVERNOR_RENDERING_MODULE_RELATIVE_PATH
+            ),
+        }
+        for field_name, relative_path in expected.items():
+            with self.subTest(field=field_name):
+                self.assertEqual(
+                    getattr(config, field_name),
+                    (root / relative_path).resolve(),
+                )
+
+    def test_governor_preflight_rejects_each_missing_native_module(self) -> None:
+        cases = (
+            (
+                GOVERNOR_SENATE_INTAKE_MODULE_RELATIVE_PATH,
+                "Governor Senate-intake module is missing",
+            ),
+            (
+                GOVERNOR_PREPARATION_MODULE_RELATIVE_PATH,
+                "Governor preparation module is missing",
+            ),
+            (
+                GOVERNOR_DELIBERATION_MODULE_RELATIVE_PATH,
+                "Governor deliberation module is missing",
+            ),
+            (
+                GOVERNOR_READINESS_MODULE_RELATIVE_PATH,
+                "Governor readiness module is missing",
+            ),
+            (
+                GOVERNOR_RENDERING_MODULE_RELATIVE_PATH,
+                "Governor rendering module is missing",
+            ),
+        )
+        for index, (relative_path, message) in enumerate(cases):
+            with self.subTest(module=str(relative_path)):
+                root = self.make_repository(
+                    f"battlestar-governor-{index}",
+                    include_council=True,
+                    include_governor=True,
+                )
+                (root / relative_path).unlink()
+                with self.assertRaisesRegex(BattlestarConfigurationError, message):
+                    load_governor_battlestar_config(
                         artifacts_root=self.artifacts_root,
                         environ={BATTLESTAR_PATH_ENV: str(root)},
                     )
