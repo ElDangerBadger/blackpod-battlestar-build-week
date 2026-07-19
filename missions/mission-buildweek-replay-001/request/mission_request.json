@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "fixture": "oracle-replay-build-week-v1",
+    "purpose": "build-week-phase-2-oracle-replay-example"
+  },
+  "mission_id": "mission-buildweek-replay-001",
+  "operator_id": "build-week-operator",
+  "request_id": "request-replay-example-001",
+  "requested_at": "2026-07-18T18:05:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "AAPL"
+}

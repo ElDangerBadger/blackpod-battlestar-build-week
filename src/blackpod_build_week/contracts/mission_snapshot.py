@@ -90,6 +90,53 @@ class OperatorRoute(str, Enum):
     CLOSED_NO_ACTION = "CLOSED_NO_ACTION"
 
 
+class OperatorActionStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+class OperatorAction(str, Enum):
+    APPROVE_HANDOFF = "APPROVE_HANDOFF"
+    REJECT = "REJECT"
+
+
+class OperatorResult(str, Enum):
+    APPROVED_FOR_HANDOFF = "APPROVED_FOR_HANDOFF"
+    REJECTED = "REJECTED"
+
+
+class NavigatorMode(str, Enum):
+    SHADOW = "SHADOW"
+
+
+class NavigatorHandoffStatus(str, Enum):
+    STAGED = "STAGED"
+
+
+class NavigatorIntakeStatus(str, Enum):
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+
+
+class NavigatorPlanStatus(str, Enum):
+    CREATED = "CREATED"
+
+
+class ApprovalScope(str, Enum):
+    NAVIGATOR_SHADOW_HANDOFF = "NAVIGATOR_SHADOW_HANDOFF"
+
+
+NAVIGATOR_ALLOWED_OPERATIONS = ("VALIDATE", "PLAN_ONLY")
+NAVIGATOR_PROHIBITED_OPERATIONS = (
+    "SUBMIT_ORDER",
+    "CANCEL_ORDER",
+    "MODIFY_PORTFOLIO",
+    "BROKER_CALL",
+)
+
+
 def _require_exact_fields(
     value: Mapping[str, Any], expected: set[str], name: str
 ) -> None:
@@ -264,13 +311,16 @@ class StageSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class OperatorState:
-    """Phase 4 routing placeholder; it never records an operator action."""
+    """Auditable operator-routing and explicit handoff-action state."""
 
     route: OperatorRoute | None
-    action: None = None
-    result: None = None
-    operator_id: None = None
-    acted_at: None = None
+    action_status: OperatorActionStatus = OperatorActionStatus.NOT_STARTED
+    action: OperatorAction | None = None
+    result: OperatorResult | None = None
+    action_id: str | None = None
+    operator_id: str | None = None
+    acted_at: str | None = None
+    error: StageError | None = None
 
     @classmethod
     def empty(cls) -> "OperatorState":
@@ -280,31 +330,370 @@ class OperatorState:
     def from_mapping(cls, value: Mapping[str, Any]) -> "OperatorState":
         if not isinstance(value, Mapping):
             raise ContractValidationError("operator state must be an object")
-        _require_exact_fields(
-            value,
-            {"route", "action", "result", "operator_id", "acted_at"},
-            "operator state",
-        )
+        fields = set(value)
+        legacy_fields = {"route", "action", "result", "operator_id", "acted_at"}
+        current_fields = legacy_fields | {"action_status", "action_id", "error"}
+        if fields == legacy_fields:
+            if any(value[field_name] is not None for field_name in legacy_fields - {"route"}):
+                raise ContractValidationError(
+                    "legacy operator action fields must remain null"
+                )
+            action_status = OperatorActionStatus.NOT_STARTED
+            action = None
+            result = None
+            action_id = None
+            operator_id = None
+            acted_at = None
+            error = None
+        elif fields == current_fields:
+            action_status = _parse_enum(
+                OperatorActionStatus,
+                value["action_status"],
+                "operator action_status",
+            )
+            action = (
+                None
+                if value["action"] is None
+                else _parse_enum(OperatorAction, value["action"], "operator action")
+            )
+            result = (
+                None
+                if value["result"] is None
+                else _parse_enum(OperatorResult, value["result"], "operator result")
+            )
+            try:
+                action_id = (
+                    None
+                    if value["action_id"] is None
+                    else validate_identifier(value["action_id"], "operator action_id")
+                )
+                operator_id = (
+                    None
+                    if value["operator_id"] is None
+                    else validate_identifier(value["operator_id"], "operator operator_id")
+                )
+            except IdentifierError as exc:
+                raise ContractValidationError(str(exc)) from exc
+            acted_at = (
+                None
+                if value["acted_at"] is None
+                else normalize_rfc3339(value["acted_at"], "operator acted_at")
+            )
+            error_value = value["error"]
+            error = None if error_value is None else StageError.from_mapping(error_value)
+        else:
+            _require_exact_fields(value, current_fields, "operator state")
+            raise AssertionError("unreachable")
+
         route_value = value["route"]
         route = (
             None
             if route_value is None
             else _parse_enum(OperatorRoute, route_value, "operator route")
         )
-        for field_name in ("action", "result", "operator_id", "acted_at"):
-            if value[field_name] is not None:
+
+        has_attempt_identity = action is not None and operator_id is not None
+        has_completed_identity = has_attempt_identity and action_id is not None
+        if action_status is OperatorActionStatus.NOT_STARTED:
+            if any(
+                item is not None
+                for item in (action, result, action_id, operator_id, acted_at, error)
+            ):
                 raise ContractValidationError(
-                    f"operator.{field_name} must remain null before operator actions"
+                    "operator NOT_STARTED may not contain action state"
                 )
-        return cls(route=route)
+        elif action_status is OperatorActionStatus.RUNNING:
+            if not has_attempt_identity or any(
+                item is not None for item in (result, action_id, acted_at, error)
+            ):
+                raise ContractValidationError(
+                    "operator RUNNING requires actor identity and no native result or action ID"
+                )
+        elif action_status is OperatorActionStatus.SUCCEEDED:
+            if (
+                not has_completed_identity
+                or result is None
+                or acted_at is None
+                or error is not None
+            ):
+                raise ContractValidationError(
+                    "operator SUCCEEDED requires action identity, result, and acted_at"
+                )
+            expected_result = {
+                OperatorAction.APPROVE_HANDOFF: OperatorResult.APPROVED_FOR_HANDOFF,
+                OperatorAction.REJECT: OperatorResult.REJECTED,
+            }[action]
+            if result is not expected_result:
+                raise ContractValidationError(
+                    "operator action and result are inconsistent"
+                )
+        else:
+            if (
+                not has_attempt_identity
+                or result is not None
+                or acted_at is None
+                or error is None
+            ):
+                raise ContractValidationError(
+                    "operator FAILED requires action identity, acted_at, and an error"
+                )
+            if error.observed_at != acted_at:
+                raise ContractValidationError(
+                    "operator failure timestamp must match acted_at"
+                )
+
+        if action_status is not OperatorActionStatus.NOT_STARTED and route is not OperatorRoute.PENDING_APPROVAL:
+            raise ContractValidationError(
+                "operator actions require the PENDING_APPROVAL route"
+            )
+        return cls(
+            route=route,
+            action_status=action_status,
+            action=action,
+            result=result,
+            action_id=action_id,
+            operator_id=operator_id,
+            acted_at=acted_at,
+            error=error,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "route": None if self.route is None else self.route.value,
-            "action": self.action,
-            "result": self.result,
+            "action_status": self.action_status.value,
+            "action": None if self.action is None else self.action.value,
+            "result": None if self.result is None else self.result.value,
+            "action_id": self.action_id,
             "operator_id": self.operator_id,
             "acted_at": self.acted_at,
+            "error": None if self.error is None else self.error.to_dict(),
+        }
+
+
+def _operation_names(value: object, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ContractValidationError(f"{field_name} must be an array")
+    operations: list[str] = []
+    for item in value:
+        try:
+            operations.append(validate_identifier(item, field_name))
+        except IdentifierError as exc:
+            raise ContractValidationError(str(exc)) from exc
+    if len(set(operations)) != len(operations):
+        raise ContractValidationError(f"{field_name} values must be unique")
+    return tuple(operations)
+
+
+@dataclass(frozen=True, slots=True)
+class NavigatorState:
+    """Structured state for the non-executing Navigator SHADOW handoff."""
+
+    mode: NavigatorMode | None
+    handoff_status: NavigatorHandoffStatus | None
+    intake_status: NavigatorIntakeStatus | None
+    plan_status: NavigatorPlanStatus | None
+    handoff_id: str | None
+    intake_receipt_id: str | None
+    plan_id: str | None
+    expires_at: str | None
+    idempotency_key: str | None
+    allowed_operations: tuple[str, ...]
+    prohibited_operations: tuple[str, ...]
+
+    @classmethod
+    def empty(cls) -> "NavigatorState":
+        return cls(
+            mode=None,
+            handoff_status=None,
+            intake_status=None,
+            plan_status=None,
+            handoff_id=None,
+            intake_receipt_id=None,
+            plan_id=None,
+            expires_at=None,
+            idempotency_key=None,
+            allowed_operations=(),
+            prohibited_operations=(),
+        )
+
+    @classmethod
+    def shadow_running(cls) -> "NavigatorState":
+        return cls.from_mapping(
+            {
+                "mode": NavigatorMode.SHADOW.value,
+                "handoff_status": None,
+                "intake_status": None,
+                "plan_status": None,
+                "handoff_id": None,
+                "intake_receipt_id": None,
+                "plan_id": None,
+                "expires_at": None,
+                "idempotency_key": None,
+                "allowed_operations": list(NAVIGATOR_ALLOWED_OPERATIONS),
+                "prohibited_operations": list(NAVIGATOR_PROHIBITED_OPERATIONS),
+            }
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "NavigatorState":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError("navigator state must be an object")
+        fields = {
+            "mode",
+            "handoff_status",
+            "intake_status",
+            "plan_status",
+            "handoff_id",
+            "intake_receipt_id",
+            "plan_id",
+            "expires_at",
+            "idempotency_key",
+            "allowed_operations",
+            "prohibited_operations",
+        }
+        _require_exact_fields(value, fields, "navigator state")
+        mode = (
+            None
+            if value["mode"] is None
+            else _parse_enum(NavigatorMode, value["mode"], "navigator mode")
+        )
+        handoff_status = (
+            None
+            if value["handoff_status"] is None
+            else _parse_enum(
+                NavigatorHandoffStatus,
+                value["handoff_status"],
+                "navigator handoff_status",
+            )
+        )
+        intake_status = (
+            None
+            if value["intake_status"] is None
+            else _parse_enum(
+                NavigatorIntakeStatus,
+                value["intake_status"],
+                "navigator intake_status",
+            )
+        )
+        plan_status = (
+            None
+            if value["plan_status"] is None
+            else _parse_enum(
+                NavigatorPlanStatus,
+                value["plan_status"],
+                "navigator plan_status",
+            )
+        )
+        identifiers: dict[str, str | None] = {}
+        try:
+            for field_name in (
+                "handoff_id",
+                "intake_receipt_id",
+                "plan_id",
+                "idempotency_key",
+            ):
+                identifiers[field_name] = (
+                    None
+                    if value[field_name] is None
+                    else validate_identifier(value[field_name], f"navigator {field_name}")
+                )
+        except IdentifierError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        expires_at = (
+            None
+            if value["expires_at"] is None
+            else normalize_rfc3339(value["expires_at"], "navigator expires_at")
+        )
+        allowed = _operation_names(
+            value["allowed_operations"], "navigator allowed_operations"
+        )
+        prohibited = _operation_names(
+            value["prohibited_operations"], "navigator prohibited_operations"
+        )
+
+        if mode is None:
+            if any(
+                item is not None
+                for item in (
+                    handoff_status,
+                    intake_status,
+                    plan_status,
+                    *identifiers.values(),
+                    expires_at,
+                )
+            ) or allowed or prohibited:
+                raise ContractValidationError(
+                    "empty navigator state may not contain SHADOW progress"
+                )
+        else:
+            if allowed != NAVIGATOR_ALLOWED_OPERATIONS:
+                raise ContractValidationError(
+                    "Navigator SHADOW allowed_operations must be exactly VALIDATE and PLAN_ONLY"
+                )
+            if prohibited != NAVIGATOR_PROHIBITED_OPERATIONS:
+                raise ContractValidationError(
+                    "Navigator SHADOW prohibited_operations must be exactly the non-execution envelope"
+                )
+            if (handoff_status is None) != (identifiers["handoff_id"] is None):
+                raise ContractValidationError(
+                    "navigator handoff status and handoff_id must appear together"
+                )
+            if (intake_status is None) != (identifiers["intake_receipt_id"] is None):
+                raise ContractValidationError(
+                    "navigator intake status and receipt ID must appear together"
+                )
+            if (plan_status is None) != (identifiers["plan_id"] is None):
+                raise ContractValidationError(
+                    "navigator plan status and plan_id must appear together"
+                )
+            if intake_status is not None and handoff_status is None:
+                raise ContractValidationError(
+                    "navigator intake requires a staged handoff"
+                )
+            if plan_status is not None and intake_status is not NavigatorIntakeStatus.ACCEPTED:
+                raise ContractValidationError(
+                    "navigator plan creation requires accepted intake"
+                )
+            if expires_at is not None and handoff_status is None:
+                raise ContractValidationError(
+                    "navigator expires_at requires a staged handoff"
+                )
+            if identifiers["idempotency_key"] is not None and handoff_status is None:
+                raise ContractValidationError(
+                    "navigator idempotency_key requires a staged handoff"
+                )
+
+        return cls(
+            mode=mode,
+            handoff_status=handoff_status,
+            intake_status=intake_status,
+            plan_status=plan_status,
+            handoff_id=identifiers["handoff_id"],
+            intake_receipt_id=identifiers["intake_receipt_id"],
+            plan_id=identifiers["plan_id"],
+            expires_at=expires_at,
+            idempotency_key=identifiers["idempotency_key"],
+            allowed_operations=allowed,
+            prohibited_operations=prohibited,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": None if self.mode is None else self.mode.value,
+            "handoff_status": (
+                None if self.handoff_status is None else self.handoff_status.value
+            ),
+            "intake_status": (
+                None if self.intake_status is None else self.intake_status.value
+            ),
+            "plan_status": None if self.plan_status is None else self.plan_status.value,
+            "handoff_id": self.handoff_id,
+            "intake_receipt_id": self.intake_receipt_id,
+            "plan_id": self.plan_id,
+            "expires_at": self.expires_at,
+            "idempotency_key": self.idempotency_key,
+            "allowed_operations": list(self.allowed_operations),
+            "prohibited_operations": list(self.prohibited_operations),
         }
 
 
@@ -780,34 +1169,176 @@ class GovernorComponentProvenance:
 def _validate_operator_route(
     operator: OperatorState,
     *,
+    navigator: NavigatorState,
+    approval_scope: ApprovalScope | None,
     stages: Mapping[str, StageSnapshot],
     current_phase: CurrentPhase,
     mission_outcome: MissionOutcome,
     terminal: bool,
 ) -> None:
     route = operator.route
+    governor = stages["governor"]
+    navigator_stage = stages["navigator"]
+    empty_navigator = NavigatorState.empty()
+
     if route is None:
-        if stages["governor"].status is StageStatus.SUCCEEDED:
+        if governor.status is StageStatus.SUCCEEDED:
             raise ContractValidationError(
                 "a technically successful Governor stage requires an operator route"
             )
+        if operator.action_status is not OperatorActionStatus.NOT_STARTED:
+            raise ContractValidationError("operator action may not precede Governor routing")
+        if navigator_stage.status is not StageStatus.NOT_STARTED:
+            raise ContractValidationError("Navigator may not precede operator approval")
+        if navigator != empty_navigator or approval_scope is not None:
+            raise ContractValidationError(
+                "Navigator state and approval scope may not precede operator approval"
+            )
         return
-    governor = stages["governor"]
+
     if governor.status is not StageStatus.SUCCEEDED:
         raise ContractValidationError(
             "an operator route requires a technically successful Governor stage"
         )
-    if stages["navigator"].status is not StageStatus.NOT_STARTED:
+
+    if route is OperatorRoute.PENDING_APPROVAL:
+        if governor.native_state != "PROCEED":
+            raise ContractValidationError(
+                "PENDING_APPROVAL requires the PROCEED Governor disposition"
+            )
+        action_status = operator.action_status
+        if action_status in {
+            OperatorActionStatus.NOT_STARTED,
+            OperatorActionStatus.RUNNING,
+        }:
+            if (
+                current_phase is not CurrentPhase.OPERATOR
+                or mission_outcome is not MissionOutcome.HELD
+                or terminal
+                or navigator_stage.status is not StageStatus.NOT_STARTED
+                or navigator != empty_navigator
+                or approval_scope is not None
+            ):
+                raise ContractValidationError(
+                    "pending operator approval conflicts with mission state"
+                )
+            return
+        if action_status is OperatorActionStatus.FAILED:
+            if operator.error is None:
+                raise AssertionError("validated failed operator action lacks an error")
+            if (
+                current_phase is not CurrentPhase.OPERATOR
+                or mission_outcome is not MissionOutcome.FAILED
+                or terminal is operator.error.resumable
+                or navigator_stage.status is not StageStatus.NOT_STARTED
+                or navigator != empty_navigator
+                or approval_scope is not None
+            ):
+                raise ContractValidationError(
+                    "failed operator action conflicts with mission state"
+                )
+            return
+
+        if operator.action is OperatorAction.REJECT:
+            if (
+                operator.result is not OperatorResult.REJECTED
+                or current_phase is not CurrentPhase.COMPLETE
+                or mission_outcome is not MissionOutcome.VETOED
+                or not terminal
+                or navigator_stage.status is not StageStatus.NOT_STARTED
+                or navigator != empty_navigator
+                or approval_scope is not None
+            ):
+                raise ContractValidationError(
+                    "rejected operator handoff conflicts with mission state"
+                )
+            return
+
+        if (
+            operator.action is not OperatorAction.APPROVE_HANDOFF
+            or operator.result is not OperatorResult.APPROVED_FOR_HANDOFF
+            or approval_scope is not ApprovalScope.NAVIGATOR_SHADOW_HANDOFF
+        ):
+            raise ContractValidationError(
+                "successful operator approval lacks the Navigator SHADOW scope"
+            )
+
+        if navigator_stage.status is StageStatus.NOT_STARTED:
+            if (
+                current_phase is not CurrentPhase.NAVIGATOR
+                or mission_outcome is not MissionOutcome.HELD
+                or terminal
+                or navigator != empty_navigator
+            ):
+                raise ContractValidationError(
+                    "approved Navigator handoff conflicts with mission state"
+                )
+            return
+        if navigator_stage.status is StageStatus.RUNNING:
+            if (
+                current_phase is not CurrentPhase.NAVIGATOR
+                or mission_outcome is not MissionOutcome.HELD
+                or terminal
+                or navigator_stage.native_state != NavigatorMode.SHADOW.value
+                or navigator != NavigatorState.shadow_running()
+            ):
+                raise ContractValidationError(
+                    "running Navigator SHADOW attempt conflicts with mission state"
+                )
+            return
+        if navigator_stage.status is StageStatus.SUCCEEDED:
+            if (
+                current_phase is not CurrentPhase.COMPLETE
+                or mission_outcome is not MissionOutcome.APPROVED
+                or not terminal
+                or navigator_stage.native_state != NavigatorPlanStatus.CREATED.value
+                or navigator.mode is not NavigatorMode.SHADOW
+                or navigator.handoff_status is not NavigatorHandoffStatus.STAGED
+                or navigator.intake_status is not NavigatorIntakeStatus.ACCEPTED
+                or navigator.plan_status is not NavigatorPlanStatus.CREATED
+                or any(
+                    item is None
+                    for item in (
+                        navigator.handoff_id,
+                        navigator.intake_receipt_id,
+                        navigator.plan_id,
+                        navigator.expires_at,
+                        navigator.idempotency_key,
+                    )
+                )
+            ):
+                raise ContractValidationError(
+                    "completed Navigator SHADOW plan conflicts with mission state"
+                )
+            return
+        if navigator_stage.status is StageStatus.FAILED:
+            if navigator_stage.error is None:
+                raise AssertionError("validated failed Navigator stage lacks an error")
+            if (
+                current_phase is not CurrentPhase.NAVIGATOR
+                or mission_outcome is not MissionOutcome.FAILED
+                or terminal is navigator_stage.error.resumable
+                or navigator.mode is not NavigatorMode.SHADOW
+            ):
+                raise ContractValidationError(
+                    "failed Navigator SHADOW attempt conflicts with mission state"
+                )
+            return
+        raise ContractValidationError("approved Navigator handoff has unsupported status")
+
+    if operator.action_status is not OperatorActionStatus.NOT_STARTED:
         raise ContractValidationError(
-            "Phase 4 operator routing requires Navigator to remain NOT_STARTED"
+            "operator action is supported only for PENDING_APPROVAL"
+        )
+    if navigator_stage.status is not StageStatus.NOT_STARTED:
+        raise ContractValidationError(
+            "Phase 4 non-approval routing requires Navigator to remain NOT_STARTED"
+        )
+    if navigator != empty_navigator or approval_scope is not None:
+        raise ContractValidationError(
+            "non-approval routing may not contain Navigator state or approval scope"
         )
     expected = {
-        OperatorRoute.PENDING_APPROVAL: (
-            "PROCEED",
-            CurrentPhase.OPERATOR,
-            MissionOutcome.HELD,
-            False,
-        ),
         OperatorRoute.PENDING_REVIEW: (
             {"HOLD", "REVIEW_REQUIRED"},
             CurrentPhase.OPERATOR,
@@ -867,6 +1398,8 @@ class MissionSnapshot:
         | GovernorComponentProvenance,
     ]
     operator: OperatorState
+    navigator: NavigatorState
+    approval_scope: ApprovalScope | None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MissionSnapshot":
@@ -874,7 +1407,12 @@ class MissionSnapshot:
             raise ContractValidationError("mission snapshot must be an object")
         fields = set(value)
         missing = set(_SNAPSHOT_BASE_FIELDS) - fields
-        unknown = fields - set(_SNAPSHOT_BASE_FIELDS) - {"components", "operator"}
+        unknown = fields - set(_SNAPSHOT_BASE_FIELDS) - {
+            "components",
+            "operator",
+            "navigator",
+            "approval_scope",
+        }
         if missing:
             raise ContractValidationError(
                 f"mission snapshot is missing fields: {', '.join(sorted(missing))}"
@@ -1019,8 +1557,25 @@ class MissionSnapshot:
             if "operator" not in value
             else OperatorState.from_mapping(value["operator"])
         )
+        navigator = (
+            NavigatorState.empty()
+            if "navigator" not in value
+            else NavigatorState.from_mapping(value["navigator"])
+        )
+        approval_scope_value = value.get("approval_scope")
+        approval_scope = (
+            None
+            if approval_scope_value is None
+            else _parse_enum(
+                ApprovalScope,
+                approval_scope_value,
+                "approval_scope",
+            )
+        )
         _validate_operator_route(
             operator,
+            navigator=navigator,
+            approval_scope=approval_scope,
             stages=stages,
             current_phase=current_phase,
             mission_outcome=mission_outcome,
@@ -1044,6 +1599,8 @@ class MissionSnapshot:
             artifacts=artifacts,
             components=components,
             operator=operator,
+            navigator=navigator,
+            approval_scope=approval_scope,
         )
 
     @classmethod
@@ -1087,6 +1644,8 @@ class MissionSnapshot:
                 "artifacts": [request_artifact.to_dict()],
                 "components": {},
                 "operator": OperatorState.empty().to_dict(),
+                "navigator": NavigatorState.empty().to_dict(),
+                "approval_scope": None,
             }
         )
 
@@ -1110,6 +1669,10 @@ class MissionSnapshot:
                 name: self.components[name].to_dict() for name in sorted(self.components)
             },
             "operator": self.operator.to_dict(),
+            "navigator": self.navigator.to_dict(),
+            "approval_scope": (
+                None if self.approval_scope is None else self.approval_scope.value
+            ),
         }
 
 

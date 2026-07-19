@@ -6,6 +6,9 @@ from collections.abc import Iterable
 from typing import Any
 
 from .contracts import (
+    NAVIGATOR_ALLOWED_OPERATIONS,
+    NAVIGATOR_PROHIBITED_OPERATIONS,
+    ApprovalScope,
     ArtifactReference,
     ComponentProvenance,
     ContractValidationError,
@@ -14,6 +17,12 @@ from .contracts import (
     GovernorComponentProvenance,
     MissionOutcome,
     MissionSnapshot,
+    NavigatorMode,
+    NavigatorPlanStatus,
+    NavigatorState,
+    OperatorAction,
+    OperatorActionStatus,
+    OperatorResult,
     OperatorRoute,
     StageError,
     StageStatus,
@@ -623,6 +632,379 @@ def fail_governor(
         "error": error.to_dict(),
     }
     value["current_phase"] = CurrentPhase.GOVERNOR.value
+    value["mission_outcome"] = MissionOutcome.FAILED.value
+    value["terminal"] = not error.resumable
+    return MissionSnapshot.from_mapping(value)
+
+
+def _operator_action(value: OperatorAction | str) -> OperatorAction:
+    try:
+        return value if isinstance(value, OperatorAction) else OperatorAction(value)
+    except (TypeError, ValueError) as exc:
+        raise MissionTransitionError("operator action is unsupported") from exc
+
+
+def _operator_result(value: OperatorResult | str) -> OperatorResult:
+    try:
+        return value if isinstance(value, OperatorResult) else OperatorResult(value)
+    except (TypeError, ValueError) as exc:
+        raise MissionTransitionError("operator result is unsupported") from exc
+
+
+def _require_governor_proceed_for_operator(snapshot: MissionSnapshot) -> None:
+    if snapshot.terminal:
+        raise MissionTransitionError("a terminal mission cannot start operator review")
+    if snapshot.current_phase is not CurrentPhase.OPERATOR:
+        raise MissionTransitionError("mission is not in the OPERATOR phase")
+    if snapshot.mission_outcome is not MissionOutcome.HELD:
+        raise MissionTransitionError("operator review requires a HELD mission")
+    for stage_name in ("harbormaster", "oracle", "council", "governor"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} must have succeeded before operator review"
+            )
+    if snapshot.stages["governor"].native_state != "PROCEED":
+        raise MissionTransitionError(
+            "operator action is supported only after Governor PROCEED"
+        )
+    if snapshot.stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError("Navigator must be NOT_STARTED")
+    if snapshot.operator.route is not OperatorRoute.PENDING_APPROVAL:
+        raise MissionTransitionError("operator route must be PENDING_APPROVAL")
+    if snapshot.operator.action_status is not OperatorActionStatus.NOT_STARTED:
+        raise MissionTransitionError("operator action must be NOT_STARTED")
+    if snapshot.navigator != NavigatorState.empty() or snapshot.approval_scope is not None:
+        raise MissionTransitionError(
+            "Navigator state or approval scope already exists"
+        )
+
+
+def begin_operator_action(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    action: OperatorAction | str,
+    operator_id: str,
+    input_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Record the immutable RUNNING revision for explicit operator review."""
+
+    _require_governor_proceed_for_operator(snapshot)
+    parsed_action = _operator_action(action)
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    _append_or_reuse_artifacts(
+        value,
+        input_artifacts,
+        stage_name="Operator",
+    )
+    value["operator"] = {
+        "route": OperatorRoute.PENDING_APPROVAL.value,
+        "action_status": OperatorActionStatus.RUNNING.value,
+        "action": parsed_action.value,
+        "result": None,
+        "action_id": None,
+        "operator_id": operator_id,
+        "acted_at": None,
+        "error": None,
+    }
+    value["current_phase"] = CurrentPhase.OPERATOR.value
+    value["mission_outcome"] = MissionOutcome.HELD.value
+    value["terminal"] = False
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_running_operator_action(snapshot: MissionSnapshot) -> None:
+    if snapshot.current_phase is not CurrentPhase.OPERATOR:
+        raise MissionTransitionError("mission is not in the OPERATOR phase")
+    if snapshot.mission_outcome is not MissionOutcome.HELD or snapshot.terminal:
+        raise MissionTransitionError("operator action requires a nonterminal HELD mission")
+    for stage_name in ("harbormaster", "oracle", "council", "governor"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} state changed during operator review"
+            )
+    if snapshot.stages["governor"].native_state != "PROCEED":
+        raise MissionTransitionError("Governor disposition changed during operator review")
+    if snapshot.stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError("Navigator must remain NOT_STARTED")
+    if (
+        snapshot.operator.route is not OperatorRoute.PENDING_APPROVAL
+        or snapshot.operator.action_status is not OperatorActionStatus.RUNNING
+    ):
+        raise MissionTransitionError("operator action must be RUNNING")
+
+
+def complete_operator_action(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    result: OperatorResult | str,
+    action_id: str,
+    operator_id: str,
+    acted_at: str,
+    output_artifacts: Iterable[ArtifactReference],
+) -> MissionSnapshot:
+    """Commit an explicit operator approval or rejection result."""
+
+    _require_running_operator_action(snapshot)
+    parsed_result = _operator_result(result)
+    expected_result = {
+        OperatorAction.APPROVE_HANDOFF: OperatorResult.APPROVED_FOR_HANDOFF,
+        OperatorAction.REJECT: OperatorResult.REJECTED,
+    }[snapshot.operator.action]
+    if parsed_result is not expected_result:
+        raise MissionTransitionError("operator action and result are inconsistent")
+    if operator_id != snapshot.operator.operator_id:
+        raise MissionTransitionError("operator result actor differs from review actor")
+    if not (
+        parse_rfc3339(snapshot.observed_at, "operator start observed_at")
+        <= parse_rfc3339(acted_at, "operator acted_at")
+        <= parse_rfc3339(observed_at, "observed_at")
+    ):
+        raise MissionTransitionError(
+            "operator acted_at must fall within the recorded action attempt"
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, output_artifacts)
+    if not output_names:
+        raise MissionTransitionError(
+            "successful operator action requires an immutable action artifact"
+        )
+    value["operator"] = {
+        "route": OperatorRoute.PENDING_APPROVAL.value,
+        "action_status": OperatorActionStatus.SUCCEEDED.value,
+        "action": snapshot.operator.action.value,
+        "result": parsed_result.value,
+        "action_id": action_id,
+        "operator_id": operator_id,
+        "acted_at": acted_at,
+        "error": None,
+    }
+    if parsed_result is OperatorResult.APPROVED_FOR_HANDOFF:
+        value["current_phase"] = CurrentPhase.NAVIGATOR.value
+        value["mission_outcome"] = MissionOutcome.HELD.value
+        value["terminal"] = False
+        value["approval_scope"] = ApprovalScope.NAVIGATOR_SHADOW_HANDOFF.value
+    else:
+        value["current_phase"] = CurrentPhase.COMPLETE.value
+        value["mission_outcome"] = MissionOutcome.VETOED.value
+        value["terminal"] = True
+        value["approval_scope"] = None
+    return MissionSnapshot.from_mapping(value)
+
+
+def fail_operator_action(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    error: StageError,
+    action_id: str | None = None,
+    output_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Commit a structured technical failure for operator-action recording."""
+
+    _require_running_operator_action(snapshot)
+    if error.observed_at != observed_at:
+        raise MissionTransitionError(
+            "operator action error timestamp must match the snapshot"
+        )
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    _append_artifacts(value, output_artifacts)
+    value["operator"] = {
+        "route": OperatorRoute.PENDING_APPROVAL.value,
+        "action_status": OperatorActionStatus.FAILED.value,
+        "action": snapshot.operator.action.value,
+        "result": None,
+        "action_id": action_id,
+        "operator_id": snapshot.operator.operator_id,
+        "acted_at": observed_at,
+        "error": error.to_dict(),
+    }
+    value["current_phase"] = CurrentPhase.OPERATOR.value
+    value["mission_outcome"] = MissionOutcome.FAILED.value
+    value["terminal"] = not error.resumable
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_operator_approval_for_navigator(snapshot: MissionSnapshot) -> None:
+    if snapshot.terminal:
+        raise MissionTransitionError("a terminal mission cannot start Navigator")
+    if snapshot.current_phase is not CurrentPhase.NAVIGATOR:
+        raise MissionTransitionError("mission is not in the NAVIGATOR phase")
+    if snapshot.mission_outcome is not MissionOutcome.HELD:
+        raise MissionTransitionError("Navigator requires a HELD approved handoff")
+    for stage_name in ("harbormaster", "oracle", "council", "governor"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} must have succeeded before Navigator"
+            )
+    if snapshot.stages["governor"].native_state != "PROCEED":
+        raise MissionTransitionError("Navigator requires Governor PROCEED")
+    if snapshot.stages["navigator"].status is not StageStatus.NOT_STARTED:
+        raise MissionTransitionError("Navigator must be NOT_STARTED")
+    if (
+        snapshot.operator.route is not OperatorRoute.PENDING_APPROVAL
+        or snapshot.operator.action_status is not OperatorActionStatus.SUCCEEDED
+        or snapshot.operator.action is not OperatorAction.APPROVE_HANDOFF
+        or snapshot.operator.result is not OperatorResult.APPROVED_FOR_HANDOFF
+    ):
+        raise MissionTransitionError("Navigator requires explicit operator approval")
+    if snapshot.approval_scope is not ApprovalScope.NAVIGATOR_SHADOW_HANDOFF:
+        raise MissionTransitionError("Navigator approval scope is missing or unsupported")
+    if snapshot.navigator != NavigatorState.empty():
+        raise MissionTransitionError("Navigator native state already exists")
+
+
+def begin_navigator(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    existing_input_names: Iterable[str] = (),
+    input_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Create the immutable Navigator RUNNING/SHADOW revision."""
+
+    _require_operator_approval_for_navigator(snapshot)
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    selected_existing = _existing_artifact_names(
+        snapshot,
+        existing_input_names,
+        stage_name="Navigator",
+    )
+    selected_artifacts = _append_or_reuse_artifacts(
+        value,
+        input_artifacts,
+        stage_name="Navigator",
+    )
+    input_names = tuple(dict.fromkeys((*selected_existing, *selected_artifacts)))
+    if not input_names:
+        raise MissionTransitionError("Navigator requires recorded mission inputs")
+    value["stages"]["navigator"] = {
+        "status": StageStatus.RUNNING.value,
+        "native_state": NavigatorMode.SHADOW.value,
+        "inputs": list(input_names),
+        "outputs": [],
+        "error": None,
+    }
+    value["navigator"] = NavigatorState.shadow_running().to_dict()
+    value["current_phase"] = CurrentPhase.NAVIGATOR.value
+    value["mission_outcome"] = MissionOutcome.HELD.value
+    value["terminal"] = False
+    return MissionSnapshot.from_mapping(value)
+
+
+def _require_running_navigator(snapshot: MissionSnapshot) -> None:
+    if snapshot.current_phase is not CurrentPhase.NAVIGATOR:
+        raise MissionTransitionError("mission is not in the NAVIGATOR phase")
+    if snapshot.mission_outcome is not MissionOutcome.HELD or snapshot.terminal:
+        raise MissionTransitionError("Navigator requires a nonterminal HELD mission")
+    for stage_name in ("harbormaster", "oracle", "council", "governor"):
+        if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
+            raise MissionTransitionError(
+                f"{stage_name} state changed during Navigator"
+            )
+    if (
+        snapshot.stages["navigator"].status is not StageStatus.RUNNING
+        or snapshot.stages["navigator"].native_state != NavigatorMode.SHADOW.value
+        or snapshot.navigator != NavigatorState.shadow_running()
+    ):
+        raise MissionTransitionError("Navigator must be RUNNING in SHADOW mode")
+    if (
+        snapshot.operator.action_status is not OperatorActionStatus.SUCCEEDED
+        or snapshot.operator.result is not OperatorResult.APPROVED_FOR_HANDOFF
+        or snapshot.approval_scope is not ApprovalScope.NAVIGATOR_SHADOW_HANDOFF
+    ):
+        raise MissionTransitionError("Navigator operator approval changed unexpectedly")
+
+
+def complete_navigator(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    navigator_state: NavigatorState,
+    output_artifacts: Iterable[ArtifactReference],
+) -> MissionSnapshot:
+    """Commit a non-executing Navigator SHADOW plan as mission approval."""
+
+    _require_running_navigator(snapshot)
+    if not isinstance(navigator_state, NavigatorState):
+        raise MissionTransitionError("Navigator completion requires typed native state")
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, output_artifacts)
+    if not output_names:
+        raise MissionTransitionError("successful Navigator execution produced no artifacts")
+    value["stages"]["navigator"] = {
+        "status": StageStatus.SUCCEEDED.value,
+        "native_state": NavigatorPlanStatus.CREATED.value,
+        "inputs": list(snapshot.stages["navigator"].inputs),
+        "outputs": list(output_names),
+        "error": None,
+    }
+    value["navigator"] = navigator_state.to_dict()
+    value["current_phase"] = CurrentPhase.COMPLETE.value
+    value["mission_outcome"] = MissionOutcome.APPROVED.value
+    value["terminal"] = True
+    return MissionSnapshot.from_mapping(value)
+
+
+def fail_navigator(
+    snapshot: MissionSnapshot,
+    *,
+    previous_snapshot_sha256: str,
+    observed_at: str,
+    native_state: str | None,
+    error: StageError,
+    navigator_state: NavigatorState | None = None,
+    output_artifacts: Iterable[ArtifactReference] = (),
+) -> MissionSnapshot:
+    """Commit a structured Navigator technical failure and partial native state."""
+
+    _require_running_navigator(snapshot)
+    if error.observed_at != observed_at:
+        raise MissionTransitionError("Navigator error timestamp must match the snapshot")
+    partial_state = navigator_state or snapshot.navigator
+    if not isinstance(partial_state, NavigatorState):
+        raise MissionTransitionError("Navigator failure requires typed native state")
+    value = _base_transition(
+        snapshot,
+        previous_snapshot_sha256=previous_snapshot_sha256,
+        observed_at=observed_at,
+    )
+    output_names = _append_artifacts(value, output_artifacts)
+    value["stages"]["navigator"] = {
+        "status": StageStatus.FAILED.value,
+        "native_state": native_state,
+        "inputs": list(snapshot.stages["navigator"].inputs),
+        "outputs": list(output_names),
+        "error": error.to_dict(),
+    }
+    value["navigator"] = partial_state.to_dict()
+    value["current_phase"] = CurrentPhase.NAVIGATOR.value
     value["mission_outcome"] = MissionOutcome.FAILED.value
     value["terminal"] = not error.resumable
     return MissionSnapshot.from_mapping(value)

@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 from blackpod_build_week.contracts import (
+    NAVIGATOR_ALLOWED_OPERATIONS,
+    NAVIGATOR_PROHIBITED_OPERATIONS,
+    ApprovalScope,
     ArtifactReference,
     ComponentProvenance,
     ContractValidationError,
@@ -17,9 +20,18 @@ from blackpod_build_week.contracts import (
     MissionOutcome,
     MissionRequest,
     MissionSnapshot,
+    NavigatorHandoffStatus,
+    NavigatorIntakeStatus,
+    NavigatorMode,
+    NavigatorPlanStatus,
+    NavigatorState,
+    OperatorAction,
+    OperatorActionStatus,
+    OperatorResult,
     OperatorRoute,
     OperatorState,
     RunMode,
+    StageError,
     StageStatus,
 )
 from blackpod_build_week.identifiers import allocate_mission_id
@@ -193,10 +205,20 @@ class MissionSnapshotContractTests(unittest.TestCase):
         self.assertFalse(self.snapshot.terminal)
         self.assertIsNone(self.snapshot.previous_snapshot_sha256)
         self.assertEqual(self.snapshot.operator, OperatorState.empty())
+        self.assertEqual(self.snapshot.navigator, NavigatorState.empty())
+        self.assertIsNone(self.snapshot.approval_scope)
 
-    def test_operator_state_is_backward_compatible_and_rejects_actions(self) -> None:
+    def test_operator_state_is_backward_compatible_and_rejects_partial_actions(self) -> None:
         legacy = self.snapshot.to_dict()
-        del legacy["operator"]
+        legacy["operator"] = {
+            "route": None,
+            "action": None,
+            "result": None,
+            "operator_id": None,
+            "acted_at": None,
+        }
+        del legacy["navigator"]
+        del legacy["approval_scope"]
 
         parsed = MissionSnapshot.from_mapping(legacy)
 
@@ -205,17 +227,125 @@ class MissionSnapshotContractTests(unittest.TestCase):
             parsed.to_dict()["operator"],
             {
                 "route": None,
+                "action_status": "NOT_STARTED",
                 "action": None,
                 "result": None,
+                "action_id": None,
                 "operator_id": None,
                 "acted_at": None,
+                "error": None,
             },
         )
+        self.assertEqual(parsed.navigator, NavigatorState.empty())
+        self.assertIsNone(parsed.approval_scope)
 
         action = self.snapshot.to_dict()
         action["operator"]["action"] = "APPROVE_HANDOFF"
-        with self.assertRaisesRegex(ContractValidationError, "must remain null"):
+        with self.assertRaisesRegex(ContractValidationError, "NOT_STARTED"):
             MissionSnapshot.from_mapping(action)
+
+    def test_operator_action_states_are_strict_and_typed(self) -> None:
+        running = OperatorState.from_mapping(
+            {
+                "route": "PENDING_APPROVAL",
+                "action_status": "RUNNING",
+                "action": "APPROVE_HANDOFF",
+                "result": None,
+                "action_id": None,
+                "operator_id": "operator-reviewer",
+                "acted_at": None,
+                "error": None,
+            }
+        )
+        self.assertIs(running.action_status, OperatorActionStatus.RUNNING)
+        self.assertIs(running.action, OperatorAction.APPROVE_HANDOFF)
+        self.assertIsNone(running.action_id)
+
+        succeeded = OperatorState.from_mapping(
+            {
+                "route": "PENDING_APPROVAL",
+                "action_status": "SUCCEEDED",
+                "action": "APPROVE_HANDOFF",
+                "result": "APPROVED_FOR_HANDOFF",
+                "action_id": "operator-action-001",
+                "operator_id": "operator-reviewer",
+                "acted_at": "2026-07-18T18:06:00Z",
+                "error": None,
+            }
+        )
+        self.assertIs(succeeded.result, OperatorResult.APPROVED_FOR_HANDOFF)
+
+        failed_error = StageError.from_mapping(
+            {
+                "code": "OPERATOR_TIMEOUT",
+                "error_type": "TimeoutError",
+                "message": "operator action recording timed out",
+                "resumable": False,
+                "observed_at": "2026-07-18T18:06:00Z",
+            }
+        )
+        failed = OperatorState.from_mapping(
+            {
+                "route": "PENDING_APPROVAL",
+                "action_status": "FAILED",
+                "action": "APPROVE_HANDOFF",
+                "result": None,
+                "action_id": None,
+                "operator_id": "operator-reviewer",
+                "acted_at": "2026-07-18T18:06:00Z",
+                "error": failed_error.to_dict(),
+            }
+        )
+        self.assertIs(failed.action_status, OperatorActionStatus.FAILED)
+        self.assertIsNone(failed.action_id)
+
+        inconsistent = succeeded.to_dict()
+        inconsistent["result"] = "REJECTED"
+        with self.assertRaisesRegex(ContractValidationError, "inconsistent"):
+            OperatorState.from_mapping(inconsistent)
+
+    def test_navigator_state_enforces_shadow_non_execution_envelope(self) -> None:
+        running = NavigatorState.shadow_running()
+        self.assertIs(running.mode, NavigatorMode.SHADOW)
+        self.assertEqual(running.allowed_operations, NAVIGATOR_ALLOWED_OPERATIONS)
+        self.assertEqual(
+            running.prohibited_operations,
+            NAVIGATOR_PROHIBITED_OPERATIONS,
+        )
+
+        completed = NavigatorState.from_mapping(
+            {
+                "mode": "SHADOW",
+                "handoff_status": "STAGED",
+                "intake_status": "ACCEPTED",
+                "plan_status": "CREATED",
+                "handoff_id": "handoff-contract-001",
+                "intake_receipt_id": "intake-contract-001",
+                "plan_id": "plan-contract-001",
+                "expires_at": "2026-07-18T19:06:00Z",
+                "idempotency_key": "navigator-contract-001",
+                "allowed_operations": ["VALIDATE", "PLAN_ONLY"],
+                "prohibited_operations": [
+                    "SUBMIT_ORDER",
+                    "CANCEL_ORDER",
+                    "MODIFY_PORTFOLIO",
+                    "BROKER_CALL",
+                ],
+            }
+        )
+        self.assertIs(completed.handoff_status, NavigatorHandoffStatus.STAGED)
+        self.assertIs(completed.intake_status, NavigatorIntakeStatus.ACCEPTED)
+        self.assertIs(completed.plan_status, NavigatorPlanStatus.CREATED)
+
+        expanded = completed.to_dict()
+        expanded["allowed_operations"].append("SUBMIT_ORDER")
+        with self.assertRaisesRegex(ContractValidationError, "exactly"):
+            NavigatorState.from_mapping(expanded)
+
+        rejected_with_plan = completed.to_dict()
+        rejected_with_plan["intake_status"] = "REJECTED"
+        with self.assertRaisesRegex(ContractValidationError, "accepted intake"):
+            NavigatorState.from_mapping(rejected_with_plan)
 
     def test_snapshot_contract_can_represent_all_outcome_enum_values(self) -> None:
         base = self.snapshot.to_dict()
@@ -411,6 +541,61 @@ class MissionSnapshotContractTests(unittest.TestCase):
             ContractValidationError, "successful Governor stage"
         ):
             MissionSnapshot.from_mapping(candidate)
+
+    def test_phase5_cross_state_requires_scope_and_delays_approval(self) -> None:
+        phase4 = self.snapshot.to_dict()
+        phase4["stages"]["governor"] = {
+            "status": "SUCCEEDED",
+            "native_state": "PROCEED",
+            "inputs": [],
+            "outputs": [],
+            "error": None,
+        }
+        phase4["current_phase"] = "OPERATOR"
+        phase4["mission_outcome"] = "HELD"
+        phase4["operator"] = {
+            "route": "PENDING_APPROVAL",
+            "action": None,
+            "result": None,
+            "operator_id": None,
+            "acted_at": None,
+        }
+        del phase4["navigator"]
+        del phase4["approval_scope"]
+        parsed_phase4 = MissionSnapshot.from_mapping(phase4)
+        self.assertIs(parsed_phase4.operator.action_status, OperatorActionStatus.NOT_STARTED)
+
+        approved = parsed_phase4.to_dict()
+        approved["revision"] = 2
+        approved["snapshot_id"] = "mission-contract-001-r0002"
+        approved["previous_snapshot_sha256"] = "f" * 64
+        approved["operator"] = {
+            "route": "PENDING_APPROVAL",
+            "action_status": "SUCCEEDED",
+            "action": "APPROVE_HANDOFF",
+            "result": "APPROVED_FOR_HANDOFF",
+            "action_id": "operator-action-contract",
+            "operator_id": "operator-reviewer",
+            "acted_at": "2026-07-18T18:06:00Z",
+            "error": None,
+        }
+        approved["observed_at"] = "2026-07-18T18:06:00Z"
+        approved["current_phase"] = "NAVIGATOR"
+        approved["mission_outcome"] = "HELD"
+        approved["approval_scope"] = ApprovalScope.NAVIGATOR_SHADOW_HANDOFF.value
+        parsed_approval = MissionSnapshot.from_mapping(approved)
+        self.assertIs(parsed_approval.mission_outcome, MissionOutcome.HELD)
+        self.assertIs(
+            parsed_approval.stages["navigator"].status,
+            StageStatus.NOT_STARTED,
+        )
+
+        premature = parsed_approval.to_dict()
+        premature["mission_outcome"] = "APPROVED"
+        premature["current_phase"] = "COMPLETE"
+        premature["terminal"] = True
+        with self.assertRaisesRegex(ContractValidationError, "approved Navigator"):
+            MissionSnapshot.from_mapping(premature)
 
 
 if __name__ == "__main__":

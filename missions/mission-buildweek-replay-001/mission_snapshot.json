@@ -1,0 +1,89 @@
+{
+  "approval_scope": null,
+  "artifacts": [
+    {
+      "byte_size": 399,
+      "name": "mission_request",
+      "observed_at": "2026-07-18T18:05:00Z",
+      "path": "request/mission_request.json",
+      "producer": "harbormaster",
+      "schema_version": "blackpod.mission_request.v1",
+      "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+    }
+  ],
+  "components": {},
+  "current_phase": "ORACLE",
+  "mission_id": "mission-buildweek-replay-001",
+  "mission_outcome": "INCOMPLETE",
+  "navigator": {
+    "allowed_operations": [],
+    "expires_at": null,
+    "handoff_id": null,
+    "handoff_status": null,
+    "idempotency_key": null,
+    "intake_receipt_id": null,
+    "intake_status": null,
+    "mode": null,
+    "plan_id": null,
+    "plan_status": null,
+    "prohibited_operations": []
+  },
+  "observed_at": "2026-07-18T18:05:00Z",
+  "operator": {
+    "acted_at": null,
+    "action": null,
+    "action_id": null,
+    "action_status": "NOT_STARTED",
+    "error": null,
+    "operator_id": null,
+    "result": null,
+    "route": null
+  },
+  "previous_snapshot_sha256": null,
+  "request_id": "request-replay-example-001",
+  "revision": 1,
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_snapshot.v1",
+  "snapshot_id": "mission-buildweek-replay-001-r0001",
+  "stages": {
+    "council": {
+      "error": null,
+      "inputs": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "governor": {
+      "error": null,
+      "inputs": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "harbormaster": {
+      "error": null,
+      "inputs": [
+        "mission_request"
+      ],
+      "native_state": "INITIALIZED",
+      "outputs": [],
+      "status": "SUCCEEDED"
+    },
+    "navigator": {
+      "error": null,
+      "inputs": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "oracle": {
+      "error": null,
+      "inputs": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    }
+  },
+  "started_at": "2026-07-18T18:05:00Z",
+  "terminal": false
+}

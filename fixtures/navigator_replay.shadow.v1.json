@@ -1,0 +1,10 @@
+{
+  "schema_version": "blackpod.navigator_replay.v1",
+  "fixture_id": "navigator-replay-shadow-success-v1",
+  "mission_id": "mission-buildweek-replay-001",
+  "request_id": "request-replay-example-001",
+  "run_mode": "REPLAY",
+  "observed_at": "2026-07-18T18:07:00Z",
+  "mode": "SHADOW",
+  "failure_injection": "NONE"
+}

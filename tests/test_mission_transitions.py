@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 
 from blackpod_build_week.contracts import (
+    NAVIGATOR_ALLOWED_OPERATIONS,
+    NAVIGATOR_PROHIBITED_OPERATIONS,
+    ApprovalScope,
     ArtifactReference,
     ComponentProvenance,
     CouncilComponentProvenance,
@@ -12,7 +15,15 @@ from blackpod_build_week.contracts import (
     GovernorComponentProvenance,
     MissionOutcome,
     MissionRequest,
+    NavigatorHandoffStatus,
+    NavigatorIntakeStatus,
+    NavigatorMode,
+    NavigatorPlanStatus,
+    NavigatorState,
     OracleTransportKind,
+    OperatorAction,
+    OperatorActionStatus,
+    OperatorResult,
     OperatorRoute,
     RunMode,
     StageError,
@@ -23,12 +34,18 @@ from blackpod_build_week.mission_transitions import (
     MissionTransitionError,
     begin_council,
     begin_governor,
+    begin_navigator,
+    begin_operator_action,
     begin_oracle,
     complete_council,
     complete_governor,
+    complete_navigator,
+    complete_operator_action,
     complete_oracle,
     fail_council,
     fail_governor,
+    fail_navigator,
+    fail_operator_action,
     fail_oracle,
 )
 
@@ -706,6 +723,60 @@ class GovernorTransitionTests(unittest.TestCase):
             observed_at=OBSERVED_AT,
         )
 
+    def committed_proceed(self):
+        running = self.running_snapshot()
+        running_sha = self.store.commit_snapshot(self.initialized.paths, running)
+        complete = complete_governor(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            native_state="PROCEED",
+            output_artifacts=(self.governor_output(),),
+        )
+        complete_sha = self.store.commit_snapshot(self.initialized.paths, complete)
+        return complete, complete_sha
+
+    def mission_artifact(
+        self,
+        *,
+        relative_path: str,
+        name: str,
+        producer: str,
+        schema_version: str,
+    ) -> ArtifactReference:
+        return self.store.write_immutable_artifact(
+            "mission-transition-001",
+            relative_path=relative_path,
+            payload=(f'{{"artifact":"{name}"}}\n').encode(),
+            name=name,
+            producer=producer,
+            schema_version=schema_version,
+            observed_at=OBSERVED_AT,
+        )
+
+    def begin_committed_operator(
+        self,
+        *,
+        action: OperatorAction = OperatorAction.APPROVE_HANDOFF,
+    ):
+        proceed, proceed_sha = self.committed_proceed()
+        review = self.mission_artifact(
+            relative_path="operator/inputs/operator_review_packet.json",
+            name="operator_review_packet",
+            producer="governor",
+            schema_version="operator_review_packet.v1",
+        )
+        running = begin_operator_action(
+            proceed,
+            previous_snapshot_sha256=proceed_sha,
+            observed_at=OBSERVED_AT,
+            action=action,
+            operator_id="operator-transition-reviewer",
+            input_artifacts=(review,),
+        )
+        running_sha = self.store.commit_snapshot(self.initialized.paths, running)
+        return running, running_sha
+
     def test_begin_records_running_revision_inputs_and_provenance(self) -> None:
         running = self.running_snapshot()
         digest = self.store.commit_snapshot(self.initialized.paths, running)
@@ -835,6 +906,311 @@ class GovernorTransitionTests(unittest.TestCase):
         self.assertFalse(failed.terminal)
         self.assertIsNone(failed.operator.route)
         self.assertEqual(failed.stages["navigator"].status, StageStatus.NOT_STARTED)
+
+    def test_operator_approval_and_navigator_success_are_hash_chained(self) -> None:
+        operator_running, operator_running_sha = self.begin_committed_operator()
+        self.assertEqual(operator_running.revision, 8)
+        self.assertIs(
+            operator_running.operator.action_status,
+            OperatorActionStatus.RUNNING,
+        )
+        self.assertIsNone(operator_running.operator.action_id)
+        self.assertEqual(operator_running.current_phase, CurrentPhase.OPERATOR)
+        self.assertEqual(operator_running.mission_outcome, MissionOutcome.HELD)
+
+        action_artifact = self.mission_artifact(
+            relative_path="operator/attempt-0001/operator_action.json",
+            name="operator_action",
+            producer="operator",
+            schema_version="operator_inbox_action.v1",
+        )
+        approved = complete_operator_action(
+            operator_running,
+            previous_snapshot_sha256=operator_running_sha,
+            observed_at=OBSERVED_AT,
+            result=OperatorResult.APPROVED_FOR_HANDOFF,
+            action_id="operator-action-transition-001",
+            operator_id="operator-transition-reviewer",
+            acted_at=OBSERVED_AT,
+            output_artifacts=(action_artifact,),
+        )
+        approved_sha = self.store.commit_snapshot(self.initialized.paths, approved)
+        self.assertEqual(approved.revision, 9)
+        self.assertIs(approved.current_phase, CurrentPhase.NAVIGATOR)
+        self.assertIs(approved.mission_outcome, MissionOutcome.HELD)
+        self.assertFalse(approved.terminal)
+        self.assertIs(
+            approved.approval_scope,
+            ApprovalScope.NAVIGATOR_SHADOW_HANDOFF,
+        )
+        self.assertIs(
+            approved.stages["navigator"].status,
+            StageStatus.NOT_STARTED,
+        )
+
+        replay_input = self.mission_artifact(
+            relative_path="navigator/inputs/navigator_replay.json",
+            name="navigator_replay_input",
+            producer="harbormaster",
+            schema_version="blackpod.navigator_replay.v1",
+        )
+        navigator_running = begin_navigator(
+            approved,
+            previous_snapshot_sha256=approved_sha,
+            observed_at=OBSERVED_AT,
+            existing_input_names=("governor_rendered_decision", "operator_action"),
+            input_artifacts=(replay_input,),
+        )
+        navigator_running_sha = self.store.commit_snapshot(
+            self.initialized.paths,
+            navigator_running,
+        )
+        self.assertEqual(navigator_running.revision, 10)
+        self.assertIs(
+            navigator_running.stages["navigator"].status,
+            StageStatus.RUNNING,
+        )
+        self.assertEqual(
+            navigator_running.stages["navigator"].native_state,
+            NavigatorMode.SHADOW.value,
+        )
+        self.assertEqual(
+            set(navigator_running.stages["navigator"].inputs),
+            {
+                "governor_rendered_decision",
+                "operator_action",
+                "navigator_replay_input",
+            },
+        )
+
+        native_state = NavigatorState.from_mapping(
+            {
+                "mode": "SHADOW",
+                "handoff_status": "STAGED",
+                "intake_status": "ACCEPTED",
+                "plan_status": "CREATED",
+                "handoff_id": "handoff-transition-001",
+                "intake_receipt_id": "intake-transition-001",
+                "plan_id": "plan-transition-001",
+                "expires_at": "2026-07-18T19:05:00Z",
+                "idempotency_key": "navigator-transition-001",
+                "allowed_operations": list(NAVIGATOR_ALLOWED_OPERATIONS),
+                "prohibited_operations": list(NAVIGATOR_PROHIBITED_OPERATIONS),
+            }
+        )
+        output = self.mission_artifact(
+            relative_path="navigator/attempt-0001/navigator_shadow_plan.json",
+            name="navigator_shadow_plan",
+            producer="navigator",
+            schema_version="navigator_shadow_plan.v1",
+        )
+        complete = complete_navigator(
+            navigator_running,
+            previous_snapshot_sha256=navigator_running_sha,
+            observed_at=OBSERVED_AT,
+            navigator_state=native_state,
+            output_artifacts=(output,),
+        )
+        complete_sha = self.store.commit_snapshot(self.initialized.paths, complete)
+
+        self.assertEqual(complete.revision, 11)
+        self.assertEqual(
+            complete.previous_snapshot_sha256,
+            navigator_running_sha,
+        )
+        self.assertEqual(
+            self.store.load_mission("mission-transition-001").current_snapshot_sha256,
+            complete_sha,
+        )
+        self.assertIs(complete.current_phase, CurrentPhase.COMPLETE)
+        self.assertIs(complete.mission_outcome, MissionOutcome.APPROVED)
+        self.assertTrue(complete.terminal)
+        self.assertIs(
+            complete.stages["navigator"].status,
+            StageStatus.SUCCEEDED,
+        )
+        self.assertEqual(
+            complete.stages["navigator"].native_state,
+            NavigatorPlanStatus.CREATED.value,
+        )
+        self.assertIs(complete.navigator.handoff_status, NavigatorHandoffStatus.STAGED)
+        self.assertIs(complete.navigator.intake_status, NavigatorIntakeStatus.ACCEPTED)
+        self.assertIs(complete.navigator.plan_status, NavigatorPlanStatus.CREATED)
+        self.assertEqual(
+            set(complete.stages),
+            {"harbormaster", "oracle", "council", "governor", "navigator"},
+        )
+
+    def test_operator_rejection_vetoes_without_starting_navigator(self) -> None:
+        running, running_sha = self.begin_committed_operator(
+            action=OperatorAction.REJECT
+        )
+        action_artifact = self.mission_artifact(
+            relative_path="operator/attempt-0001/operator_action.json",
+            name="operator_action",
+            producer="operator",
+            schema_version="operator_inbox_action.v1",
+        )
+        rejected = complete_operator_action(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            result=OperatorResult.REJECTED,
+            action_id="operator-rejection-transition-001",
+            operator_id="operator-transition-reviewer",
+            acted_at=OBSERVED_AT,
+            output_artifacts=(action_artifact,),
+        )
+
+        self.assertIs(rejected.current_phase, CurrentPhase.COMPLETE)
+        self.assertIs(rejected.mission_outcome, MissionOutcome.VETOED)
+        self.assertTrue(rejected.terminal)
+        self.assertIsNone(rejected.approval_scope)
+        self.assertIs(
+            rejected.stages["navigator"].status,
+            StageStatus.NOT_STARTED,
+        )
+        with self.assertRaisesRegex(MissionTransitionError, "terminal"):
+            begin_navigator(
+                rejected,
+                previous_snapshot_sha256="f" * 64,
+                observed_at=OBSERVED_AT,
+                existing_input_names=("operator_action",),
+            )
+
+    def test_operator_failure_is_structured_and_may_precede_native_action_id(self) -> None:
+        running, running_sha = self.begin_committed_operator()
+        error = StageError.from_mapping(
+            {
+                "code": "OPERATOR_ACTION_TIMEOUT",
+                "error_type": "TimeoutError",
+                "message": "operator action recording timed out",
+                "resumable": True,
+                "observed_at": OBSERVED_AT,
+            }
+        )
+        failed = fail_operator_action(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            error=error,
+        )
+
+        self.assertIs(failed.operator.action_status, OperatorActionStatus.FAILED)
+        self.assertIsNone(failed.operator.action_id)
+        self.assertEqual(failed.operator.error, error)
+        self.assertIs(failed.current_phase, CurrentPhase.OPERATOR)
+        self.assertIs(failed.mission_outcome, MissionOutcome.FAILED)
+        self.assertFalse(failed.terminal)
+        self.assertIs(
+            failed.stages["navigator"].status,
+            StageStatus.NOT_STARTED,
+        )
+
+    def test_navigator_failure_preserves_partial_rejected_intake(self) -> None:
+        operator_running, operator_running_sha = self.begin_committed_operator()
+        action_artifact = self.mission_artifact(
+            relative_path="operator/attempt-0001/operator_action.json",
+            name="operator_action",
+            producer="operator",
+            schema_version="operator_inbox_action.v1",
+        )
+        approved = complete_operator_action(
+            operator_running,
+            previous_snapshot_sha256=operator_running_sha,
+            observed_at=OBSERVED_AT,
+            result="APPROVED_FOR_HANDOFF",
+            action_id="operator-action-transition-001",
+            operator_id="operator-transition-reviewer",
+            acted_at=OBSERVED_AT,
+            output_artifacts=(action_artifact,),
+        )
+        navigator_running = begin_navigator(
+            approved,
+            previous_snapshot_sha256="f" * 64,
+            observed_at=OBSERVED_AT,
+            existing_input_names=("operator_action",),
+        )
+        partial = NavigatorState.from_mapping(
+            {
+                "mode": "SHADOW",
+                "handoff_status": "STAGED",
+                "intake_status": "REJECTED",
+                "plan_status": None,
+                "handoff_id": "handoff-transition-rejected",
+                "intake_receipt_id": "intake-transition-rejected",
+                "plan_id": None,
+                "expires_at": "2026-07-18T19:05:00Z",
+                "idempotency_key": "navigator-transition-rejected",
+                "allowed_operations": list(NAVIGATOR_ALLOWED_OPERATIONS),
+                "prohibited_operations": list(NAVIGATOR_PROHIBITED_OPERATIONS),
+            }
+        )
+        error = StageError.from_mapping(
+            {
+                "code": "NAVIGATOR_INTAKE_REJECTED",
+                "error_type": "NavigatorIntakeError",
+                "message": "Navigator intake rejected the handoff",
+                "resumable": False,
+                "observed_at": OBSERVED_AT,
+            }
+        )
+        failed = fail_navigator(
+            navigator_running,
+            previous_snapshot_sha256="e" * 64,
+            observed_at=OBSERVED_AT,
+            native_state="REJECTED",
+            error=error,
+            navigator_state=partial,
+        )
+
+        self.assertIs(failed.stages["navigator"].status, StageStatus.FAILED)
+        self.assertIs(failed.navigator.intake_status, NavigatorIntakeStatus.REJECTED)
+        self.assertIs(failed.current_phase, CurrentPhase.NAVIGATOR)
+        self.assertIs(failed.mission_outcome, MissionOutcome.FAILED)
+        self.assertTrue(failed.terminal)
+
+    def test_operator_and_navigator_preconditions_reject_repeats_and_mismatches(self) -> None:
+        running, running_sha = self.begin_committed_operator()
+        with self.assertRaisesRegex(MissionTransitionError, "NOT_STARTED"):
+            begin_operator_action(
+                running,
+                previous_snapshot_sha256=running_sha,
+                observed_at=OBSERVED_AT,
+                action="APPROVE_HANDOFF",
+                operator_id="operator-transition-reviewer",
+            )
+        with self.assertRaisesRegex(MissionTransitionError, "inconsistent"):
+            complete_operator_action(
+                running,
+                previous_snapshot_sha256=running_sha,
+                observed_at=OBSERVED_AT,
+                result="REJECTED",
+                action_id="operator-action-wrong-result",
+                operator_id="operator-transition-reviewer",
+                acted_at=OBSERVED_AT,
+                output_artifacts=(),
+            )
+        with self.assertRaisesRegex(MissionTransitionError, "differs"):
+            complete_operator_action(
+                running,
+                previous_snapshot_sha256=running_sha,
+                observed_at=OBSERVED_AT,
+                result="APPROVED_FOR_HANDOFF",
+                action_id="operator-action-wrong-actor",
+                operator_id="operator-unrelated",
+                acted_at=OBSERVED_AT,
+                output_artifacts=(),
+            )
+
+        proceed = running
+        with self.assertRaisesRegex(MissionTransitionError, "NAVIGATOR phase"):
+            begin_navigator(
+                proceed,
+                previous_snapshot_sha256="f" * 64,
+                observed_at=OBSERVED_AT,
+                existing_input_names=("operator_review_packet",),
+            )
 
     def test_legacy_disposition_wrong_phase_and_repeat_are_rejected(self) -> None:
         running = self.running_snapshot()
