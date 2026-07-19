@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "purpose": "build-week-phase-1-live-example"
+  },
+  "operator_id": "build-week-operator",
+  "request_id": "request-live-example-001",
+  "requested_at": "2026-07-18T18:00:00Z",
+  "run_mode": "LIVE",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "AAPL"
+}
+

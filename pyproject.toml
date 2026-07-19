@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackpod-battlestar-build-week"
+version = "0.1.0"
+description = "Harbormaster submission spine for the BlackPod Battlestar Build Week mission"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "BlackPod" }]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
