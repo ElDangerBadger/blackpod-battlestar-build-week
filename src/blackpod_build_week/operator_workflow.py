@@ -552,8 +552,6 @@ def _validate_operator_preconditions(
         raise OperatorPreconditionError("mission correlation metadata is inconsistent")
     if request.run_mode is not snapshot.run_mode:
         raise OperatorPreconditionError("mission run mode is inconsistent")
-    if snapshot.revision != 7:
-        raise OperatorPreconditionError("operator action requires the Phase 4 r0007 snapshot")
     for stage_name in ("harbormaster", "oracle", "council", "governor"):
         if snapshot.stages[stage_name].status is not StageStatus.SUCCEEDED:
             raise OperatorPreconditionError(

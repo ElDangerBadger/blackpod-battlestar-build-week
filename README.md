@@ -10,6 +10,9 @@ and the current Navigator handoff, intake, and non-executing SHADOW plan.
 Stage 2, Phase 1 adds a strictly bounded ModelDock narrative-enrichment step
 after Oracle succeeds and before Council runs. ModelDock is a local LLM
 appliance in this path; it does not become an analytical or decision authority.
+Stage 2, Phase 2 adds the canonical one-command orchestration path, resumable
+stage stops, and deterministic presentation projections over that existing
+mission lifecycle.
 
 Harbormaster owns:
 
@@ -22,7 +25,9 @@ Harbormaster owns:
   Council evidence chain, Governor decision flow, operator gate, and Navigator
   SHADOW workflow;
 - the strict local ModelDock client and Oracle narrative-enrichment
-  contract; and
+  contract;
+- state-driven unified mission orchestration and deterministic Captain's Log
+  and mission-summary projections; and
 - correlation, stage transitions, artifact lineage, and Battlestar provenance
   for one immutable attempt per implemented stage.
 
@@ -38,10 +43,11 @@ authoritative for every measurement, market fact, diagnostic, readiness state,
 and typed analytical conclusion. ModelDock cannot approve a mission, render a
 Governor disposition, recommend or execute an order, or call Council,
 Governor, operator, Navigator, ModelDock-external providers, or broker APIs.
-Stage 1 contains no ModelDock integration. Stage 2 adds only this local,
-structured narrative seam. The repository contains no broker execution, order
-submission, order cancellation, portfolio modification, web service,
-database, queue, daemon, scheduler, or UI.
+Stage 1 contains no ModelDock integration. Stage 2 adds the bounded local
+narrative seam plus orchestration and presentation over existing stage logic.
+The repository contains no broker execution, order submission, order
+cancellation, portfolio modification, web service, database, queue, daemon,
+scheduler, or UI.
 
 ## Python and setup
 
@@ -1002,6 +1008,365 @@ require a running ModelDock service:
 .venv/bin/python3.11 -m unittest discover -s tests -v
 ```
 
+## Stage 2, Phase 2: unified mission orchestration
+
+The `mission-run` command is the canonical one-command path through the
+capabilities implemented in Stages 1 and 2. It initializes a mission and calls
+the existing Oracle, ModelDock-enrichment, Council, Governor, operator, and
+Navigator workflow functions in order. It does not duplicate their analysis,
+policy, validation, transition, or artifact logic.
+
+Every stage-level command remains available for focused operation and
+diagnosis:
+
+```text
+run-oracle
+enrich-oracle
+run-council
+run-governor
+operator-action
+run-navigator
+```
+
+Use `mission-run` for a new canonical mission and `mission-resume` for an
+existing mission. Both unified commands validate the full immutable snapshot
+chain and all referenced artifact hashes before deciding what, if anything,
+can run next. A resume skips completed stages; it never calls an earlier stage
+again merely to reconstruct state.
+
+### Unified command boundary
+
+A new mission has this shape:
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request <mission-request.json> \
+  --artifacts-root <artifact-root> \
+  --with-modeldock \
+  --through NAVIGATOR \
+  --operator-action APPROVE_HANDOFF \
+  --operator-id <operator-id> \
+  --operator-reason "Approved for Navigator SHADOW planning." \
+  <transport-specific inputs>
+```
+
+The ModelDock choice is always explicit and mutually exclusive:
+
+- `--with-modeldock` runs strict Oracle narrative enrichment between Oracle
+  and Council. An enabled enrichment is required to succeed; it is never
+  silently skipped.
+- `--without-modeldock` deliberately continues with Oracle's original typed
+  facts and no ModelDock call. It is an explicit orchestration choice, not a
+  fallback after an enrichment failure.
+
+Unified exit behavior is stable: `0` means a valid completed mission or an
+intentional resumable stop; `2` means an invalid invocation or input contract;
+`4` means stored mission integrity or persistence failed; and `11` means a
+technical workflow or canonical state failure. A controlled `FAILED` mission
+therefore writes its canonical failure state and returns `11`.
+
+The inclusive stop target must be one of:
+
+| Option | Last eligible operation | Typical state after a successful stop |
+| --- | --- | --- |
+| `--through ORACLE` | Oracle and enabled ModelDock enrichment | `COUNCIL` / `INCOMPLETE` |
+| `--through COUNCIL` | Council synthesis and executive summary | `GOVERNOR` / `INCOMPLETE` |
+| `--through GOVERNOR` | Governor rendered decision | disposition-dependent |
+| `--through OPERATOR` | Explicit operator action, when eligible | `NAVIGATOR` / `HELD`, or terminal `VETOED` |
+| `--through NAVIGATOR` | Authorized SHADOW intake and plan | terminal `APPROVED`, or an earlier policy outcome |
+
+Stopping never creates a fabricated stage transition. For example, stopping
+after Governor `PROCEED` leaves the mission `HELD` at
+`PENDING_APPROVAL`; it does not record an operator action. Stopping after
+Council leaves the canonical outcome `INCOMPLETE`. Both are resumable.
+
+Commands targeting `OPERATOR` or `NAVIGATOR` require the action, identity, and
+reason up front, before any stage advances. Those controls are invoked only if
+Governor returns `PROCEED`; the only supported recorded actions remain
+`APPROVE_HANDOFF` and `REJECT`. There is no invented `LEAVE_PENDING` action:
+use `--through GOVERNOR` to stop safely at pending approval. If Governor
+returns `HOLD`, `REVIEW_REQUIRED`, `BLOCKED`, or `STAND_DOWN`, the unified
+workflow ignores the configured future action and does not invoke operator or
+Navigator.
+
+Common controls are forwarded to the existing stage workflows:
+
+- `--deadline-seconds <seconds>` sets the existing process-boundary deadline;
+- `--strict-battlestar-clean` rejects a dirty Battlestar worktree; and
+- LIVE approval uses `--expires-in-minutes <positive-minutes>`.
+
+### Deterministic one-command replay
+
+The existing replay fixtures are sufficient for every canonical outcome. They
+remain stage inputs, not precomputed stage results or mission snapshots. Each
+example below must use its own unused artifact root.
+
+Set the common read-only sibling and local ModelDock configuration first:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+export MODELDOCK_PROFILE=default
+export MODELDOCK_PROVIDER=mlx
+unset MODELDOCK_MODEL
+```
+
+Approved SHADOW mission (`APPROVED`, 13 immutable snapshots):
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-approved \
+  --with-modeldock \
+  --through NAVIGATOR \
+  --operator-action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --operator-reason "Approved for deterministic Navigator SHADOW planning." \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json \
+  --operator-replay-fixture fixtures/operator_replay_action.approve.v1.json \
+  --navigator-replay-fixture fixtures/navigator_replay.shadow.v1.json
+```
+
+Held at pending operator review (`HELD`, 9 immutable snapshots):
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-held \
+  --with-modeldock \
+  --through GOVERNOR \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json
+```
+
+This deliberately stops after `PROCEED`. The operator route is
+`PENDING_APPROVAL`, Navigator remains `NOT_STARTED`, and Governor has not
+approved a trade.
+
+Operator rejection (`VETOED`, 11 immutable snapshots):
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-vetoed \
+  --with-modeldock \
+  --through OPERATOR \
+  --operator-action REJECT \
+  --operator-id demo-operator \
+  --operator-reason "Rejected at the deterministic operator gate." \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json \
+  --operator-replay-fixture fixtures/operator_replay_action.reject.v1.json
+```
+
+Controlled Navigator intake failure (`FAILED`, 13 immutable snapshots; the
+command exits nonzero):
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-failed \
+  --with-modeldock \
+  --through NAVIGATOR \
+  --operator-action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --operator-reason "Approved for deterministic Navigator SHADOW planning." \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json \
+  --operator-replay-fixture fixtures/operator_replay_action.approve.v1.json \
+  --navigator-replay-fixture fixtures/navigator_replay.intake-failure.v1.json
+```
+
+Deliberately incomplete after Oracle and enabled enrichment (`INCOMPLETE`, 5
+immutable snapshots):
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-incomplete \
+  --with-modeldock \
+  --through ORACLE \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json
+```
+
+These paths demonstrate the existing canonical derivation rules:
+
+| Outcome | Canonical cause |
+| --- | --- |
+| `APPROVED` | Explicit approval followed by a validated Navigator SHADOW plan |
+| `HELD` | Review remains open, including `PROCEED` before operator approval |
+| `VETOED` | Governor `STAND_DOWN` or explicit operator rejection |
+| `FAILED` | A technical, schema, integrity, expiry, or correlation failure |
+| `INCOMPLETE` | The mission intentionally stops before a decision outcome |
+
+### Explicit ModelDock-disabled replay
+
+The complete Stage 1 path also remains available without narrative enrichment.
+No ModelDock environment variables or fixture are needed, and no ModelDock
+configuration, preflight, client, or network operation is invoked:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-approved-without-modeldock \
+  --without-modeldock \
+  --through NAVIGATOR \
+  --operator-action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --operator-reason "Approved for deterministic Navigator SHADOW planning." \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json \
+  --operator-replay-fixture fixtures/operator_replay_action.approve.v1.json \
+  --navigator-replay-fixture fixtures/navigator_replay.shadow.v1.json
+```
+
+This successful path has 11 immutable snapshots. Council consumes the same
+authoritative Oracle fact artifacts without an `oracle_modeldock_narrative`
+input.
+
+### Stop and resume
+
+`mission-resume` loads the stored request and current canonical snapshot by
+mission ID. It validates the complete hash chain and referenced artifacts,
+then continues from the first eligible incomplete stage. Supply the intended
+inclusive target and the explicit ModelDock mode again. Replay fixture inputs
+remain explicit so completed operation identity and all remaining transports
+can be checked.
+
+Stop after Council:
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/stage2-phase2-resume-demo \
+  --with-modeldock \
+  --through COUNCIL \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json
+```
+
+Resume at Governor and finish through Navigator:
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-resume \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/stage2-phase2-resume-demo \
+  --with-modeldock \
+  --through NAVIGATOR \
+  --operator-action APPROVE_HANDOFF \
+  --operator-id demo-operator \
+  --operator-reason "Approved for deterministic Navigator SHADOW planning." \
+  --oracle-replay-fixture fixtures/oracle_replay_quotes.v1.json \
+  --modeldock-replay-fixture fixtures/modeldock_oracle_narrative.replay.v1.json \
+  --council-replay-fixture fixtures/council_replay_policy.v1.json \
+  --governor-replay-fixture fixtures/governor_replay_context.proceed.v1.json \
+  --operator-replay-fixture fixtures/operator_replay_action.approve.v1.json \
+  --navigator-replay-fixture fixtures/navigator_replay.shadow.v1.json
+```
+
+The second command starts with Governor; it does not rewrite or re-execute
+Oracle, ModelDock, or Council. Repeating an identical completed `mission-run`
+or `mission-resume` is an explicit no-op. A conflicting operator action, an
+interrupted or previously failed one-attempt stage, an inconsistent ModelDock
+choice, a corrupted artifact, or a broken snapshot chain fails explicitly.
+Presentation projections are left byte-for-byte unchanged for an identical
+no-op.
+
+### Captain's Log and mission summary
+
+Every unified run that leaves a valid canonical snapshot, including a
+controlled technical failure or deliberate stop, writes three deterministic,
+presentation-oriented projections:
+
+```text
+artifacts/missions/<mission-id>/presentation/
+├── captains_log.json
+├── captains_log.md
+└── mission_summary.json
+```
+
+The Captain's Log contains only events proven by canonical snapshots and
+artifacts: mission acceptance, Oracle result, ModelDock narrative status,
+Council state, Governor disposition, operator action, Navigator result, and
+the current outcome. Each entry includes the stage, canonical timestamp,
+status, a fixed plain-English summary, and mission-relative source artifact
+references. The Markdown file is rendered deterministically from the JSON; no
+LLM writes or embellishes either form.
+
+`mission_summary.json` is the future UI contract. It contains the mission ID,
+symbol, run mode, all stage states, ModelDock provider/model/trace identity,
+Governor disposition, operator result, Navigator SHADOW state, current
+outcome, important warnings, snapshot count, and canonical current-snapshot
+path.
+
+These files are derived presentation state, not replacements for the immutable
+snapshot chain. They are atomically refreshed when a stopped mission advances
+and are not rewritten when the derived bytes are identical. Canonical stage
+artifacts and immutable snapshot revisions are never overwritten.
+
+### Optional unified LIVE ModelDock canary
+
+Start ModelDock separately, configure a registered local MLX text model, and
+run deep preflight first. This exact canary intentionally stops after Oracle
+and narrative enrichment, so it needs no Council policy, Governor context, or
+operator action:
+
+```bash
+export BATTLESTAR_PATH=../../BlackPod-Versions/blackpod_battlestar
+export MODELDOCK_BASE_URL=http://127.0.0.1:8000
+export MODELDOCK_TIMEOUT_SECONDS=30
+export MODELDOCK_PROFILE=default
+export MODELDOCK_PROVIDER=mlx
+export MODELDOCK_MODEL=gemma-4-e4b-it-4bit
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster modeldock-preflight
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster mission-run \
+  --request examples/mission_request.live.json \
+  --artifacts-root artifacts/stage2-phase2-live-modeldock-canary \
+  --with-modeldock \
+  --through ORACLE
+```
+
+LIVE sends Oracle evidence only after deep readiness proves the configured
+model is registered for non-mocked local MLX text inference. It never uses a
+replay fixture or silently changes transport. A complete LIVE continuation
+through Council and Governor additionally requires
+`--council-policy-input <path>` and `--governor-context-input <path>`. Crossing
+the operator boundary also requires the explicit action, operator identity,
+rationale, and `--expires-in-minutes 30`. The same
+`--deadline-seconds` and `--strict-battlestar-clean` controls are available.
+
+### Unified SHADOW-only safety boundary
+
+The unified command does not weaken any Stage 1 gate. Governor `PROCEED` is
+still only a route to operator review. `APPROVED` is produced only after an
+explicit `APPROVE_HANDOFF`, accepted Navigator intake, and creation of a
+SHADOW plan. Its scope remains exactly `NAVIGATOR_SHADOW_HANDOFF`.
+
+Allowed Navigator operations remain exactly `VALIDATE` and `PLAN_ONLY`.
+`SUBMIT_ORDER`, `CANCEL_ORDER`, `MODIFY_PORTFOLIO`, and `BROKER_CALL` remain
+prohibited. The unified orchestration imports or invokes no broker client,
+order API, portfolio mutation, ModelDock-external provider, or execution path.
+
+Run the complete suite with no live market, ModelDock, or broker dependency:
+
+```bash
+.venv/bin/python3.11 -m unittest discover -s tests -v
+```
+
 ## Known limitations
 
 - Oracle runs Battlestar's complete fixed 21-symbol example fleet. The mission
@@ -1083,7 +1448,8 @@ require a running ModelDock service:
   validator can prove every qualitative sentence is semantically entailed.
   Oracle's typed artifacts therefore remain authoritative in every case.
 - Operator action, Navigator SHADOW planning, and their immutable audit
-  artifacts are included in Phase 5. Stage 2 adds only ModelDock narrative
-  enrichment. UI, live broker execution, order submission/cancellation,
-  portfolio changes, web services, databases, queues, daemons, and schedulers
-  remain explicitly absent.
+  artifacts are included in Phase 5. Stage 2 adds bounded ModelDock narrative
+  enrichment, unified orchestration, and deterministic presentation
+  projections only. UI, live broker execution, order
+  submission/cancellation, portfolio changes, web services, databases,
+  queues, daemons, and schedulers remain explicitly absent.
