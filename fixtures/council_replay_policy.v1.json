@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-18T18:05:00Z",
+  "input_id": "council-replay-policy-build-week-v1",
+  "mandate": {
+    "allowed_sides": [
+      "BUY",
+      "SELL"
+    ],
+    "as_of": "2026-07-18T18:05:00Z",
+    "max_trades": 2,
+    "ok": true,
+    "reason": "BUILD_WEEK_POLICY_OK",
+    "risk_posture": "NORMAL",
+    "source": "build-week-deterministic-replay"
+  },
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.council_supporting_input.v1"
+}

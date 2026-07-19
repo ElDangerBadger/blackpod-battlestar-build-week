@@ -7,12 +7,41 @@ import unittest
 from pathlib import Path
 
 from blackpod_build_week.battlestar_config import (
+    ADVISOR_HEALTH_ENTRY_POINT,
+    ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
     BATTLESTAR_PATH_ENV,
+    CANDIDATE_ENTRY_POINT,
+    CANDIDATE_MODULE_RELATIVE_PATH,
+    COUNCIL_EXECUTIVE_SUMMARY_ENTRY_POINT,
+    COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH,
+    COUNCIL_SYNTHESIS_ENTRY_POINT,
+    COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+    MANDATE_ENTRY_POINT,
+    MANDATE_MODULE_RELATIVE_PATH,
     ORACLE_ENTRY_POINT,
     ORACLE_FLEET_RELATIVE_PATH,
     ORACLE_MODULE_RELATIVE_PATH,
+    RUNTIME_VALIDATION_ENTRY_POINT,
+    RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
+    SENATE_DELIBERATION_ENTRY_POINT,
+    SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
+    SENATE_REVIEW_ENTRY_POINT,
+    SENATE_REVIEW_MODULE_RELATIVE_PATH,
     BattlestarConfigurationError,
     load_battlestar_config,
+    load_council_battlestar_config,
+)
+
+
+COUNCIL_MODULES = (
+    CANDIDATE_MODULE_RELATIVE_PATH,
+    SENATE_REVIEW_MODULE_RELATIVE_PATH,
+    SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
+    MANDATE_MODULE_RELATIVE_PATH,
+    COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+    COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH,
+    ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
+    RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
 )
 
 
@@ -25,7 +54,9 @@ class BattlestarConfigurationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def make_repository(self, name: str = "battlestar") -> Path:
+    def make_repository(
+        self, name: str = "battlestar", *, include_council: bool = False
+    ) -> Path:
         root = self.base / name
         (root / ORACLE_MODULE_RELATIVE_PATH).parent.mkdir(parents=True)
         (root / ORACLE_MODULE_RELATIVE_PATH).write_text(
@@ -37,6 +68,11 @@ class BattlestarConfigurationTests(unittest.TestCase):
             "fleet_id: test-oracle-fleet\n",
             encoding="utf-8",
         )
+        if include_council:
+            for relative_path in COUNCIL_MODULES:
+                module = root / relative_path
+                module.parent.mkdir(parents=True, exist_ok=True)
+                module.write_text("# deterministic test module\n", encoding="utf-8")
         self.run_git(root, "init", "--quiet")
         self.run_git(root, "config", "user.email", "build-week@example.invalid")
         self.run_git(root, "config", "user.name", "Build Week Tests")
@@ -66,6 +102,40 @@ class BattlestarConfigurationTests(unittest.TestCase):
         self.assertEqual(
             ORACLE_ENTRY_POINT,
             "blackpod.runtime.oracle_pipeline.run_oracle_pipeline",
+        )
+
+    def test_public_council_entry_points_are_stable(self) -> None:
+        self.assertEqual(
+            CANDIDATE_ENTRY_POINT,
+            "blackpod.advisors.trading_candidate_generator.build_trading_candidate_report",
+        )
+        self.assertEqual(
+            SENATE_REVIEW_ENTRY_POINT,
+            "blackpod.advisors.senate_candidate_intake.build_senate_review_packet",
+        )
+        self.assertEqual(
+            SENATE_DELIBERATION_ENTRY_POINT,
+            "blackpod.advisors.senate_deliberation.build_senate_deliberation",
+        )
+        self.assertEqual(
+            MANDATE_ENTRY_POINT,
+            "blackpod.advisors.mandate.MandateAdvisor.run",
+        )
+        self.assertEqual(
+            COUNCIL_SYNTHESIS_ENTRY_POINT,
+            "blackpod.governor.council_synthesis.build_council_synthesis",
+        )
+        self.assertEqual(
+            COUNCIL_EXECUTIVE_SUMMARY_ENTRY_POINT,
+            "blackpod.governor.council_executive_summary.build_council_executive_summary",
+        )
+        self.assertEqual(
+            ADVISOR_HEALTH_ENTRY_POINT,
+            "blackpod.runtime.advisor_health.build_advisor_health_summary",
+        )
+        self.assertEqual(
+            RUNTIME_VALIDATION_ENTRY_POINT,
+            "blackpod.runtime.validation_report.build_runtime_validation_report",
         )
 
     def test_missing_environment_variable_is_rejected(self) -> None:
@@ -135,6 +205,73 @@ class BattlestarConfigurationTests(unittest.TestCase):
         self.assertEqual(config.git_revision, expected_revision)
         self.assertEqual(config.git_branch, expected_branch)
         self.assertFalse(config.dirty_worktree)
+        self.assertIsNone(config.candidate_module_path)
+        self.assertIsNone(config.council_synthesis_module_path)
+
+    def test_council_preflight_reports_all_required_native_modules(self) -> None:
+        root = self.make_repository(include_council=True)
+
+        config = load_council_battlestar_config(
+            artifacts_root=self.artifacts_root,
+            environ={BATTLESTAR_PATH_ENV: str(root)},
+        )
+
+        expected = {
+            "candidate_module_path": CANDIDATE_MODULE_RELATIVE_PATH,
+            "senate_review_module_path": SENATE_REVIEW_MODULE_RELATIVE_PATH,
+            "senate_deliberation_module_path": SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
+            "mandate_module_path": MANDATE_MODULE_RELATIVE_PATH,
+            "council_synthesis_module_path": COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+            "council_executive_summary_module_path": (
+                COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH
+            ),
+            "advisor_health_module_path": ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
+            "runtime_validation_module_path": RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
+        }
+        for field_name, relative_path in expected.items():
+            with self.subTest(field=field_name):
+                self.assertEqual(
+                    getattr(config, field_name),
+                    (root / relative_path).resolve(),
+                )
+
+    def test_council_preflight_rejects_each_missing_native_module(self) -> None:
+        cases = (
+            (CANDIDATE_MODULE_RELATIVE_PATH, "candidate-generation module is missing"),
+            (SENATE_REVIEW_MODULE_RELATIVE_PATH, "Senate review module is missing"),
+            (
+                SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
+                "Senate deliberation module is missing",
+            ),
+            (MANDATE_MODULE_RELATIVE_PATH, "Mandate module is missing"),
+            (
+                COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+                "Council synthesis module is missing",
+            ),
+            (
+                COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH,
+                "Council executive-summary module is missing",
+            ),
+            (
+                ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
+                "advisor-health module is missing",
+            ),
+            (
+                RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
+                "runtime-validation module is missing",
+            ),
+        )
+        for index, (relative_path, message) in enumerate(cases):
+            with self.subTest(module=str(relative_path)):
+                root = self.make_repository(
+                    f"battlestar-{index}", include_council=True
+                )
+                (root / relative_path).unlink()
+                with self.assertRaisesRegex(BattlestarConfigurationError, message):
+                    load_council_battlestar_config(
+                        artifacts_root=self.artifacts_root,
+                        environ={BATTLESTAR_PATH_ENV: str(root)},
+                    )
 
     def test_dirty_worktree_is_reported_without_rejecting_development(self) -> None:
         root = self.make_repository()

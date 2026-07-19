@@ -1,9 +1,10 @@
 # BlackPod Battlestar Build Week
 
 This repository contains the Build Week submission spine. Stage 1, Phase 1
-initializes a mission through Harbormaster. Stage 1, Phase 2 extends that spine
-through the existing Battlestar Oracle and stops with Council as the next
-phase.
+initializes a mission through Harbormaster. Phase 2 runs the existing
+Battlestar Oracle. Phase 3 adds Battlestar's existing candidate, Senate,
+Council synthesis, and Council executive-summary interfaces, then stops with
+Governor as the next phase.
 
 Harbormaster owns:
 
@@ -12,15 +13,19 @@ Harbormaster owns:
 - canonical `blackpod.mission_snapshot.v1` revisions;
 - contained, immutable, hashed mission artifacts and atomic current-snapshot
   publication;
-- the Build Week adapter that invokes the sibling Battlestar Oracle; and
-- correlation, stage transitions, artifact capture, and Battlestar provenance
-  for one Oracle attempt.
+- the narrow Build Week adapters that invoke the sibling Battlestar Oracle and
+  Council evidence chain; and
+- correlation, stage transitions, artifact lineage, and Battlestar provenance
+  for one immutable attempt per implemented stage.
 
-Battlestar remains the owner of Oracle acquisition and analysis. The Build
-Week adapter does not reproduce calculations or introduce market-analysis
-rules. Council, ModelDock, Governor, Navigator, operator UI, and broker
-execution are explicitly outside Phase 2. This repository still provides no
-web service, database, queue, daemon, scheduler, or UI.
+Battlestar remains the owner of Oracle acquisition, candidate generation,
+Senate deliberation, advisor-health validation, Council synthesis, and
+executive-summary logic. The Build
+Week adapters do not reproduce calculations, introduce voting rules, or add
+market-analysis policy. Governor execution, operator approval, Navigator,
+ModelDock, UI, and broker execution are explicitly outside Phase 3. This
+repository still provides no web service, database, queue, daemon, scheduler,
+or UI.
 
 ## Python and setup
 
@@ -43,12 +48,14 @@ checkout and Build Week artifact root completely disjoint.
 export BATTLESTAR_PATH=../blackpod_battlestar
 ```
 
-Before Oracle runs, preflight verifies that this is a directory, that the
-expected Oracle module and fleet configuration exist, and that Git revision
-and worktree state can be reported. A dirty worktree is allowed for
-development and is recorded clearly.
-Use `--strict-battlestar-clean` on `run-oracle` when a dirty checkout must be
-rejected. Neither preflight nor execution writes to the Battlestar checkout.
+Before a stage runs, preflight verifies that this is a directory, that its
+required native modules exist, and that Git revision and worktree state can be
+reported. Council preflight additionally checks the candidate, Senate,
+Mandate, runtime-validation, advisor-health, synthesis, and executive-summary
+modules. A dirty worktree is allowed
+for development and recorded clearly. Use `--strict-battlestar-clean` on a
+stage command when a dirty checkout must be rejected. Neither preflight nor
+execution writes to the Battlestar checkout.
 
 Run the complete Build Week test suite without live market access:
 
@@ -181,12 +188,105 @@ conflict. Both exit nonzero. Phase 2 deliberately has no force or retry option.
 Immutable snapshot revisions and Oracle artifacts are created exclusively. A
 collision is an error, never an overwrite.
 
-## Mission directory
+## Phase 3: run Council
 
-After the deterministic Phase 2 example, the mission layout is:
+Council requires a technically successful Oracle stage in `COUNCIL` phase.
+It consumes only explicitly recorded mission artifacts: Oracle normalized
+fleet data, readiness, report, assessment, narrative, and one versioned policy
+input. It then invokes Battlestar's existing deterministic chain:
 
 ```text
-artifacts/phase2-demo/
+Oracle normalized snapshot + readiness
+  -> trading candidate report
+  -> Senate review packet + Oracle report
+  -> Senate deliberation
+  -> native Council input packet + Mandate
+  -> native runtime validation + advisor health
+  -> Council synthesis
+  -> Council executive summary
+```
+
+The advisor-health input to synthesis is derived by Battlestar's native
+`build_runtime_validation_report` and `build_advisor_health_summary`
+interfaces from an explicit mission-relative advisor manifest; Phase 3 does
+not assume or fabricate a healthy state. Every Council input and output is
+recorded in a versioned lineage manifest
+with its mission-relative path, producer, SHA-256, size, native contract when
+known, originating component revision, and mission/request correlation. The
+canonical snapshot never stores absolute checkout paths.
+
+### Deterministic Oracle-to-Council replay
+
+Use a new artifact root and run exactly:
+
+```bash
+export BATTLESTAR_PATH=../blackpod_battlestar
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster \
+  --request examples/mission_request.replay.json \
+  --artifacts-root artifacts/phase3-demo
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-oracle \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/phase3-demo \
+  --replay-fixture fixtures/oracle_replay_quotes.v1.json
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-council \
+  --mission-id mission-buildweek-replay-001 \
+  --artifacts-root artifacts/phase3-demo \
+  --replay-fixture fixtures/council_replay_policy.v1.json
+```
+
+The Council replay fixture supplies deterministic Mandate policy context; it
+is not a precomputed synthesis, summary, or mission snapshot. REPLAY invokes
+the same native loaders, candidate generator, Senate interfaces, synthesis,
+summary, validation, artifact capture, and snapshot transitions as LIVE.
+Replay never calls live acquisition and never falls back to LIVE.
+
+On technical success, revision 4 records Council `RUNNING` and revision 5
+records Council `SUCCEEDED`. The final state is:
+
+- Harbormaster, Oracle, and Council: `SUCCEEDED`;
+- Council native state: one of `ALIGNED`, `MIXED`, `CONFLICTED`, `DEGRADED`, or
+  `BLOCKED`;
+- Governor and Navigator: `NOT_STARTED`;
+- outcome: `INCOMPLETE`;
+- current phase: `GOVERNOR`; and
+- terminal: `false`.
+
+All five native Council states are technically successful results. Warnings,
+blockers, alignments, conflicts, and item-level Senate disagreement remain in
+the native artifacts and typed result; Phase 3 does not invent a single
+Council score.
+
+### LIVE Council transport
+
+LIVE Council reuses the completed LIVE mission's Oracle artifacts and performs
+no additional market acquisition. Supply an explicit versioned policy input:
+
+```bash
+.venv/bin/python3.11 -m blackpod_build_week.harbormaster run-council \
+  --mission-id <live-mission-id> \
+  --artifacts-root artifacts \
+  --policy-input <council-policy-input.json>
+```
+
+LIVE rejects `--replay-fixture`; REPLAY rejects `--policy-input`. A missing,
+malformed, or structurally invalid required input fails explicitly. A valid
+restrictive or stale Mandate can produce native Council `BLOCKED` without
+becoming a technical execution failure.
+
+### Council idempotency and restart policy
+
+Phase 3 matches Oracle's one-attempt policy. Repeating an identical completed
+Council command validates the stored provenance, input hash, canonical output
+set, and lineage, then returns an explicit no-op without writing anything.
+An existing `RUNNING` or `FAILED` Council attempt is a conflict and exits
+nonzero. There is no force, retry, resume, or overwrite option in Phase 3.
+
+## Mission directory
+
+After the deterministic Phase 3 example, the mission layout is:
+
+```text
+artifacts/phase3-demo/
 └── missions/
     └── mission-buildweek-replay-001/
         ├── mission_snapshot.json
@@ -195,26 +295,45 @@ artifacts/phase2-demo/
         ├── snapshots/
         │   ├── mission_snapshot-r0001.json
         │   ├── mission_snapshot-r0002.json
-        │   └── mission_snapshot-r0003.json
-        └── oracle/
+        │   ├── mission_snapshot-r0003.json
+        │   ├── mission_snapshot-r0004.json
+        │   └── mission_snapshot-r0005.json
+        ├── oracle/
+        │   ├── inputs/
+        │   │   ├── oracle_replay_input.json
+        │   │   └── oracles_vapors.example.yaml
+        │   └── attempt-0001/
+        │       ├── fleet-oracles-vapors-example_snapshot.json
+        │       ├── oracle_report_live.json
+        │       ├── oracle_pipeline_run_manifest.json
+        │       └── ... other native Oracle artifacts
+        └── council/
             ├── inputs/
-            │   ├── oracle_replay_input.json
-            │   └── oracles_vapors.example.yaml
+            │   └── council_supporting_input.json
             └── attempt-0001/
-                ├── fleet-oracles-vapors-example_snapshot.json
-                ├── oracle_report_live.json
-                ├── oracle_pipeline_run_manifest.json
-                └── ... other native Oracle artifacts
+                ├── mandate_policy.json
+                ├── trading_candidate_report.json
+                ├── senate_review_packet.json
+                ├── senate_deliberation.json
+                ├── council_input_packet.json
+                ├── council_advisor_runtime_config.json
+                ├── council_advisor_runtime_validation.json
+                ├── advisor_health_summary.json
+                ├── council_synthesis.json
+                ├── council_executive_summary.json
+                ├── council_provenance.json
+                └── council_lineage_manifest.json
 ```
 
-The request, immutable snapshots, captured inputs, and Oracle outputs are never
-overwritten. `mission_snapshot.json` is written via a same-directory temporary
-file followed by atomic replace. Every artifact record contains a
+The request, immutable snapshots, captured inputs, Oracle outputs, and Council
+outputs are never overwritten. `mission_snapshot.json` is written via a
+same-directory temporary file followed by atomic replace. Every artifact
+record contains a
 mission-relative path, producer, SHA-256 digest, byte size, observed timestamp,
 and a schema or contract version when available. All paths are containment
 checked beneath the mission root.
 
-## Known Phase 2 limitations
+## Known limitations
 
 - Oracle runs Battlestar's complete fixed 21-symbol example fleet. The mission
   request `symbol` is correlation only; Phase 2 does not add symbol filtering.
@@ -228,5 +347,25 @@ checked beneath the mission root.
 - Importing the supported Oracle entry point causes Battlestar's package to
   eagerly import legacy contract definitions. These imports are isolated in
   the child process; the adapter does not use or invoke Governor or Navigator.
-- Phase 2 does not wire Council, ModelDock, Governor, Navigator, any UI, or any
-  broker/execution path.
+- Phase 3 reuses Oracle's normalized 21-symbol ETF/index fleet as candidate
+  input because the native candidate contract accepts it. Battlestar's
+  runbooks normally use a separate trading fleet; adding a second acquisition
+  path is outside this phase.
+- Modern `SenateDeliberation` evidence is included in the native Council input
+  packet and lineage, but the current synthesis opportunity posture reads only
+  the legacy `SenateDecision` CSV contract. No native conversion exists.
+  Phase 3 does not invent a direction/confidence mapping, so the native
+  synthesis can honestly report `NO_OPPORTUNITY_SIGNAL`. Legacy Senate CSV and
+  precomputed Council JSON examples remain reference-only.
+- Council advisor health is computed from an adapter-generated, explicit
+  manifest over the current mission's Oracle, Mandate, candidate, and Senate
+  evidence. The native validation evidence and health summary are immutable,
+  hashed, and lineaged; path-only fields are adapted to mission-relative
+  values before materialization.
+- Executive-summary history/evolution/narrative inputs are optional in the
+  native interface and are not fabricated. Phase 3 builds the summary from the
+  current synthesis, leaving those native IDs as `missing`.
+- The process-boundary deadline remains necessary because the native Council
+  interfaces expose no internal timeout.
+- Governor execution, operator approval, Navigator, ModelDock, UI, and broker
+  execution are not included in Phase 3.
