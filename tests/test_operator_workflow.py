@@ -16,6 +16,7 @@ from blackpod_build_week.contracts import (
     GovernorTransportKind,
     MissionOutcome,
     MissionRequest,
+    MissionSnapshot,
     OperatorAction,
     OperatorActionStatus,
     OperatorResult,
@@ -457,6 +458,32 @@ class OperatorWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             result.snapshot.stages["navigator"].status, StageStatus.NOT_STARTED
+        )
+
+    def test_operator_accepts_semantic_boundary_after_extra_prior_revisions(self) -> None:
+        """ModelDock adds two revisions without changing operator eligibility."""
+
+        prepared = self.prepare("modeldock-revision-offset")
+        loaded = prepared.store.load_mission(prepared.request.mission_id or "")
+        for revision in (8, 9):
+            value = loaded.snapshot.to_dict()
+            value.update(
+                {
+                    "snapshot_id": f"{loaded.snapshot.mission_id}-r{revision:04d}",
+                    "revision": revision,
+                    "previous_snapshot_sha256": loaded.current_snapshot_sha256,
+                }
+            )
+            prepared.store.commit_snapshot(
+                loaded.paths, MissionSnapshot.from_mapping(value)
+            )
+            loaded = prepared.store.load_mission(prepared.request.mission_id or "")
+
+        self.assertEqual(loaded.snapshot.revision, 9)
+        result = self.execute(prepared, SuccessfulOperatorExecutor())
+        self.assertEqual(result.snapshot.revision, 11)
+        self.assertEqual(
+            result.snapshot.operator.result, OperatorResult.APPROVED_FOR_HANDOFF
         )
 
     def test_rejection_is_terminal_veto_without_navigator(self) -> None:

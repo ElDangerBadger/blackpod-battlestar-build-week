@@ -1,18 +1,15 @@
-"""Harbormaster CLI for the complete Stage 1 mission lifecycle."""
+"""Harbormaster stage commands and canonical unified mission CLI."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Sequence
 
 from .battlestar_config import BattlestarConfigurationError
-from .contracts import ContractValidationError, MissionRequest, RunMode, StageStatus
-from .contracts.mission_request import format_rfc3339
+from .contracts import ContractValidationError, StageStatus
 from .council_workflow import (
     CouncilInvocationError,
     CouncilRunSettings,
@@ -21,7 +18,7 @@ from .council_workflow import (
     CouncilWorkflowResult,
     run_council,
 )
-from .identifiers import IdentifierError, allocate_mission_id
+from .identifiers import IdentifierError
 from .governor_workflow import (
     GovernorInvocationError,
     GovernorRunSettings,
@@ -33,11 +30,12 @@ from .governor_workflow import (
 from .mission_store import (
     DuplicateMissionError,
     MissionInitialization,
-    MissionStore,
     MissionStoreError,
     PersistenceError,
     UnsafePathError,
 )
+from .mission_initialization import HarbormasterSettings, initialize_mission
+from .mission_presentation import MissionPresentationError, MissionPresentationResult
 from .modeldock_config import (
     ModelDockConfigurationError,
     load_modeldock_config,
@@ -78,6 +76,16 @@ from .navigator_workflow import (
     NavigatorWorkflowResult,
     run_navigator,
 )
+from .unified_mission_workflow import (
+    MissionThrough,
+    UnifiedMissionInvocationError,
+    UnifiedMissionResult,
+    UnifiedMissionSettings,
+    UnifiedMissionStateConflictError,
+    UnifiedMissionWorkflowError,
+    resume_unified_mission,
+    run_unified_mission,
+)
 
 
 EXIT_SUCCESS = 0
@@ -90,42 +98,7 @@ EXIT_GOVERNOR_FAILURE = 7
 EXIT_OPERATOR_FAILURE = 8
 EXIT_NAVIGATOR_FAILURE = 9
 EXIT_MODELDOCK_FAILURE = 10
-
-
-@dataclass(frozen=True, slots=True)
-class HarbormasterSettings:
-    request_path: Path
-    artifacts_root: Path
-
-
-def initialize_mission(
-    settings: HarbormasterSettings,
-    *,
-    now: datetime | None = None,
-) -> MissionInitialization:
-    """Validate one request and persist its Phase 1 mission spine."""
-
-    request = MissionRequest.from_file(settings.request_path)
-    mission_id = allocate_mission_id(
-        request.identity_payload(),
-        request_id=request.request_id,
-        run_mode=request.run_mode.value,
-        supplied_mission_id=request.mission_id,
-    )
-
-    if request.run_mode is RunMode.REPLAY:
-        initialization_time = request.requested_at
-    else:
-        clock_value = now if now is not None else datetime.now(UTC)
-        initialization_time = format_rfc3339(clock_value)
-
-    store = MissionStore(settings.artifacts_root)
-    return store.initialize(
-        request,
-        mission_id=mission_id,
-        started_at=initialization_time,
-        observed_at=initialization_time,
-    )
+EXIT_UNIFIED_MISSION_FAILURE = 11
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -359,6 +332,122 @@ def build_navigator_parser() -> argparse.ArgumentParser:
         help="reject a dirty Battlestar worktree during preflight",
     )
     return parser
+
+
+def _build_unified_parser(*, resume: bool) -> argparse.ArgumentParser:
+    command = "mission-resume" if resume else "mission-run"
+    parser = argparse.ArgumentParser(
+        prog=f"python -m blackpod_build_week.harbormaster {command}",
+        description=(
+            "Resume one validated mission from its canonical state."
+            if resume
+            else "Initialize and orchestrate one canonical BlackPod mission."
+        ),
+    )
+    if resume:
+        parser.add_argument("--mission-id", required=True, help="existing mission ID")
+    else:
+        parser.add_argument("--request", required=True, type=Path, help="mission request JSON")
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts"),
+        help="artifact root containing missions/ (default: artifacts)",
+    )
+    modeldock = parser.add_mutually_exclusive_group(required=True)
+    modeldock.add_argument(
+        "--with-modeldock",
+        dest="with_modeldock",
+        action="store_true",
+        help="require strict Oracle narrative enrichment",
+    )
+    modeldock.add_argument(
+        "--without-modeldock",
+        dest="with_modeldock",
+        action="store_false",
+        help="explicitly omit Oracle narrative enrichment",
+    )
+    parser.add_argument(
+        "--through",
+        choices=tuple(item.value for item in MissionThrough),
+        default=MissionThrough.NAVIGATOR.value,
+        help="inclusive final eligible stage (default: NAVIGATOR)",
+    )
+    parser.add_argument(
+        "--operator-action",
+        choices=("APPROVE_HANDOFF", "REJECT"),
+        help="explicit action required when continuing through Operator or Navigator",
+    )
+    parser.add_argument("--operator-id", help="operator audit identity")
+    parser.add_argument("--operator-reason", help="operator approval or rejection rationale")
+    parser.add_argument(
+        "--expires-in-minutes",
+        type=int,
+        default=None,
+        help="required for LIVE APPROVE_HANDOFF",
+    )
+    parser.add_argument(
+        "--oracle-replay-fixture",
+        type=Path,
+        help="deterministic Oracle input for REPLAY",
+    )
+    parser.add_argument(
+        "--modeldock-replay-fixture",
+        type=Path,
+        help="deterministic ModelDock replay pack for REPLAY",
+    )
+    council = parser.add_mutually_exclusive_group()
+    council.add_argument(
+        "--council-replay-fixture",
+        type=Path,
+        help="deterministic Council supporting input for REPLAY",
+    )
+    council.add_argument(
+        "--council-policy-input",
+        type=Path,
+        help="explicit Council supporting input for LIVE",
+    )
+    governor = parser.add_mutually_exclusive_group()
+    governor.add_argument(
+        "--governor-replay-fixture",
+        type=Path,
+        help="deterministic Governor context for REPLAY",
+    )
+    governor.add_argument(
+        "--governor-context-input",
+        type=Path,
+        help="explicit Governor context for LIVE",
+    )
+    parser.add_argument(
+        "--operator-replay-fixture",
+        type=Path,
+        help="deterministic operator action input for REPLAY",
+    )
+    parser.add_argument(
+        "--navigator-replay-fixture",
+        type=Path,
+        help="deterministic Navigator SHADOW input for REPLAY",
+    )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=60.0,
+        help="existing per-stage worker deadline in seconds (default: 60)",
+    )
+    parser.add_argument(
+        "--strict-battlestar-clean",
+        action="store_true",
+        help="reject a dirty Battlestar worktree during preflight",
+    )
+    return parser
+
+
+def build_mission_run_parser() -> argparse.ArgumentParser:
+    return _build_unified_parser(resume=False)
+
+
+def build_mission_resume_parser() -> argparse.ArgumentParser:
+    return _build_unified_parser(resume=True)
 
 
 def _print_summary(result: MissionInitialization) -> None:
@@ -829,8 +918,160 @@ def _run_navigator_command(argv: Sequence[str]) -> int:
     return EXIT_SUCCESS
 
 
+def _unified_settings_from_args(
+    args: argparse.Namespace,
+    *,
+    resume: bool,
+) -> UnifiedMissionSettings:
+    return UnifiedMissionSettings(
+        request_path=None if resume else args.request,
+        mission_id=args.mission_id if resume else None,
+        artifacts_root=args.artifacts_root,
+        with_modeldock=args.with_modeldock,
+        through=args.through,
+        operator_action=args.operator_action,
+        operator_id=args.operator_id,
+        operator_reason=args.operator_reason,
+        expires_in_minutes=args.expires_in_minutes,
+        oracle_replay_fixture=args.oracle_replay_fixture,
+        modeldock_replay_fixture=args.modeldock_replay_fixture,
+        council_replay_fixture=args.council_replay_fixture,
+        council_policy_input=args.council_policy_input,
+        governor_replay_fixture=args.governor_replay_fixture,
+        governor_context_input=args.governor_context_input,
+        operator_replay_fixture=args.operator_replay_fixture,
+        navigator_replay_fixture=args.navigator_replay_fixture,
+        deadline_seconds=args.deadline_seconds,
+        strict_battlestar_clean=args.strict_battlestar_clean,
+    )
+
+
+def _unified_stage_value(result: UnifiedMissionResult, stage_name: str) -> str:
+    stage = result.snapshot.stages[stage_name]
+    if stage_name == "governor" and stage.status is StageStatus.SUCCEEDED:
+        return stage.native_state or stage.status.value
+    if stage_name == "navigator" and stage.status is StageStatus.SUCCEEDED:
+        navigator = result.snapshot.navigator
+        if (
+            _display_value(navigator.mode) == "SHADOW"
+            and _display_value(navigator.plan_status) == "CREATED"
+        ):
+            return "SHADOW PLAN CREATED"
+    return stage.status.value
+
+
+def _print_unified_summary(result: UnifiedMissionResult) -> None:
+    snapshot = result.snapshot
+    modeldock_calls = snapshot.stages["oracle"].modeldock_calls
+    modeldock = (
+        modeldock_calls[-1].status.value if modeldock_calls else "NOT_RECORDED"
+    )
+    operator = snapshot.operator
+    operator_value = _display_value(operator.result)
+    if operator_value == "null":
+        operator_value = _display_value(operator.route)
+    if operator_value == "null":
+        operator_value = operator.action_status.value
+    presentation = result.presentation
+    captain_path = "null"
+    summary_path = "null"
+    if isinstance(presentation, MissionPresentationResult):
+        captain_path = str(presentation.captains_log_markdown_path.resolve())
+        summary_path = str(presentation.mission_summary_path.resolve())
+
+    print(f"Mission: {snapshot.mission_id}")
+    print(f"Symbol: {result.request.symbol}")
+    print(f"Mode: {snapshot.run_mode.value}")
+    print()
+    print(f"{'Harbormaster':<15}{snapshot.stages['harbormaster'].status.value}")
+    print(f"{'Oracle':<15}{snapshot.stages['oracle'].status.value}")
+    print(f"{'ModelDock':<15}{modeldock}")
+    print(f"{'Council':<15}{snapshot.stages['council'].status.value}")
+    print(f"{'Governor':<15}{_unified_stage_value(result, 'governor')}")
+    print(f"{'Operator':<15}{operator_value}")
+    print(f"{'Navigator':<15}{_unified_stage_value(result, 'navigator')}")
+    print()
+    print(f"Outcome: {snapshot.mission_outcome.value}")
+    print(f"Current phase: {snapshot.current_phase.value}")
+    print(f"Snapshots: {snapshot.revision}")
+    print(f"Unified action: {result.action.value}")
+    print(
+        "Executed stages: "
+        + (", ".join(result.executed_stages) if result.executed_stages else "none")
+    )
+    print(f"Current snapshot: {result.paths.current_snapshot.resolve()}")
+    print(f"Captain's log: {captain_path}")
+    print(f"Mission summary: {summary_path}")
+
+
+def _run_unified_command(argv: Sequence[str], *, resume: bool) -> int:
+    parser = build_mission_resume_parser() if resume else build_mission_run_parser()
+    args = parser.parse_args(argv)
+    settings = _unified_settings_from_args(args, resume=resume)
+    try:
+        result = (
+            resume_unified_mission(settings)
+            if resume
+            else run_unified_mission(settings)
+        )
+    except (
+        BattlestarConfigurationError,
+        ModelDockConfigurationError,
+        ContractValidationError,
+        IdentifierError,
+        DuplicateMissionError,
+        OracleInvocationError,
+        OracleEnrichmentInvocationError,
+        CouncilInvocationError,
+        GovernorInvocationError,
+        OperatorInvocationError,
+        NavigatorInvocationError,
+        UnifiedMissionInvocationError,
+        UnsafePathError,
+    ) as exc:
+        print(f"harbormaster: invalid unified mission invocation: {exc}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    except (PersistenceError, MissionStoreError, OSError) as exc:
+        print(f"harbormaster: unified mission integrity failure: {exc}", file=sys.stderr)
+        return EXIT_PERSISTENCE_FAILURE
+    except (
+        OracleWorkflowError,
+        OracleEnrichmentWorkflowError,
+        CouncilWorkflowError,
+        GovernorWorkflowError,
+        OperatorWorkflowError,
+        NavigatorWorkflowError,
+        UnifiedMissionStateConflictError,
+        UnifiedMissionWorkflowError,
+        MissionPresentationError,
+    ) as exc:
+        print(f"harbormaster: unified mission failure: {exc}", file=sys.stderr)
+        return EXIT_UNIFIED_MISSION_FAILURE
+
+    _print_unified_summary(result)
+    if not result.technical_success:
+        print(
+            "harbormaster: unified mission ended in a technical failure",
+            file=sys.stderr,
+        )
+        return EXIT_UNIFIED_MISSION_FAILURE
+    return EXIT_SUCCESS
+
+
+def _run_mission_command(argv: Sequence[str]) -> int:
+    return _run_unified_command(argv, resume=False)
+
+
+def _run_mission_resume_command(argv: Sequence[str]) -> int:
+    return _run_unified_command(argv, resume=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "mission-run":
+        return _run_mission_command(arguments[1:])
+    if arguments and arguments[0] == "mission-resume":
+        return _run_mission_resume_command(arguments[1:])
     if arguments and arguments[0] == "run-oracle":
         return _run_oracle_command(arguments[1:])
     if arguments and arguments[0] == "enrich-oracle":

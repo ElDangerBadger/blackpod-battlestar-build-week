@@ -6,8 +6,12 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from blackpod_build_week.contracts import MissionRequest
-from blackpod_build_week.hashing import sha256_file
+from blackpod_build_week.contracts import (
+    ComponentProvenance,
+    MissionRequest,
+    MissionSnapshot,
+)
+from blackpod_build_week.hashing import canonical_json_bytes, sha256_file
 from blackpod_build_week.mission_store import (
     DuplicateMissionError,
     ImmutableArtifactError,
@@ -156,6 +160,153 @@ class MissionStoreTests(unittest.TestCase):
 
         self.assertEqual(destination.read_bytes(), b"complete-snapshot\n")
         self.assertEqual(list(self.base.glob(".mission_snapshot.json.*.tmp")), [])
+
+    def test_loaded_mission_includes_complete_typed_history(self) -> None:
+        result = self.initialize()
+
+        loaded = self.store.load_mission(result.snapshot.mission_id)
+
+        self.assertEqual(loaded.snapshot_history, (result.snapshot,))
+        self.assertEqual(loaded.snapshot_history[-1], loaded.snapshot)
+
+    def test_load_rejects_stray_future_snapshot_revision(self) -> None:
+        result = self.initialize()
+        future = result.paths.snapshots_dir / "mission_snapshot-r0002.json"
+        future.write_bytes(result.paths.revision_snapshot.read_bytes())
+
+        with self.assertRaisesRegex(
+            ImmutableArtifactError, "unexpected future or stray snapshot revision"
+        ):
+            self.store.load_mission(result.snapshot.mission_id)
+
+    def test_load_rejects_historical_artifact_regression(self) -> None:
+        result = self.initialize()
+        artifact = self.store.write_immutable_artifact(
+            result.snapshot.mission_id,
+            relative_path="audit/extra.json",
+            payload=b"{}\n",
+            name="audit_extra",
+            producer="harbormaster",
+            schema_version="blackpod.audit_extra.v1",
+            observed_at=result.snapshot.observed_at,
+        )
+        revision_two = result.snapshot.to_dict()
+        revision_two.update(
+            {
+                "snapshot_id": f"{result.snapshot.mission_id}-r0002",
+                "revision": 2,
+                "previous_snapshot_sha256": result.snapshot_sha256,
+                "artifacts": [
+                    *revision_two["artifacts"],
+                    artifact.to_dict(),
+                ],
+            }
+        )
+        second = MissionSnapshot.from_mapping(revision_two)
+        second_sha = self.store.commit_snapshot(result.paths, second)
+
+        revision_three = second.to_dict()
+        revision_three.update(
+            {
+                "snapshot_id": f"{second.mission_id}-r0003",
+                "revision": 3,
+                "previous_snapshot_sha256": second_sha,
+                "artifacts": [result.snapshot.artifacts[0].to_dict()],
+            }
+        )
+        third = MissionSnapshot.from_mapping(revision_three)
+        payload = canonical_json_bytes(third.to_dict())
+        self.store.revision_path(result.paths, 3).write_bytes(payload)
+        result.paths.current_snapshot.write_bytes(payload)
+
+        with self.assertRaisesRegex(
+            PersistenceError, "snapshot history removed or changed artifact"
+        ):
+            self.store.load_mission(result.snapshot.mission_id)
+
+    def test_load_rejects_historical_component_regression(self) -> None:
+        result = self.initialize()
+        component = ComponentProvenance.from_mapping(
+            {
+                "git_revision": "a" * 40,
+                "git_branch": "fixture",
+                "dirty_worktree": False,
+                "oracle_entry_point": "blackpod.oracle.fixture",
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": "fixture-store-history",
+                "replay_fixture_sha256": "b" * 64,
+            }
+        )
+        revision_two = result.snapshot.to_dict()
+        revision_two.update(
+            {
+                "snapshot_id": f"{result.snapshot.mission_id}-r0002",
+                "revision": 2,
+                "previous_snapshot_sha256": result.snapshot_sha256,
+                "components": {"battlestar": component.to_dict()},
+            }
+        )
+        second = MissionSnapshot.from_mapping(revision_two)
+        second_sha = self.store.commit_snapshot(result.paths, second)
+
+        revision_three = second.to_dict()
+        revision_three.update(
+            {
+                "snapshot_id": f"{second.mission_id}-r0003",
+                "revision": 3,
+                "previous_snapshot_sha256": second_sha,
+                "components": {},
+            }
+        )
+        third = MissionSnapshot.from_mapping(revision_three)
+        payload = canonical_json_bytes(third.to_dict())
+        self.store.revision_path(result.paths, 3).write_bytes(payload)
+        result.paths.current_snapshot.write_bytes(payload)
+
+        with self.assertRaisesRegex(
+            PersistenceError,
+            "snapshot history removed or changed component provenance",
+        ):
+            self.store.load_mission(result.snapshot.mission_id)
+
+    def test_presentation_writer_is_contained_atomic_and_idempotent(self) -> None:
+        result = self.initialize()
+        first = self.store.write_presentation_artifact(
+            result.snapshot.mission_id,
+            relative_path="presentation/example.json",
+            payload=b'{"value":1}\n',
+        )
+        original_mtime = first.path.stat().st_mtime_ns
+        second = self.store.write_presentation_artifact(
+            result.snapshot.mission_id,
+            relative_path="presentation/example.json",
+            payload=b'{"value":1}\n',
+        )
+
+        self.assertTrue(first.written)
+        self.assertFalse(second.written)
+        self.assertEqual(second.path.stat().st_mtime_ns, original_mtime)
+        self.assertTrue(second.path.resolve().is_relative_to(result.paths.mission_root))
+
+        with self.assertRaises(UnsafePathError):
+            self.store.write_presentation_artifact(
+                result.snapshot.mission_id,
+                relative_path="oracle/not-presentation.json",
+                payload=b"{}\n",
+            )
+
+        with mock.patch(
+            "blackpod_build_week.mission_store.os.replace",
+            side_effect=OSError("simulated presentation replace failure"),
+        ):
+            with self.assertRaises(PersistenceError):
+                self.store.write_presentation_artifact(
+                    result.snapshot.mission_id,
+                    relative_path="presentation/example.json",
+                    payload=b'{"value":2}\n',
+                )
+        self.assertEqual(second.path.read_bytes(), b'{"value":1}\n')
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -61,8 +62,22 @@ class MissionInitialization:
 class LoadedMission:
     request: MissionRequest
     snapshot: MissionSnapshot
+    snapshot_history: tuple[MissionSnapshot, ...]
     paths: MissionPaths
     current_snapshot_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class PresentationWrite:
+    """Result of atomically publishing one derived presentation file."""
+
+    path: Path
+    written: bool
+
+
+_REVISION_FILENAME_PATTERN = re.compile(
+    r"^mission_snapshot-r(?P<revision>[0-9]{4,})\.json$"
+)
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
@@ -246,6 +261,8 @@ class MissionStore:
 
         previous_digest: str | None = None
         baseline: MissionSnapshot | None = None
+        previous_snapshot: MissionSnapshot | None = None
+        snapshot_history: list[MissionSnapshot] = []
         latest_bytes: bytes | None = None
         for revision in range(1, snapshot.revision + 1):
             revision_path = self.revision_path(paths, revision)
@@ -270,8 +287,50 @@ class MissionStore:
                 or revision_snapshot.started_at != baseline.started_at
             ):
                 raise PersistenceError("snapshot identity changed across revisions")
+            if previous_snapshot is not None:
+                previous_artifacts = {
+                    artifact.name: artifact for artifact in previous_snapshot.artifacts
+                }
+                revision_artifacts = {
+                    artifact.name: artifact for artifact in revision_snapshot.artifacts
+                }
+                for name, artifact in previous_artifacts.items():
+                    if revision_artifacts.get(name) != artifact:
+                        raise PersistenceError(
+                            f"snapshot history removed or changed artifact: {name}"
+                        )
+                for name, component in previous_snapshot.components.items():
+                    if revision_snapshot.components.get(name) != component:
+                        raise PersistenceError(
+                            "snapshot history removed or changed component "
+                            f"provenance: {name}"
+                        )
             previous_digest = sha256_bytes(revision_bytes)
+            previous_snapshot = revision_snapshot
+            snapshot_history.append(revision_snapshot)
             latest_bytes = revision_bytes
+
+        try:
+            snapshot_entries = tuple(paths.snapshots_dir.iterdir())
+        except OSError as exc:
+            raise PersistenceError(
+                f"could not inspect immutable snapshot history: {exc}"
+            ) from exc
+        expected_revision_names = {
+            f"mission_snapshot-r{revision:04d}.json"
+            for revision in range(1, snapshot.revision + 1)
+        }
+        recorded_revision_names = {
+            entry.name
+            for entry in snapshot_entries
+            if _REVISION_FILENAME_PATTERN.fullmatch(entry.name) is not None
+        }
+        unexpected_revisions = recorded_revision_names - expected_revision_names
+        if unexpected_revisions:
+            rendered = ", ".join(sorted(unexpected_revisions))
+            raise ImmutableArtifactError(
+                f"unexpected future or stray snapshot revision: {rendered}"
+            )
 
         current_bytes = paths.current_snapshot.read_bytes()
         if latest_bytes is None or current_bytes != latest_bytes:
@@ -282,9 +341,63 @@ class MissionStore:
         return LoadedMission(
             request=request,
             snapshot=snapshot,
+            snapshot_history=tuple(snapshot_history),
             paths=paths,
             current_snapshot_sha256=sha256_bytes(current_bytes),
         )
+
+    def write_presentation_artifact(
+        self,
+        mission_id: str,
+        *,
+        relative_path: str,
+        payload: bytes,
+    ) -> PresentationWrite:
+        """Atomically publish a contained, deterministically derived view.
+
+        Presentation files are mutable projections rather than canonical mission
+        evidence. Identical bytes are an explicit no-op so repeated mission runs
+        do not rewrite even these derived files.
+        """
+
+        if not isinstance(payload, bytes):
+            raise PersistenceError("presentation payload must be bytes")
+        if "\\" in relative_path:
+            raise UnsafePathError("presentation paths must use relative POSIX syntax")
+        relative = PurePosixPath(relative_path)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or len(relative.parts) < 2
+            or relative.parts[0] != "presentation"
+        ):
+            raise UnsafePathError(
+                "presentation artifacts must remain beneath presentation/"
+            )
+
+        paths = self.paths_for(mission_id)
+        target = self._contained_target(paths.mission_root, relative_path)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PersistenceError(
+                f"could not create presentation directory for {relative_path}: {exc}"
+            ) from exc
+        target = self._contained_target(paths.mission_root, relative_path)
+        if target.exists() or target.is_symlink():
+            if target.is_symlink() or not target.is_file():
+                raise UnsafePathError(
+                    f"presentation target is not a safe regular file: {relative_path}"
+                )
+            try:
+                if target.read_bytes() == payload:
+                    return PresentationWrite(path=target, written=False)
+            except OSError as exc:
+                raise PersistenceError(
+                    f"could not read presentation artifact {relative_path}: {exc}"
+                ) from exc
+        _atomic_write_bytes(target, payload)
+        return PresentationWrite(path=target, written=True)
 
     def reserve_directory(self, mission_id: str, relative_path: str) -> Path:
         """Exclusively reserve a contained directory for one immutable attempt."""
