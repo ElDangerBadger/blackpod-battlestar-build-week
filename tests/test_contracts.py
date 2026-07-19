@@ -7,7 +7,10 @@ from pathlib import Path
 
 from blackpod_build_week.contracts import (
     ArtifactReference,
+    ComponentProvenance,
     ContractValidationError,
+    CouncilComponentProvenance,
+    CouncilTransportKind,
     CurrentPhase,
     MissionOutcome,
     MissionRequest,
@@ -213,6 +216,123 @@ class MissionSnapshotContractTests(unittest.TestCase):
         candidate = self.snapshot.to_dict()
         candidate["artifacts"][0]["path"] = "../outside.json"
         with self.assertRaisesRegex(ContractValidationError, "beneath"):
+            MissionSnapshot.from_mapping(candidate)
+
+    def test_snapshot_round_trips_oracle_and_council_component_types(self) -> None:
+        candidate = self.snapshot.to_dict()
+        candidate["components"] = {
+            "battlestar": {
+                "git_revision": "a" * 40,
+                "git_branch": "main",
+                "dirty_worktree": False,
+                "oracle_entry_point": (
+                    "blackpod.runtime.oracle_pipeline.run_oracle_pipeline"
+                ),
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": "oracle-fixture-v1",
+                "replay_fixture_sha256": "b" * 64,
+            },
+            "battlestar_council": {
+                "git_revision": "a" * 40,
+                "git_branch": "main",
+                "dirty_worktree": False,
+                "candidate_entry_point": "native.candidate",
+                "senate_review_entry_point": "native.senate_review",
+                "senate_deliberation_entry_point": "native.senate_deliberation",
+                "mandate_entry_point": "native.mandate",
+                "runtime_validation_entry_point": "native.runtime_validation",
+                "advisor_health_entry_point": "native.advisor_health",
+                "council_synthesis_entry_point": "native.council_synthesis",
+                "council_executive_summary_entry_point": "native.council_summary",
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": "council-fixture-v1",
+                "replay_fixture_sha256": "c" * 64,
+            },
+        }
+
+        parsed = MissionSnapshot.from_mapping(candidate)
+
+        self.assertIsInstance(parsed.components["battlestar"], ComponentProvenance)
+        council = parsed.components["battlestar_council"]
+        self.assertIsInstance(council, CouncilComponentProvenance)
+        self.assertIs(council.transport, CouncilTransportKind.REPLAY_FIXTURE)
+        self.assertEqual(
+            council.runtime_validation_entry_point,
+            "native.runtime_validation",
+        )
+        self.assertEqual(council.advisor_health_entry_point, "native.advisor_health")
+        self.assertEqual(parsed.to_dict()["components"], candidate["components"])
+
+    def test_council_provenance_enforces_transport_identity_rules(self) -> None:
+        base = {
+            "git_revision": "a" * 40,
+            "git_branch": None,
+            "dirty_worktree": True,
+            "candidate_entry_point": "native.candidate",
+            "senate_review_entry_point": "native.senate_review",
+            "senate_deliberation_entry_point": "native.senate_deliberation",
+            "mandate_entry_point": "native.mandate",
+            "runtime_validation_entry_point": "native.runtime_validation",
+            "advisor_health_entry_point": "native.advisor_health",
+            "council_synthesis_entry_point": "native.council_synthesis",
+            "council_executive_summary_entry_point": "native.council_summary",
+            "run_mode": "LIVE",
+            "transport": "LIVE_MISSION_INPUTS",
+            "replay_fixture_id": None,
+            "replay_fixture_sha256": None,
+        }
+        live = CouncilComponentProvenance.from_mapping(base)
+        self.assertIs(live.transport, CouncilTransportKind.LIVE_MISSION_INPUTS)
+
+        invalid = dict(base)
+        invalid.update(
+            {
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": None,
+                "replay_fixture_sha256": None,
+            }
+        )
+        with self.assertRaisesRegex(ContractValidationError, "fixture identity"):
+            CouncilComponentProvenance.from_mapping(invalid)
+
+    def test_council_component_requires_oracle_and_matching_mission_mode(self) -> None:
+        candidate = self.snapshot.to_dict()
+        candidate["components"] = {
+            "battlestar_council": {
+                "git_revision": "a" * 40,
+                "git_branch": "main",
+                "dirty_worktree": False,
+                "candidate_entry_point": "native.candidate",
+                "senate_review_entry_point": "native.senate_review",
+                "senate_deliberation_entry_point": "native.senate_deliberation",
+                "mandate_entry_point": "native.mandate",
+                "runtime_validation_entry_point": "native.runtime_validation",
+                "advisor_health_entry_point": "native.advisor_health",
+                "council_synthesis_entry_point": "native.council_synthesis",
+                "council_executive_summary_entry_point": "native.council_summary",
+                "run_mode": "REPLAY",
+                "transport": "REPLAY_FIXTURE",
+                "replay_fixture_id": "fixture-v1",
+                "replay_fixture_sha256": "b" * 64,
+            }
+        }
+        with self.assertRaisesRegex(ContractValidationError, "requires Battlestar Oracle"):
+            MissionSnapshot.from_mapping(candidate)
+
+        candidate["components"]["battlestar"] = {
+            "git_revision": "a" * 40,
+            "git_branch": "main",
+            "dirty_worktree": False,
+            "oracle_entry_point": "native.oracle",
+            "run_mode": "LIVE",
+            "transport": "LIVE_YFINANCE",
+            "replay_fixture_id": None,
+            "replay_fixture_sha256": None,
+        }
+        with self.assertRaisesRegex(ContractValidationError, "run_mode must match"):
             MissionSnapshot.from_mapping(candidate)
 
 

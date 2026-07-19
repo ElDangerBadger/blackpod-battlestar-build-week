@@ -7,6 +7,7 @@ from pathlib import Path
 from blackpod_build_week.contracts import (
     ArtifactReference,
     ComponentProvenance,
+    CouncilComponentProvenance,
     CurrentPhase,
     MissionOutcome,
     MissionRequest,
@@ -18,8 +19,11 @@ from blackpod_build_week.contracts import (
 from blackpod_build_week.mission_store import ImmutableArtifactError, MissionStore
 from blackpod_build_week.mission_transitions import (
     MissionTransitionError,
+    begin_council,
     begin_oracle,
+    complete_council,
     complete_oracle,
+    fail_council,
     fail_oracle,
 )
 
@@ -55,6 +59,28 @@ def provenance() -> ComponentProvenance:
             "transport": "REPLAY_FIXTURE",
             "replay_fixture_id": "fixture-transition-v1",
             "replay_fixture_sha256": "b" * 64,
+        }
+    )
+
+
+def council_provenance() -> CouncilComponentProvenance:
+    return CouncilComponentProvenance.from_mapping(
+        {
+            "git_revision": "a" * 40,
+            "git_branch": "main",
+            "dirty_worktree": False,
+            "candidate_entry_point": "native.candidate",
+            "senate_review_entry_point": "native.senate_review",
+            "senate_deliberation_entry_point": "native.senate_deliberation",
+            "mandate_entry_point": "native.mandate",
+            "runtime_validation_entry_point": "native.runtime_validation",
+            "advisor_health_entry_point": "native.advisor_health",
+            "council_synthesis_entry_point": "native.council_synthesis",
+            "council_executive_summary_entry_point": "native.council_summary",
+            "run_mode": "REPLAY",
+            "transport": "REPLAY_FIXTURE",
+            "replay_fixture_id": "council-fixture-transition-v1",
+            "replay_fixture_sha256": "c" * 64,
         }
     )
 
@@ -222,6 +248,298 @@ class OracleTransitionTests(unittest.TestCase):
             )
         with self.assertRaises(ImmutableArtifactError):
             self.store.commit_snapshot(self.initialized.paths, running)
+
+
+class CouncilTransitionTests(unittest.TestCase):
+    oracle_input_names = (
+        "oracle_normalized_snapshot",
+        "oracle_readiness_report",
+        "oracle_report",
+        "oracle_assessment",
+        "oracle_narrative",
+    )
+
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.base = Path(self.temporary_directory.name)
+        self.store = MissionStore(self.base / "artifacts")
+        mission_request = request()
+        self.initialized = self.store.initialize(
+            mission_request,
+            mission_id=mission_request.mission_id or "",
+            started_at=OBSERVED_AT,
+            observed_at=OBSERVED_AT,
+        )
+        fleet = self.store.write_immutable_artifact(
+            mission_request.mission_id or "",
+            relative_path="oracle/inputs/oracles_vapors.example.yaml",
+            payload=b"fleet: deterministic\n",
+            name="oracle_fleet_input",
+            producer="battlestar",
+            schema_version=None,
+            observed_at=OBSERVED_AT,
+        )
+        replay = self.store.write_immutable_artifact(
+            mission_request.mission_id or "",
+            relative_path="oracle/inputs/oracle_replay_input.json",
+            payload=b'{"fixture":"deterministic"}\n',
+            name="oracle_replay_input",
+            producer="harbormaster",
+            schema_version="blackpod.oracle_replay_input.v1",
+            observed_at=OBSERVED_AT,
+        )
+        oracle_running = begin_oracle(
+            self.initialized.snapshot,
+            previous_snapshot_sha256=self.initialized.snapshot_sha256,
+            observed_at=OBSERVED_AT,
+            provenance=provenance(),
+            input_artifacts=(fleet, replay),
+        )
+        oracle_running_sha = self.store.commit_snapshot(
+            self.initialized.paths, oracle_running
+        )
+        filenames = (
+            "fleet-oracles-vapors-example_normalized.json",
+            "fleet-oracles-vapors-example_readiness.json",
+            "oracle_report_live.json",
+            "oracle_assessment_live.json",
+            "oracle_narrative_live.json",
+        )
+        self.oracle_outputs = tuple(
+            self.store.write_immutable_artifact(
+                mission_request.mission_id or "",
+                relative_path=f"oracle/attempt-0001/{filename}",
+                payload=(f'{{"artifact":"{name}"}}\n').encode(),
+                name=name,
+                producer="oracle",
+                schema_version=None,
+                observed_at=OBSERVED_AT,
+            )
+            for name, filename in zip(self.oracle_input_names, filenames, strict=True)
+        )
+        self.oracle_complete = complete_oracle(
+            oracle_running,
+            previous_snapshot_sha256=oracle_running_sha,
+            observed_at=OBSERVED_AT,
+            native_state="READY",
+            output_artifacts=self.oracle_outputs,
+        )
+        self.oracle_complete_sha = self.store.commit_snapshot(
+            self.initialized.paths, self.oracle_complete
+        )
+        self.mandate = self.store.write_immutable_artifact(
+            mission_request.mission_id or "",
+            relative_path="council/inputs/mandate.json",
+            payload=b'{"ok":true}\n',
+            name="council_mandate_input",
+            producer="harbormaster",
+            schema_version="blackpod.council_replay_input.v1",
+            observed_at=OBSERVED_AT,
+        )
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def running_snapshot(self):
+        return begin_council(
+            self.oracle_complete,
+            previous_snapshot_sha256=self.oracle_complete_sha,
+            observed_at=OBSERVED_AT,
+            provenance=council_provenance(),
+            existing_input_names=self.oracle_input_names,
+            input_artifacts=(self.mandate,),
+        )
+
+    def council_outputs(self):
+        values = (
+            ("council_synthesis", "council_synthesis.json"),
+            ("council_executive_summary", "council_executive_summary.json"),
+            ("council_lineage_manifest", "lineage_manifest.json"),
+        )
+        return tuple(
+            self.store.write_immutable_artifact(
+                "mission-transition-001",
+                relative_path=f"council/attempt-0001/{filename}",
+                payload=(f'{{"artifact":"{name}"}}\n').encode(),
+                name=name,
+                producer="council",
+                schema_version=None,
+                observed_at=OBSERVED_AT,
+            )
+            for name, filename in values
+        )
+
+    def test_begin_records_running_revision_all_inputs_and_both_components(self) -> None:
+        running = self.running_snapshot()
+        digest = self.store.commit_snapshot(self.initialized.paths, running)
+        loaded = self.store.load_mission("mission-transition-001")
+
+        self.assertEqual(running.revision, 4)
+        self.assertEqual(running.previous_snapshot_sha256, self.oracle_complete_sha)
+        self.assertEqual(loaded.current_snapshot_sha256, digest)
+        self.assertEqual(running.stages["council"].status, StageStatus.RUNNING)
+        self.assertEqual(
+            running.stages["council"].inputs,
+            (*self.oracle_input_names, "council_mandate_input"),
+        )
+        self.assertEqual(
+            set(running.stages),
+            {"harbormaster", "oracle", "council", "governor", "navigator"},
+        )
+        self.assertEqual(running.stages["governor"].status, StageStatus.NOT_STARTED)
+        self.assertEqual(running.stages["navigator"].status, StageStatus.NOT_STARTED)
+        self.assertEqual(set(running.components), {"battlestar", "battlestar_council"})
+        self.assertEqual(
+            running.components["battlestar"],
+            self.oracle_complete.components["battlestar"],
+        )
+
+    def test_begin_reuses_exact_oracle_reference_without_duplicate_artifact(self) -> None:
+        running = begin_council(
+            self.oracle_complete,
+            previous_snapshot_sha256=self.oracle_complete_sha,
+            observed_at=OBSERVED_AT,
+            provenance=council_provenance(),
+            existing_input_names=self.oracle_input_names[1:],
+            input_artifacts=(self.oracle_outputs[0], self.mandate),
+        )
+
+        self.assertEqual(len(running.artifacts), len(self.oracle_complete.artifacts) + 1)
+        self.assertEqual(
+            set(running.stages["council"].inputs),
+            {*self.oracle_input_names, "council_mandate_input"},
+        )
+
+    def test_native_blocked_result_is_technical_success_and_advances(self) -> None:
+        running = self.running_snapshot()
+        running_sha = self.store.commit_snapshot(self.initialized.paths, running)
+        complete = complete_council(
+            running,
+            previous_snapshot_sha256=running_sha,
+            observed_at=OBSERVED_AT,
+            native_state="BLOCKED",
+            output_artifacts=self.council_outputs(),
+        )
+        complete_sha = self.store.commit_snapshot(self.initialized.paths, complete)
+        loaded = self.store.load_mission("mission-transition-001")
+
+        self.assertEqual(complete.revision, 5)
+        self.assertEqual(complete.previous_snapshot_sha256, running_sha)
+        self.assertEqual(loaded.current_snapshot_sha256, complete_sha)
+        self.assertEqual(complete.stages["council"].status, StageStatus.SUCCEEDED)
+        self.assertEqual(complete.stages["council"].native_state, "BLOCKED")
+        self.assertEqual(complete.current_phase, CurrentPhase.GOVERNOR)
+        self.assertEqual(complete.mission_outcome, MissionOutcome.INCOMPLETE)
+        self.assertFalse(complete.terminal)
+        self.assertEqual(complete.stages["governor"].status, StageStatus.NOT_STARTED)
+        self.assertEqual(complete.stages["navigator"].status, StageStatus.NOT_STARTED)
+        self.assertEqual(
+            complete.components["battlestar"],
+            self.oracle_complete.components["battlestar"],
+        )
+
+        with self.assertRaises(ImmutableArtifactError):
+            self.store.commit_snapshot(self.initialized.paths, complete)
+
+    def test_technical_failure_preserves_native_state_and_resumability(self) -> None:
+        running = self.running_snapshot()
+        error = StageError.from_mapping(
+            {
+                "code": "COUNCIL_MALFORMED_RESULT",
+                "error_type": "ContractValidationError",
+                "message": "Council returned malformed output",
+                "resumable": True,
+                "observed_at": OBSERVED_AT,
+            }
+        )
+        failed = fail_council(
+            running,
+            previous_snapshot_sha256="d" * 64,
+            observed_at=OBSERVED_AT,
+            native_state="CAUTIOUS",
+            error=error,
+        )
+
+        self.assertEqual(failed.stages["council"].status, StageStatus.FAILED)
+        self.assertEqual(failed.stages["council"].native_state, "CAUTIOUS")
+        self.assertEqual(failed.current_phase, CurrentPhase.COUNCIL)
+        self.assertEqual(failed.mission_outcome, MissionOutcome.FAILED)
+        self.assertFalse(failed.terminal)
+        self.assertEqual(failed.stages["governor"].status, StageStatus.NOT_STARTED)
+        self.assertEqual(failed.stages["navigator"].status, StageStatus.NOT_STARTED)
+
+        terminal_error = StageError.from_mapping(
+            {
+                "code": "COUNCIL_UNSAFE_RESULT",
+                "error_type": "ContractValidationError",
+                "message": "Council output was unsafe",
+                "resumable": False,
+                "observed_at": OBSERVED_AT,
+            }
+        )
+        terminal = fail_council(
+            running,
+            previous_snapshot_sha256="e" * 64,
+            observed_at=OBSERVED_AT,
+            native_state=None,
+            error=terminal_error,
+        )
+        self.assertTrue(terminal.terminal)
+
+    def test_wrong_phase_or_oracle_state_and_repeated_start_are_rejected(self) -> None:
+        with self.assertRaisesRegex(MissionTransitionError, "COUNCIL phase"):
+            begin_council(
+                self.initialized.snapshot,
+                previous_snapshot_sha256=self.initialized.snapshot_sha256,
+                observed_at=OBSERVED_AT,
+                provenance=council_provenance(),
+                input_artifacts=(self.mandate,),
+            )
+
+        running = self.running_snapshot()
+        with self.assertRaisesRegex(MissionTransitionError, "NOT_STARTED"):
+            begin_council(
+                running,
+                previous_snapshot_sha256="f" * 64,
+                observed_at=OBSERVED_AT,
+                provenance=council_provenance(),
+                existing_input_names=self.oracle_input_names,
+            )
+
+        wrong_oracle = self.oracle_complete.to_dict()
+        wrong_oracle["stages"]["oracle"]["status"] = StageStatus.RUNNING.value
+        wrong_oracle["stages"]["oracle"]["native_state"] = None
+        from blackpod_build_week.contracts import MissionSnapshot
+
+        with self.assertRaisesRegex(MissionTransitionError, "Oracle must have succeeded"):
+            begin_council(
+                MissionSnapshot.from_mapping(wrong_oracle),
+                previous_snapshot_sha256=self.oracle_complete_sha,
+                observed_at=OBSERVED_AT,
+                provenance=council_provenance(),
+                input_artifacts=(self.mandate,),
+            )
+
+    def test_unknown_or_changed_existing_input_is_rejected(self) -> None:
+        with self.assertRaisesRegex(MissionTransitionError, "unknown existing artifact"):
+            begin_council(
+                self.oracle_complete,
+                previous_snapshot_sha256=self.oracle_complete_sha,
+                observed_at=OBSERVED_AT,
+                provenance=council_provenance(),
+                existing_input_names=("missing_oracle_artifact",),
+            )
+
+        changed = self.oracle_outputs[0].to_dict()
+        changed["sha256"] = "f" * 64
+        with self.assertRaisesRegex(MissionTransitionError, "metadata changed"):
+            begin_council(
+                self.oracle_complete,
+                previous_snapshot_sha256=self.oracle_complete_sha,
+                observed_at=OBSERVED_AT,
+                provenance=council_provenance(),
+                input_artifacts=(ArtifactReference.from_mapping(changed),),
+            )
 
 
 if __name__ == "__main__":

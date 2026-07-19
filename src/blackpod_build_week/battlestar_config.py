@@ -1,8 +1,8 @@
-"""Read-only configuration and preflight checks for the Battlestar Oracle.
+"""Read-only configuration and preflight checks for Battlestar stages.
 
-Only paths needed by the narrow Oracle adapter are exposed.  Local absolute
-paths are intentionally kept in this in-memory configuration object; callers
-must not serialize them into canonical mission artifacts.
+Only paths needed by the narrow Oracle and Council adapters are exposed. Local
+absolute paths are intentionally kept in this in-memory configuration object;
+callers must not serialize them into canonical mission artifacts.
 """
 
 from __future__ import annotations
@@ -20,6 +20,50 @@ ORACLE_ENTRY_POINT = "blackpod.runtime.oracle_pipeline.run_oracle_pipeline"
 ORACLE_MODULE_RELATIVE_PATH = Path("blackpod/runtime/oracle_pipeline.py")
 ORACLE_FLEET_RELATIVE_PATH = Path(
     "configs/universes/oracles_vapors.example.yaml"
+)
+CANDIDATE_ENTRY_POINT = (
+    "blackpod.advisors.trading_candidate_generator.build_trading_candidate_report"
+)
+CANDIDATE_MODULE_RELATIVE_PATH = Path(
+    "blackpod/advisors/trading_candidate_generator.py"
+)
+SENATE_REVIEW_ENTRY_POINT = (
+    "blackpod.advisors.senate_candidate_intake.build_senate_review_packet"
+)
+SENATE_REVIEW_MODULE_RELATIVE_PATH = Path(
+    "blackpod/advisors/senate_candidate_intake.py"
+)
+SENATE_DELIBERATION_ENTRY_POINT = (
+    "blackpod.advisors.senate_deliberation.build_senate_deliberation"
+)
+SENATE_DELIBERATION_MODULE_RELATIVE_PATH = Path(
+    "blackpod/advisors/senate_deliberation.py"
+)
+MANDATE_ENTRY_POINT = "blackpod.advisors.mandate.MandateAdvisor.run"
+MANDATE_MODULE_RELATIVE_PATH = Path("blackpod/advisors/mandate.py")
+COUNCIL_SYNTHESIS_ENTRY_POINT = (
+    "blackpod.governor.council_synthesis.build_council_synthesis"
+)
+COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/council_synthesis.py"
+)
+COUNCIL_EXECUTIVE_SUMMARY_ENTRY_POINT = (
+    "blackpod.governor.council_executive_summary.build_council_executive_summary"
+)
+COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH = Path(
+    "blackpod/governor/council_executive_summary.py"
+)
+ADVISOR_HEALTH_ENTRY_POINT = (
+    "blackpod.runtime.advisor_health.build_advisor_health_summary"
+)
+ADVISOR_HEALTH_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/advisor_health.py"
+)
+RUNTIME_VALIDATION_ENTRY_POINT = (
+    "blackpod.runtime.validation_report.build_runtime_validation_report"
+)
+RUNTIME_VALIDATION_MODULE_RELATIVE_PATH = Path(
+    "blackpod/runtime/validation_report.py"
 )
 
 _GIT_TIMEOUT_SECONDS = 10.0
@@ -40,6 +84,14 @@ class BattlestarConfig:
     git_revision: str
     git_branch: str | None
     dirty_worktree: bool
+    candidate_module_path: Path | None = None
+    senate_review_module_path: Path | None = None
+    senate_deliberation_module_path: Path | None = None
+    mandate_module_path: Path | None = None
+    council_synthesis_module_path: Path | None = None
+    council_executive_summary_module_path: Path | None = None
+    advisor_health_module_path: Path | None = None
+    runtime_validation_module_path: Path | None = None
 
 
 def load_battlestar_config(
@@ -47,6 +99,7 @@ def load_battlestar_config(
     artifacts_root: Path,
     environ: Mapping[str, str] | None = None,
     strict_clean: bool = False,
+    require_council: bool = False,
 ) -> BattlestarConfig:
     """Validate ``BATTLESTAR_PATH`` and collect read-only Git provenance.
 
@@ -99,6 +152,59 @@ def load_battlestar_config(
         ORACLE_FLEET_RELATIVE_PATH,
         description="Oracle fleet configuration",
     )
+    council_paths: dict[str, Path | None] = {
+        "candidate_module_path": None,
+        "senate_review_module_path": None,
+        "senate_deliberation_module_path": None,
+        "mandate_module_path": None,
+        "council_synthesis_module_path": None,
+        "council_executive_summary_module_path": None,
+        "advisor_health_module_path": None,
+        "runtime_validation_module_path": None,
+    }
+    if require_council:
+        council_paths = {
+            "candidate_module_path": _required_repository_file(
+                root,
+                CANDIDATE_MODULE_RELATIVE_PATH,
+                description="candidate-generation module",
+            ),
+            "senate_review_module_path": _required_repository_file(
+                root,
+                SENATE_REVIEW_MODULE_RELATIVE_PATH,
+                description="Senate review module",
+            ),
+            "senate_deliberation_module_path": _required_repository_file(
+                root,
+                SENATE_DELIBERATION_MODULE_RELATIVE_PATH,
+                description="Senate deliberation module",
+            ),
+            "mandate_module_path": _required_repository_file(
+                root,
+                MANDATE_MODULE_RELATIVE_PATH,
+                description="Mandate module",
+            ),
+            "council_synthesis_module_path": _required_repository_file(
+                root,
+                COUNCIL_SYNTHESIS_MODULE_RELATIVE_PATH,
+                description="Council synthesis module",
+            ),
+            "council_executive_summary_module_path": _required_repository_file(
+                root,
+                COUNCIL_EXECUTIVE_SUMMARY_MODULE_RELATIVE_PATH,
+                description="Council executive-summary module",
+            ),
+            "advisor_health_module_path": _required_repository_file(
+                root,
+                ADVISOR_HEALTH_MODULE_RELATIVE_PATH,
+                description="advisor-health module",
+            ),
+            "runtime_validation_module_path": _required_repository_file(
+                root,
+                RUNTIME_VALIDATION_MODULE_RELATIVE_PATH,
+                description="runtime-validation module",
+            ),
+        }
 
     revision = _git_revision(root)
     branch = _git_branch(root)
@@ -115,6 +221,23 @@ def load_battlestar_config(
         git_revision=revision,
         git_branch=branch,
         dirty_worktree=dirty_worktree,
+        **council_paths,
+    )
+
+
+def load_council_battlestar_config(
+    *,
+    artifacts_root: Path,
+    environ: Mapping[str, str] | None = None,
+    strict_clean: bool = False,
+) -> BattlestarConfig:
+    """Run Oracle-compatible preflight plus all Phase 3 Council module checks."""
+
+    return load_battlestar_config(
+        artifacts_root=artifacts_root,
+        environ=environ,
+        strict_clean=strict_clean,
+        require_council=True,
     )
 
 

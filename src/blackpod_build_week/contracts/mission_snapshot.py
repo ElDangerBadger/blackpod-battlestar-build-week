@@ -73,6 +73,11 @@ class OracleTransportKind(str, Enum):
     REPLAY_FIXTURE = "REPLAY_FIXTURE"
 
 
+class CouncilTransportKind(str, Enum):
+    LIVE_MISSION_INPUTS = "LIVE_MISSION_INPUTS"
+    REPLAY_FIXTURE = "REPLAY_FIXTURE"
+
+
 def _require_exact_fields(
     value: Mapping[str, Any], expected: set[str], name: str
 ) -> None:
@@ -444,6 +449,146 @@ class ComponentProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class CouncilComponentProvenance:
+    """Immutable provenance for the Battlestar Council evidence chain."""
+
+    git_revision: str
+    git_branch: str | None
+    dirty_worktree: bool
+    candidate_entry_point: str
+    senate_review_entry_point: str
+    senate_deliberation_entry_point: str
+    mandate_entry_point: str
+    runtime_validation_entry_point: str
+    advisor_health_entry_point: str
+    council_synthesis_entry_point: str
+    council_executive_summary_entry_point: str
+    run_mode: RunMode
+    transport: CouncilTransportKind
+    replay_fixture_id: str | None
+    replay_fixture_sha256: str | None
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any]
+    ) -> "CouncilComponentProvenance":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError("Council component provenance must be an object")
+        entry_point_fields = (
+            "candidate_entry_point",
+            "senate_review_entry_point",
+            "senate_deliberation_entry_point",
+            "mandate_entry_point",
+            "runtime_validation_entry_point",
+            "advisor_health_entry_point",
+            "council_synthesis_entry_point",
+            "council_executive_summary_entry_point",
+        )
+        _require_exact_fields(
+            value,
+            {
+                "git_revision",
+                "git_branch",
+                "dirty_worktree",
+                *entry_point_fields,
+                "run_mode",
+                "transport",
+                "replay_fixture_id",
+                "replay_fixture_sha256",
+            },
+            "Council component provenance",
+        )
+        revision = value["git_revision"]
+        if not isinstance(revision, str) or not _GIT_REVISION_PATTERN.fullmatch(revision):
+            raise ContractValidationError(
+                "git_revision must be a hexadecimal Git object ID"
+            )
+        branch = _validate_text(
+            value["git_branch"], "git_branch", allow_none=True, max_length=256
+        )
+        if type(value["dirty_worktree"]) is not bool:
+            raise ContractValidationError("dirty_worktree must be a boolean")
+        entry_points = {
+            field_name: str(
+                _validate_text(value[field_name], field_name, max_length=256)
+            )
+            for field_name in entry_point_fields
+        }
+        run_mode = _parse_enum(RunMode, value["run_mode"], "component run_mode")
+        transport = _parse_enum(
+            CouncilTransportKind, value["transport"], "Council transport"
+        )
+        fixture_id = _validate_text(
+            value["replay_fixture_id"],
+            "replay_fixture_id",
+            allow_none=True,
+            max_length=128,
+        )
+        fixture_sha = value["replay_fixture_sha256"]
+        if fixture_sha is not None and (
+            not isinstance(fixture_sha, str) or not _SHA256_PATTERN.fullmatch(fixture_sha)
+        ):
+            raise ContractValidationError(
+                "replay_fixture_sha256 must be null or 64 lowercase hex characters"
+            )
+        if transport is CouncilTransportKind.REPLAY_FIXTURE:
+            if run_mode is not RunMode.REPLAY or fixture_id is None or fixture_sha is None:
+                raise ContractValidationError(
+                    "Council REPLAY_FIXTURE provenance requires REPLAY mode and fixture identity"
+                )
+        elif run_mode is not RunMode.LIVE or fixture_id is not None or fixture_sha is not None:
+            raise ContractValidationError(
+                "LIVE_MISSION_INPUTS provenance requires LIVE mode and no replay fixture"
+            )
+        return cls(
+            git_revision=revision,
+            git_branch=branch,
+            dirty_worktree=value["dirty_worktree"],
+            candidate_entry_point=entry_points["candidate_entry_point"],
+            senate_review_entry_point=entry_points["senate_review_entry_point"],
+            senate_deliberation_entry_point=entry_points[
+                "senate_deliberation_entry_point"
+            ],
+            mandate_entry_point=entry_points["mandate_entry_point"],
+            runtime_validation_entry_point=entry_points[
+                "runtime_validation_entry_point"
+            ],
+            advisor_health_entry_point=entry_points["advisor_health_entry_point"],
+            council_synthesis_entry_point=entry_points[
+                "council_synthesis_entry_point"
+            ],
+            council_executive_summary_entry_point=entry_points[
+                "council_executive_summary_entry_point"
+            ],
+            run_mode=run_mode,
+            transport=transport,
+            replay_fixture_id=fixture_id,
+            replay_fixture_sha256=fixture_sha,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "git_revision": self.git_revision,
+            "git_branch": self.git_branch,
+            "dirty_worktree": self.dirty_worktree,
+            "candidate_entry_point": self.candidate_entry_point,
+            "senate_review_entry_point": self.senate_review_entry_point,
+            "senate_deliberation_entry_point": self.senate_deliberation_entry_point,
+            "mandate_entry_point": self.mandate_entry_point,
+            "runtime_validation_entry_point": self.runtime_validation_entry_point,
+            "advisor_health_entry_point": self.advisor_health_entry_point,
+            "council_synthesis_entry_point": self.council_synthesis_entry_point,
+            "council_executive_summary_entry_point": (
+                self.council_executive_summary_entry_point
+            ),
+            "run_mode": self.run_mode.value,
+            "transport": self.transport.value,
+            "replay_fixture_id": self.replay_fixture_id,
+            "replay_fixture_sha256": self.replay_fixture_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MissionSnapshot:
     schema_version: str
     snapshot_id: str
@@ -459,7 +604,7 @@ class MissionSnapshot:
     terminal: bool
     stages: dict[str, StageSnapshot]
     artifacts: tuple[ArtifactReference, ...]
-    components: dict[str, ComponentProvenance]
+    components: dict[str, ComponentProvenance | CouncilComponentProvenance]
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MissionSnapshot":
@@ -551,12 +696,27 @@ class MissionSnapshot:
         components_value = value.get("components", {})
         if not isinstance(components_value, Mapping):
             raise ContractValidationError("components must be an object")
-        if set(components_value) - {"battlestar"}:
-            raise ContractValidationError("components currently supports battlestar only")
-        components = {
-            name: ComponentProvenance.from_mapping(component)
-            for name, component in components_value.items()
-        }
+        if set(components_value) - {"battlestar", "battlestar_council"}:
+            raise ContractValidationError(
+                "components supports battlestar and battlestar_council only"
+            )
+        components: dict[
+            str, ComponentProvenance | CouncilComponentProvenance
+        ] = {}
+        if "battlestar" in components_value:
+            components["battlestar"] = ComponentProvenance.from_mapping(
+                components_value["battlestar"]
+            )
+        if "battlestar_council" in components_value:
+            if "battlestar" not in components_value:
+                raise ContractValidationError(
+                    "battlestar_council provenance requires Battlestar Oracle provenance"
+                )
+            components["battlestar_council"] = (
+                CouncilComponentProvenance.from_mapping(
+                    components_value["battlestar_council"]
+                )
+            )
 
         run_mode = _parse_enum(RunMode, value["run_mode"], "run_mode")
         if any(component.run_mode is not run_mode for component in components.values()):
