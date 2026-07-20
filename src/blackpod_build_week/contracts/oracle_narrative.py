@@ -31,6 +31,10 @@ from .mission_snapshot import ArtifactReference
 
 ORACLE_NARRATIVE_REQUEST_SCHEMA_VERSION = "blackpod.oracle_narrative_request.v1"
 ORACLE_NARRATIVE_SCHEMA_VERSION = "blackpod.oracle_narrative.v1"
+ORACLE_FACT_CATALOG_SCHEMA_VERSION = "blackpod.oracle_fact_catalog.v1"
+ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION = (
+    "blackpod.oracle_narrative_selection.v1"
+)
 MODELDOCK_REPLAY_PACK_SCHEMA_VERSION = "blackpod.modeldock_replay_pack.v1"
 MODELDOCK_EXPECTED_PROVENANCE_SCHEMA_VERSION = (
     "blackpod.modeldock_replay_expected_provenance.v1"
@@ -52,6 +56,86 @@ EVIDENCE_ARTIFACT_NAMES: dict[str, str] = {
     "assessment": "oracle_assessment",
     "report": "oracle_report",
 }
+
+# This is a narrative-only vocabulary over existing Oracle facts. It is
+# deliberately small, ordered, scalar-only, and value-independent so Gemma
+# chooses evidence rather than manufacturing paths or measurements.
+_ALLOWED_ORACLE_FACT_SPECS: tuple[tuple[str, str, str], ...] = (
+    ("oracle.assessment.breadth_posture", "oracle_assessment", "/breadth_posture"),
+    (
+        "oracle.assessment.leadership_posture",
+        "oracle_assessment",
+        "/leadership_posture",
+    ),
+    ("oracle.assessment.rotation_posture", "oracle_assessment", "/rotation_posture"),
+    (
+        "oracle.assessment.risk_regime_posture",
+        "oracle_assessment",
+        "/risk_regime_posture",
+    ),
+    ("oracle.assessment.confidence", "oracle_assessment", "/confidence"),
+    ("oracle.measurements.breadth_score", "oracle_measurements", "/breadth_score"),
+    (
+        "oracle.measurements.cyclical_strength",
+        "oracle_measurements",
+        "/cyclical_strength",
+    ),
+    (
+        "oracle.measurements.defensive_strength",
+        "oracle_measurements",
+        "/defensive_strength",
+    ),
+    (
+        "oracle.measurements.leadership_concentration",
+        "oracle_measurements",
+        "/leadership_concentration",
+    ),
+    ("oracle.measurements.risk_off_score", "oracle_measurements", "/risk_off_score"),
+    ("oracle.measurements.risk_on_score", "oracle_measurements", "/risk_on_score"),
+    (
+        "oracle.measurements.rotation_velocity",
+        "oracle_measurements",
+        "/rotation_velocity",
+    ),
+    (
+        "oracle.measurements.sector_dispersion",
+        "oracle_measurements",
+        "/sector_dispersion",
+    ),
+    (
+        "oracle.diagnostics.diagnostics_state",
+        "oracle_measurement_diagnostics",
+        "/diagnostics_state",
+    ),
+    (
+        "oracle.diagnostics.provenance_complete",
+        "oracle_measurement_diagnostics",
+        "/provenance_complete",
+    ),
+    (
+        "oracle.diagnostics.fallback_count",
+        "oracle_measurement_diagnostics",
+        "/fallback_count",
+    ),
+    (
+        "oracle.readiness.readiness_state",
+        "oracle_readiness_report",
+        "/readiness_state",
+    ),
+    (
+        "oracle.readiness.downstream_ready",
+        "oracle_readiness_report",
+        "/downstream_ready",
+    ),
+    ("oracle.readiness.coverage_ok", "oracle_readiness_report", "/coverage_ok"),
+    (
+        "oracle.readiness.completeness_ok",
+        "oracle_readiness_report",
+        "/completeness_ok",
+    ),
+    ("oracle.readiness.freshness_ok", "oracle_readiness_report", "/freshness_ok"),
+    ("oracle.report.headline", "oracle_report", "/headline"),
+)
 
 _REQUEST_FIELDS = frozenset(
     {
@@ -77,6 +161,17 @@ _NARRATIVE_FIELDS = frozenset(
         "interpretation",
         "uncertainties",
         "warnings",
+        "confidence_explanation",
+        "prohibited_actions_acknowledged",
+    }
+)
+_NARRATIVE_SELECTION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "selected_fact_ids",
+        "summary",
+        "interpretation",
+        "uncertainties",
         "confidence_explanation",
         "prohibited_actions_acknowledged",
     }
@@ -113,6 +208,9 @@ _EXPECTED_SNAPSHOT_CHANGE_FIELDS = frozenset(
     }
 )
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_FACT_ID_PATTERN = re.compile(
+    r"^oracle\.(?:measurements|diagnostics|readiness|assessment|report)\.[a-z0-9_]+$"
+)
 _WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 _EMBEDDED_LOCAL_PATH = re.compile(
     r"(?:^|[\s\"'=:(\[])(?:/(?!/)[^\s\"'<>|,;]+|"
@@ -197,7 +295,7 @@ _GENERIC_NARRATIVE_WORDS = frozenset(
         "linked", "market", "material", "measurement", "measurements",
         "more", "narrative", "new", "no", "not", "observation",
         "observations", "observed", "of", "on", "only", "participation",
-        "period", "prior", "record", "reflects", "relative", "remains",
+        "period", "prior", "record", "reflect", "reflects", "relative", "remains",
         "security", "shows", "source", "specific", "statement", "suggests",
         "suggest", "supplies", "supports", "taken", "than", "that", "the",
         "these", "this", "tilt", "to", "together", "trade", "true",
@@ -210,6 +308,8 @@ _MAX_REQUEST_BYTES = 512 * 1024
 _MAX_NARRATIVE_BYTES = 256 * 1024
 _MAX_EVIDENCE_BYTES = 512 * 1024
 _MAX_ARRAY_ITEMS = 64
+_MAX_FACT_CATALOG_ITEMS = 32
+_MAX_SELECTED_FACTS = 5
 
 
 def _require_exact_fields(
@@ -948,6 +1048,365 @@ class OracleNarrative:
         return self
 
 
+@dataclass(frozen=True, slots=True)
+class OracleAllowedFact:
+    """One deterministic, source-bound fact offered to ModelDock by ID."""
+
+    fact_id: str
+    source_artifact: str
+    json_pointer: str
+    value: None | bool | int | float | str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "fact_id": self.fact_id,
+            "source_artifact": self.source_artifact,
+            "json_pointer": self.json_pointer,
+            "value": copy.deepcopy(self.value),
+        }
+
+    def to_observed_fact(self) -> ObservedFact:
+        return ObservedFact.from_mapping(
+            {
+                "source_artifact": self.source_artifact,
+                "json_pointer": self.json_pointer,
+                "value": copy.deepcopy(self.value),
+                "statement": _render_observed_fact_statement(
+                    self.json_pointer, self.value
+                ),
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OracleFactCatalog:
+    """Finite deterministic fact vocabulary derived from validated Oracle input.
+
+    IDs are explicit semantic names paired with one source artifact and one
+    canonical RFC 6901 pointer, never values or prose supplied by a model.  A
+    location therefore keeps the same ID when its observed value changes.
+    """
+
+    schema_version: str
+    mission_id: str
+    request_id: str
+    symbol: str
+    source_artifacts: dict[str, ArtifactReference]
+    facts: tuple[OracleAllowedFact, ...]
+
+    @classmethod
+    def from_request(cls, request: OracleNarrativeRequest) -> "OracleFactCatalog":
+        if not isinstance(request, OracleNarrativeRequest):
+            raise ContractValidationError(
+                "Oracle fact catalog requires an OracleNarrativeRequest"
+            )
+        candidates: list[OracleAllowedFact] = []
+        for fact_id, source_artifact, pointer in _ALLOWED_ORACLE_FACT_SPECS:
+            value = request.resolve_pointer(source_artifact, pointer)
+            if isinstance(value, (Mapping, list, tuple)):
+                raise ContractValidationError(
+                    f"allowed Oracle fact is not scalar: {fact_id}"
+                )
+            fact = OracleAllowedFact(
+                fact_id=fact_id,
+                source_artifact=source_artifact,
+                json_pointer=pointer,
+                value=copy.deepcopy(value),
+            )
+            if not _is_safe_observed_fact(fact, request):
+                raise ContractValidationError(
+                    f"allowed Oracle fact cannot produce a canonical observation: {fact_id}"
+                )
+            candidates.append(fact)
+        if not candidates:
+            raise ContractValidationError(
+                "validated Oracle input produced no safe narrative facts"
+            )
+        if len(candidates) > _MAX_FACT_CATALOG_ITEMS:
+            raise ContractValidationError(
+                f"Oracle fact catalog exceeds {_MAX_FACT_CATALOG_ITEMS} entries"
+            )
+        ids = tuple(item.fact_id for item in candidates)
+        if len(set(ids)) != len(ids):
+            raise ContractValidationError("Oracle fact catalog contains an ID collision")
+        return cls(
+            schema_version=ORACLE_FACT_CATALOG_SCHEMA_VERSION,
+            mission_id=request.mission_id,
+            request_id=request.request_id,
+            symbol=request.symbol,
+            source_artifacts={
+                artifact_name: request.source_artifacts[evidence_name]
+                for evidence_name, artifact_name in EVIDENCE_ARTIFACT_NAMES.items()
+            },
+            facts=tuple(candidates),
+        )
+
+    @property
+    def by_id(self) -> Mapping[str, OracleAllowedFact]:
+        return {fact.fact_id: fact for fact in self.facts}
+
+    def require(self, fact_id: str) -> OracleAllowedFact:
+        try:
+            return self.by_id[fact_id]
+        except KeyError as exc:
+            raise ContractValidationError(
+                f"ModelDock selected an unknown Oracle fact ID: {fact_id!r}"
+            ) from exc
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "mission_id": self.mission_id,
+            "request_id": self.request_id,
+            "symbol": self.symbol,
+            "source_artifacts": {
+                artifact_name: self.source_artifacts[artifact_name].to_dict()
+                for artifact_name in EVIDENCE_ARTIFACT_NAMES.values()
+            },
+            "facts": [fact.to_dict() for fact in self.facts],
+        }
+
+    def canonical_json_bytes(self) -> bytes:
+        return _canonical_json_bytes(
+            self.to_dict(),
+            field_name="Oracle fact catalog",
+            limit=_MAX_REQUEST_BYTES,
+            reject_absolute_paths=False,
+        )
+
+    def to_canonical_json(self) -> str:
+        return self.canonical_json_bytes().decode("utf-8")
+
+    def model_json_bytes(self) -> bytes:
+        """Return only the catalog ModelDock needs for fact selection.
+
+        Mission correlation remains in the validated transport envelope and is
+        applied to the canonical narrative by deterministic code. The model
+        never needs to reproduce those identifiers.
+        """
+
+        return _canonical_json_bytes(
+            {
+                "schema_version": self.schema_version,
+                "source_artifacts": {
+                    artifact_name: self.source_artifacts[artifact_name].to_dict()
+                    for artifact_name in EVIDENCE_ARTIFACT_NAMES.values()
+                },
+                "facts": [fact.to_dict() for fact in self.facts],
+            },
+            field_name="ModelDock Oracle fact catalog",
+            limit=_MAX_REQUEST_BYTES,
+            reject_absolute_paths=False,
+        )
+
+    def to_model_json(self) -> str:
+        return self.model_json_bytes().decode("utf-8")
+
+
+@dataclass(frozen=True, slots=True)
+class OracleNarrativeSelection:
+    """Untrusted ModelDock prose plus IDs from a deterministic fact catalog."""
+
+    schema_version: str
+    selected_fact_ids: tuple[str, ...]
+    summary: str
+    interpretation: str
+    uncertainties: tuple[str, ...]
+    confidence_explanation: str
+    prohibited_actions_acknowledged: bool
+
+    @classmethod
+    def from_json_bytes(cls, source: bytes) -> "OracleNarrativeSelection":
+        return cls.from_mapping(
+            parse_strict_json_object_bytes(
+                source, document_name="Oracle narrative selection"
+            )
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "OracleNarrativeSelection":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError(
+                "Oracle narrative selection must be an object"
+            )
+        _require_exact_fields(
+            value,
+            _NARRATIVE_SELECTION_FIELDS,
+            "Oracle narrative selection",
+        )
+        if value["schema_version"] != ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION:
+            raise ContractValidationError(
+                "unsupported Oracle narrative selection schema_version: "
+                f"{value['schema_version']!r}"
+            )
+        raw_ids = value["selected_fact_ids"]
+        if not isinstance(raw_ids, list):
+            raise ContractValidationError("selected_fact_ids must be an array")
+        if not raw_ids:
+            raise ContractValidationError("selected_fact_ids must not be empty")
+        if len(raw_ids) > _MAX_SELECTED_FACTS:
+            raise ContractValidationError(
+                f"selected_fact_ids exceeds {_MAX_SELECTED_FACTS} entries"
+            )
+        selected_ids: list[str] = []
+        for index, raw_id in enumerate(raw_ids):
+            if not isinstance(raw_id, str) or not _FACT_ID_PATTERN.fullmatch(raw_id):
+                raise ContractValidationError(
+                    f"selected_fact_ids[{index}] is not a canonical fact ID"
+                )
+            selected_ids.append(raw_id)
+        if len(set(selected_ids)) != len(selected_ids):
+            raise ContractValidationError("selected_fact_ids contains duplicates")
+        acknowledged = value["prohibited_actions_acknowledged"]
+        if acknowledged is not True:
+            raise ContractValidationError(
+                "prohibited_actions_acknowledged must be true"
+            )
+        selection = cls(
+            schema_version=ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+            selected_fact_ids=tuple(selected_ids),
+            summary=_strict_text(value["summary"], "summary", max_length=2000),
+            interpretation=_strict_text(
+                value["interpretation"], "interpretation", max_length=4000
+            ),
+            uncertainties=_strict_text_array(
+                value["uncertainties"], "uncertainties"
+            ),
+            confidence_explanation=_strict_text(
+                value["confidence_explanation"],
+                "confidence_explanation",
+                max_length=2000,
+            ),
+            prohibited_actions_acknowledged=True,
+        )
+        for field_name, field_value in (
+            ("summary", selection.summary),
+            ("interpretation", selection.interpretation),
+            ("confidence_explanation", selection.confidence_explanation),
+            *[("uncertainties", item) for item in selection.uncertainties],
+        ):
+            _reject_absolute_local_text(field_value, field_name)
+        _canonical_json_bytes(
+            selection.to_dict(),
+            field_name="Oracle narrative selection",
+            limit=_MAX_NARRATIVE_BYTES,
+            reject_absolute_paths=False,
+        )
+        return selection
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "selected_fact_ids": list(self.selected_fact_ids),
+            "summary": self.summary,
+            "interpretation": self.interpretation,
+            "uncertainties": list(self.uncertainties),
+            "confidence_explanation": self.confidence_explanation,
+            "prohibited_actions_acknowledged": self.prohibited_actions_acknowledged,
+        }
+
+    def canonical_json_bytes(self) -> bytes:
+        return _canonical_json_bytes(
+            self.to_dict(),
+            field_name="Oracle narrative selection",
+            limit=_MAX_NARRATIVE_BYTES,
+            reject_absolute_paths=False,
+        )
+
+    def expand(
+        self,
+        catalog: OracleFactCatalog,
+        request: OracleNarrativeRequest,
+    ) -> OracleNarrative:
+        if not isinstance(catalog, OracleFactCatalog) or not isinstance(
+            request, OracleNarrativeRequest
+        ):
+            raise ContractValidationError(
+                "Oracle narrative expansion requires a fact catalog and request"
+            )
+        if (request.mission_id, request.request_id, request.symbol) != (
+            catalog.mission_id,
+            catalog.request_id,
+            catalog.symbol,
+        ):
+            raise ContractValidationError("Oracle fact catalog correlation mismatch")
+        selected = set(self.selected_fact_ids)
+        catalog_by_id = catalog.by_id
+        unknown = next(
+            (
+                fact_id
+                for fact_id in self.selected_fact_ids
+                if fact_id not in catalog_by_id
+            ),
+            None,
+        )
+        if unknown is not None:
+            catalog.require(unknown)
+        facts = tuple(
+            fact.to_observed_fact() for fact in catalog.facts if fact.fact_id in selected
+        )
+        narrative = OracleNarrative.from_mapping(
+            {
+                "schema_version": ORACLE_NARRATIVE_SCHEMA_VERSION,
+                "mission_id": request.mission_id,
+                "request_id": request.request_id,
+                "symbol": request.symbol,
+                "summary": self.summary,
+                "observed_facts": [fact.to_dict() for fact in facts],
+                "interpretation": self.interpretation,
+                "uncertainties": list(self.uncertainties),
+                "warnings": list(request.warnings),
+                "confidence_explanation": self.confidence_explanation,
+                "prohibited_actions_acknowledged": True,
+            }
+        )
+        return narrative.validate_against(request)
+
+
+def _render_observed_fact_statement(
+    json_pointer: str, value: None | bool | int | float | str
+) -> str:
+    parts = [
+        part.replace("~1", "/").replace("~0", "~")
+        for part in json_pointer[1:].split("/")
+    ]
+    label_part = next(
+        (part for part in reversed(parts) if not part.isdigit()),
+        "value",
+    )
+    label = " ".join(re.sub(r"[_-]+", " ", label_part).split()) or "value"
+    if value is None:
+        rendered = "null"
+    elif type(value) is bool:
+        rendered = "true" if value else "false"
+    elif type(value) in {int, float}:
+        rendered = json.dumps(value, allow_nan=False)
+    else:
+        rendered = value
+    suffix = "" if isinstance(rendered, str) and rendered.endswith(".") else "."
+    return f"The source-linked {label} is {rendered}{suffix}"
+
+
+def _is_safe_observed_fact(
+    fact: OracleAllowedFact, request: OracleNarrativeRequest
+) -> bool:
+    if isinstance(fact.value, str) and not fact.value.strip():
+        return False
+    try:
+        observed = fact.to_observed_fact()
+        _validate_source_bound_numbers((), (observed,))
+        _validate_observed_fact_statements((observed,))
+        texts = [observed.statement]
+        if isinstance(observed.value, str):
+            texts.append(observed.value)
+        _reject_prohibited_authority(texts)
+        _validate_symbol_attribution(texts, request)
+        _validate_source_bound_vocabulary(texts, request)
+    except ContractValidationError:
+        return False
+    return True
+
+
 def validate_json_pointer(value: object) -> str:
     if not isinstance(value, str):
         raise ContractValidationError("json_pointer must be a string")
@@ -1227,49 +1686,59 @@ def _reject_prohibited_authority(texts: Sequence[str]) -> None:
 
 
 def build_oracle_narrative_prompt(request: OracleNarrativeRequest) -> str:
-    """Build the deterministic, authority-bounded ModelDock instruction."""
+    """Build a fact-selection prompt without delegating source linkage."""
 
     if not isinstance(request, OracleNarrativeRequest):
         raise ContractValidationError("prompt input must be an OracleNarrativeRequest")
+    catalog = OracleFactCatalog.from_request(request)
     expected_shape = {
-        "schema_version": ORACLE_NARRATIVE_SCHEMA_VERSION,
-        "mission_id": request.mission_id,
-        "request_id": request.request_id,
-        "symbol": request.symbol,
-        "summary": "concise explanatory text",
-        "observed_facts": [
-            {
-                "source_artifact": "one declared Oracle artifact name",
-                "json_pointer": "/RFC6901/pointer/to/scalar",
-                "value": "the exact scalar at that pointer",
-                "statement": "a concise observed-fact statement",
-            }
+        "schema_version": ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+        "selected_fact_ids": [
+            "one to five exact fact_id values copied from the catalog"
         ],
-        "interpretation": "interpretation kept separate from observed facts",
-        "uncertainties": ["material uncertainty"],
-        "warnings": ["material warning"],
-        "confidence_explanation": "evidence-bounded explanation",
+        "summary": "Validated Oracle facts reflect qualitative catalog terms.",
+        "interpretation": "The source-linked facts suggest a bounded interpretation.",
+        "uncertainties": [],
+        "confidence_explanation": "Confidence is bounded by the source-linked facts.",
         "prohibited_actions_acknowledged": True,
     }
+    connective_vocabulary = ",".join(sorted(_GENERIC_NARRATIVE_WORDS))
     instructions = (
-        "You are a local narrative renderer for validated BlackPod Oracle evidence.\n"
+        "You are a local narrative renderer over a deterministic catalog of "
+        "validated BlackPod Oracle facts.\n"
         "Return exactly one JSON object and no markdown or surrounding text.\n"
-        "Treat the supplied Oracle objects as the only source of market facts.\n"
-        "The mission symbol is correlation-only unless an Oracle source object "
-        "explicitly attributes evidence to that symbol. The evidence may describe "
-        "a fixed validation fleet rather than the mission symbol.\n"
-        "Every observed fact must cite a declared source_artifact, an RFC 6901 "
-        "JSON pointer, and the exact scalar value resolved at that pointer.\n"
-        "Keep observed facts separate from interpretation and state uncertainties.\n"
-        "Do not invent or alter measurements, diagnostics, readiness, analytical "
-        "conclusions, or numerical claims.\n"
-        "Do not place numbers in summary, interpretation, uncertainties, warnings, "
-        "or confidence_explanation. A number is allowed only in an observed-fact "
-        "statement when it exactly matches that fact's source-linked numeric scalar.\n"
+        "Select between one and five unique fact_id values from the supplied "
+        "catalog and copy each selected ID exactly.\n"
+        "Write only summary, interpretation, uncertainties, and "
+        "confidence_explanation prose. Do not write observed_facts, source "
+        "artifacts, JSON pointers, values, statements, or canonical warnings. "
+        "Do not write mission_id, request_id, symbol, run_mode, or any other "
+        "correlation field; Build Week applies validated transport correlation. "
+        "Build Week expands selected IDs and copies Oracle warnings "
+        "deterministically after your response.\n"
+        "Treat the catalog as the only source of market facts. It may describe "
+        "a fixed validation fleet rather than a single security.\n"
+        "Do not place digits or numerical claims in any prose field. Do not invent "
+        "or alter measurements, diagnostics, readiness, or analytical conclusions.\n"
+        "The selected IDs carry every factual status and posture. In prose, do "
+        "not make a new subject-predicate assertion beginning with evidence, "
+        "diagnostics, readiness, coverage, assessment, report, measurements, "
+        "market posture, analytical posture, risk posture, or momentum. Use "
+        "interpretive phrasing. summary must be one sentence beginning exactly "
+        "'Validated Oracle facts reflect '. interpretation must be one sentence "
+        "beginning exactly 'The source-linked facts suggest '. Set uncertainties "
+        "to []. Set confidence_explanation exactly to 'Confidence is bounded by "
+        "the source-linked facts.'.\n"
+        "Outside exact qualitative words copied from catalog field names or "
+        "values, prose may use only this approved connective vocabulary; do not "
+        "substitute synonyms:\n"
+        + connective_vocabulary
+        + "\n"
         "Do not approve a mission, choose a Governor disposition, recommend an "
         "order or trade, or claim execution authority.\n"
-        "The output must match blackpod.oracle_narrative.v1 exactly; unknown fields "
-        "are forbidden.\n"
+        "Return every field in the expected shape exactly once. uncertainties "
+        "must always be a JSON array; use [] when none apply. Unknown fields are "
+        "forbidden. prohibited_actions_acknowledged must be true.\n"
         "Expected output shape:\n"
         + json.dumps(
             expected_shape,
@@ -1278,8 +1747,8 @@ def build_oracle_narrative_prompt(request: OracleNarrativeRequest) -> str:
             ensure_ascii=False,
             allow_nan=False,
         )
-        + "\nCanonical Oracle input:\n"
-        + request.to_canonical_json()
+        + "\nCanonical allowed-fact catalog:\n"
+        + catalog.to_model_json()
     )
     if len(instructions.encode("utf-8")) > _MAX_REQUEST_BYTES:
         raise ContractValidationError("Oracle narrative prompt exceeds the size limit")
@@ -1382,8 +1851,13 @@ class ModelDockReplayPack:
             raise ContractValidationError(
                 "ModelDock replay pack response.content must be a JSON string"
             )
-        replay_narrative = OracleNarrative.from_json_bytes(content.encode("utf-8"))
-        replay_narrative.validate_against(oracle_input)
+        replay_mapping = parse_strict_json_object_bytes(
+            content.encode("utf-8"),
+            document_name="ModelDock replay response content",
+        )
+        replay_narrative = OracleNarrativeSelection.from_mapping(
+            replay_mapping
+        ).expand(OracleFactCatalog.from_request(oracle_input), oracle_input)
         if replay_narrative.to_dict() != expected_narrative.to_dict():
             raise ContractValidationError(
                 "ModelDock replay response content does not match expected_narrative"

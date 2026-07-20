@@ -211,6 +211,39 @@ class ModelDockClientTests(unittest.TestCase):
             FakeTransport(http_response(unsupported)),
         )
 
+    def test_validated_envelope_correlation_can_be_applied_deterministically(self) -> None:
+        envelope = response_envelope()
+        envelope["content"] = json.dumps(
+            {
+                "schema_version": "blackpod.oracle_narrative_selection.v1",
+                "selected_fact_ids": ["oracle.measurements.breadth_score"],
+            }
+        )
+        transport = FakeTransport(http_response(envelope))
+
+        result = self.client(transport).generate_text(
+            request_payload("LIVE"),
+            mission_id=MISSION_ID,
+            request_id=REQUEST_ID,
+            symbol=SYMBOL,
+            run_mode="LIVE",
+            content_validator=lambda value: copy.deepcopy(dict(value)),
+            content_requires_correlation=False,
+        )
+
+        self.assertEqual(
+            result.parsed_content["selected_fact_ids"],
+            ["oracle.measurements.breadth_score"],
+        )
+        self.assertEqual(
+            result.safe_response["metadata"]["blackpod_correlation"],
+            request_payload("LIVE")["metadata"]["blackpod_correlation"],
+        )
+
+        with self.assertRaises(ModelDockClientError) as caught:
+            self.invoke(FakeTransport(http_response(envelope)))
+        self.assertEqual(caught.exception.code, "narrative_correlation_mismatch")
+
     def test_non_200_timeout_and_connection_failure_are_sanitized(self) -> None:
         self.assert_code("http_status", FakeTransport(HttpResponse(503, {}, b"secret")))
         self.assert_code("timeout", FakeTransport(TimeoutError("private deadline detail")))

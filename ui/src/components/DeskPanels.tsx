@@ -1,3 +1,6 @@
+import type { MarketContextViewModel } from "../data/viewModel";
+import { NavigatorShipView, type NavigatorShipData } from "./NavigatorShipView";
+
 export function SentryAlerts({ warnings, onFocus }: { warnings: readonly string[]; onFocus: () => void }) {
   return (
     <button className="loose-paper sentry-copy" type="button" onClick={onFocus} aria-label="Focus mission warnings">
@@ -20,16 +23,46 @@ function warningForDesk(warning: string): string {
   return warning.replaceAll("_", " ").replaceAll(",", ", ");
 }
 
-export function MarketConditions() {
+export function MarketConditions({ symbol, market }: { symbol: string; market: MarketContextViewModel }) {
   return (
-    <section className="loose-paper market-copy" aria-label="Market conditions">
-      <span className="paper-title">Market conditions</span>
-      <p>Security-specific market tape is not present in this mission artifact.</p>
+    <section className="loose-paper market-copy" aria-label="Supplemental Navigator market reference">
+      <span className="paper-title">Navigator reference tape</span>
+      {market.navigatorMarket ? (
+        <dl>
+          <div><dt>Asset</dt><dd>{symbol} · {market.companyName}</dd></div>
+          <div><dt>Frame</dt><dd>{market.timeframe}</dd></div>
+          <div><dt>Latest bar</dt><dd>{formatBarTime(market.latestCompletedBar)}</dd></div>
+          <div><dt>Last</dt><dd>{formatPrice(market.navigatorMarket.summary.last_price, market.currency)}</dd></div>
+          <div><dt>MA{market.navigatorMarket.ma_period}</dt><dd>{formatPrice(market.navigatorMarket.summary.last_ma, market.currency)}</dd></div>
+          <div><dt>Sea</dt><dd>{market.navigatorMarket.summary.volatility}</dd></div>
+        </dl>
+      ) : <p>Security-specific market tape is not present in this mission artifact.</p>}
+      <p className="market-source">Supplemental; not Oracle evidence. Market status: {market.marketStatus ?? "not recorded"}.</p>
     </section>
   );
 }
 
-export function MissionChart({ missionId, snapshotCount, revision }: { missionId: string; snapshotCount: number; revision: number }) {
+export function MissionChart({
+  missionId,
+  snapshotCount,
+  revision,
+  shipData,
+  onOpenShip,
+}: {
+  missionId: string;
+  snapshotCount: number;
+  revision: number;
+  shipData: NavigatorShipData | null;
+  onOpenShip: () => void;
+}) {
+  if (shipData) {
+    return (
+      <button className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`}>
+        <span className="paper-title">Navigator reference chart · open</span>
+        <NavigatorShipView data={shipData} variant="overview" />
+      </button>
+    );
+  }
   return (
     <section className="chart-copy" aria-label="Mission evidence chart">
       <span className="paper-title">Mission chart</span>
@@ -42,6 +75,21 @@ export function MissionChart({ missionId, snapshotCount, revision }: { missionId
       </dl>
     </section>
   );
+}
+
+function formatPrice(value: number | null, currency: string | null): string {
+  if (value === null) return "Not present";
+  if (!currency) return value.toFixed(2);
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency}`;
+  }
+}
+
+function formatBarTime(value: string | null): string {
+  if (!value) return "Not recorded";
+  return value.slice(0, 10);
 }
 
 export function ShadowPlanPaper({ allowed, prohibited, outcome }: { allowed: readonly string[]; prohibited: readonly string[]; outcome: string }) {

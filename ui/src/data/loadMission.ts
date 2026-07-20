@@ -6,6 +6,11 @@ import type {
   MissionSnapshotV1,
   MissionSummaryV2,
 } from "../contracts/presentation";
+import type {
+  CabinContextV1,
+  NavigatorMarket,
+  PortfolioSnapshotV1,
+} from "../contracts/cabinContext";
 import {
   PresentationContractError,
   asJsonObject,
@@ -16,6 +21,12 @@ import {
   parseMissionSummary,
   validateMissionBundleContracts,
 } from "./validate";
+import {
+  parseCabinContext,
+  parseNavigatorMarket,
+  parsePortfolioSnapshot,
+  type CabinMissionCorrelation,
+} from "./validateCabinContext";
 
 /** Known evidence used by the five focused books. Paths are never guessed. */
 export const MISSION_EVIDENCE_NAMES = [
@@ -71,6 +82,16 @@ export interface MissionBundle {
   snapshot: MissionSnapshotV1;
   artifactIndex: ReadonlyMap<string, ArtifactReference>;
   evidence: ReadonlyMap<MissionEvidenceName, MissionEvidence>;
+  /** Optional, strictly validated Stage 4 presentation supplements. */
+  cabinContext: CabinContextV1 | null;
+  navigatorMarket: NavigatorMarket | null;
+  portfolio: PortfolioSnapshotV1 | null;
+}
+
+export interface CabinPresentationSupplements {
+  cabinContext: CabinContextV1 | null;
+  navigatorMarket: NavigatorMarket | null;
+  portfolio: PortfolioSnapshotV1 | null;
 }
 
 export interface LoadMissionBundleOptions {
@@ -121,13 +142,36 @@ function sanitizedLoadMessage(error: unknown): string {
 async function fetchJson(fetchImpl: typeof fetch, url: string, label: string): Promise<LoadedJson> {
   let response: Response;
   try {
-    response = await fetchImpl(url, { cache: "no-store" });
+    response = await fetchImpl(url, { cache: "no-store", headers: { Accept: "application/json" } });
   } catch {
     throw new PresentationContractError(`${label} could not be fetched`);
   }
   if (!response.ok) {
     throw new PresentationContractError(`${label} returned HTTP ${response.status}`);
   }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let document: unknown;
+  try {
+    document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new PresentationContractError(`${label} is not valid UTF-8 JSON`);
+  }
+  return { bytes, document };
+}
+
+async function fetchOptionalJson(
+  fetchImpl: typeof fetch,
+  url: string,
+  label: string,
+): Promise<LoadedJson | null> {
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { cache: "no-store", headers: { Accept: "application/json" } });
+  } catch {
+    throw new PresentationContractError(`${label} could not be fetched`);
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) throw new PresentationContractError(`${label} returned HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   let document: unknown;
   try {
@@ -183,6 +227,67 @@ async function verifyReference(loaded: LoadedJson, reference: ArtifactReference,
   if (await sha256(loaded.bytes) !== reference.sha256) {
     throw new PresentationContractError(`${label} SHA-256 does not match its canonical reference`);
   }
+}
+
+/**
+ * Load the optional read-only Stage 4 wrapper. A missing wrapper is honest
+ * absence. Once it exists, every recorded artifact is mandatory and verified.
+ */
+export async function loadCabinPresentationSupplements(
+  baseUrl: string,
+  correlation: CabinMissionCorrelation,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<CabinPresentationSupplements> {
+  if (typeof fetchImpl !== "function") {
+    throw new PresentationContractError("fetch is unavailable in this browser");
+  }
+  const normalizedBase = normalizeBaseUrl(baseUrl);
+  const contextLoaded = await fetchOptionalJson(
+    fetchImpl,
+    missionRelativeUrl(normalizedBase, "presentation/cabin_context.json"),
+    "cabin context",
+  );
+  if (contextLoaded === null) {
+    return { cabinContext: null, navigatorMarket: null, portfolio: null };
+  }
+
+  const cabinContext = parseCabinContext(contextLoaded.document, correlation);
+  const [navigatorMarket, portfolio] = await Promise.all([
+    cabinContext.market_artifact === null
+      ? Promise.resolve(null)
+      : fetchJson(
+        fetchImpl,
+        missionRelativeUrl(normalizedBase, cabinContext.market_artifact.path),
+        "Navigator market",
+      ).then(async (loaded) => {
+        await verifyReference(loaded, cabinContext.market_artifact!, "Navigator market");
+        return parseNavigatorMarket(loaded.document, cabinContext.symbol);
+      }),
+    cabinContext.portfolio_artifact === null
+      ? Promise.resolve(null)
+      : fetchJson(
+        fetchImpl,
+        missionRelativeUrl(normalizedBase, cabinContext.portfolio_artifact.path),
+        "portfolio snapshot",
+      ).then(async (loaded) => {
+        await verifyReference(loaded, cabinContext.portfolio_artifact!, "portfolio snapshot");
+        return parsePortfolioSnapshot(loaded.document);
+      }),
+  ]);
+
+  if (
+    portfolio !== null
+    && (
+      (cabinContext.run_mode === "LIVE" && portfolio.mode !== "LIVE")
+      || (cabinContext.run_mode === "REPLAY" && portfolio.mode !== "FROZEN")
+    )
+  ) {
+    throw new PresentationContractError(
+      "portfolio mode must be LIVE for LIVE missions and FROZEN for REPLAY missions",
+    );
+  }
+
+  return { cabinContext, navigatorMarket, portfolio };
 }
 
 async function loadEvidence(
@@ -274,6 +379,13 @@ export async function loadMissionBundle(
   const snapshot = parseMissionSnapshot(snapshotLoaded.document);
   validateMissionBundleContracts({ summary, captainsLog, manifest, snapshot });
 
+  const supplements = await loadCabinPresentationSupplements(normalizedBase, {
+    mission_id: summary.mission_id,
+    request_id: summary.request_id,
+    symbol: summary.symbol,
+    run_mode: summary.run_mode,
+  }, fetchImpl);
+
   const artifactIndex = new Map(snapshot.artifacts.map((reference) => [reference.name, reference]));
   const evidenceValues = await Promise.all(
     MISSION_EVIDENCE_NAMES.map((name) => loadEvidence(
@@ -294,6 +406,7 @@ export async function loadMissionBundle(
     snapshot,
     artifactIndex,
     evidence,
+    ...supplements,
   };
 }
 

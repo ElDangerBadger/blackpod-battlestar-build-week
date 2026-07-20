@@ -215,6 +215,8 @@ export function createMissionBundleFixture(): MissionBundle {
     snapshot,
     artifactIndex: new Map(),
     evidence: new Map(missingEvidence),
+    cabinContext: null,
+    navigatorMarket: null,
+    portfolio: null,
   };
 }
-

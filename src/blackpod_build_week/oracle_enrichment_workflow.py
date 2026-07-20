@@ -55,8 +55,10 @@ from .contracts.oracle_narrative import (
     ORACLE_NARRATIVE_REQUEST_SCHEMA_VERSION,
     ORACLE_NARRATIVE_SCHEMA_VERSION,
     ModelDockReplayPack,
+    OracleFactCatalog,
     OracleNarrative,
     OracleNarrativeRequest,
+    OracleNarrativeSelection,
 )
 from .hashing import canonical_json_bytes, sha256_bytes
 from .mission_store import MissionPaths, MissionStore
@@ -352,6 +354,7 @@ def run_oracle_enrichment(
         source_artifacts=source_artifacts,
         evidence=evidence,
     )
+    fact_catalog = OracleFactCatalog.from_request(narrative_request)
     wire_request = _build_wire_request(config, narrative_request)
     if replay_pack is not None:
         _validate_replay_invocation(
@@ -449,9 +452,10 @@ def run_oracle_enrichment(
             request_id=loaded.snapshot.request_id,
             symbol=loaded.request.symbol,
             run_mode=loaded.snapshot.run_mode,
-            content_validator=lambda value: OracleNarrative.from_mapping(
+            content_validator=lambda value: OracleNarrativeSelection.from_mapping(
                 value
-            ).validate_against(narrative_request),
+            ).expand(fact_catalog, narrative_request),
+            content_requires_correlation=False,
         )
         _validate_call_result(
             call_result,

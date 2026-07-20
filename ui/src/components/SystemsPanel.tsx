@@ -1,4 +1,7 @@
+import type { PortfolioViewModel } from "../data/viewModel";
+
 export type SystemsPanelProps = {
+  presentationMode: "DEMO" | "LIVE";
   warnings: readonly string[];
   governorDisposition: string;
   operatorResult: string | null;
@@ -7,6 +10,11 @@ export type SystemsPanelProps = {
   provider: string | null;
   model: string | null;
   traceId: string | null;
+  latencyMs: number | null;
+  lastSuccessfulInference: string | null;
+  modeldockAvailability: string;
+  mocked: boolean | null;
+  portfolio: PortfolioViewModel;
   allowedOperations: readonly string[];
   prohibitedOperations: readonly string[];
 };
@@ -15,7 +23,7 @@ export function SystemsPanel(props: SystemsPanelProps) {
   return (
     <aside className="systems-copy" aria-label="Mission provenance and safety boundary">
       <section className="systems-warnings">
-        <h2>Mission warnings</h2>
+        <h2>{props.presentationMode} mission · warnings</h2>
         {props.warnings.length ? (
           <ul>{props.warnings.slice(0, 3).map((warning) => <li key={warning}>{humanize(warning)}</li>)}</ul>
         ) : <p>None recorded</p>}
@@ -31,6 +39,18 @@ export function SystemsPanel(props: SystemsPanelProps) {
         <p className="gate-proof"><strong>PROCEED is not approval.</strong><br />The operator gate is a separate canonical event.</p>
       </section>
 
+      <section className="systems-portfolio">
+        <h2>Read-only portfolio source</h2>
+        {props.portfolio.status === "CAPTURED" ? (
+          <dl>
+            <div><dt>Mode</dt><dd>{props.portfolio.mode}</dd></div>
+            <div><dt>Source</dt><dd title={props.portfolio.sourceIdentity ?? undefined}>{compact(props.portfolio.sourceIdentity)}</dd></div>
+            <div><dt>Captured</dt><dd title={props.portfolio.capturedAt ?? undefined}>{formatObservation(props.portfolio.capturedAt)}</dd></div>
+            <div><dt>Positions</dt><dd>{props.portfolio.positionCount}</dd></div>
+          </dl>
+        ) : <p>Not configured — no illustrative holdings shown.</p>}
+      </section>
+
       <section className="systems-modeldock">
         <h2>Data &amp; model health</h2>
         <dl>
@@ -38,7 +58,11 @@ export function SystemsPanel(props: SystemsPanelProps) {
           <div><dt>Provider</dt><dd>{props.provider ?? "Not present"}</dd></div>
           <div><dt>Model</dt><dd title={props.model ?? undefined}>{compact(props.model)}</dd></div>
           <div><dt>Trace</dt><dd title={props.traceId ?? undefined}>{compact(props.traceId)}</dd></div>
+          <div><dt>Latency</dt><dd>{formatLatency(props.latencyMs)}</dd></div>
+          <div><dt>Last inference</dt><dd title={props.lastSuccessfulInference ?? undefined}>{formatObservation(props.lastSuccessfulInference)}</dd></div>
+          <div><dt>Mocked</dt><dd>{formatMocked(props.mocked)}</dd></div>
         </dl>
+        <p title={props.lastSuccessfulInference ?? undefined}>{props.modeldockAvailability}</p>
       </section>
 
       <section className="systems-authority">
@@ -53,6 +77,21 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
     </aside>
   );
+}
+
+function formatLatency(value: number | null): string {
+  return value === null ? "Not recorded" : `${value.toFixed(0)} ms`;
+}
+
+function formatMocked(value: boolean | null): string {
+  if (value === null) return "Not recorded";
+  return value ? "YES" : "NO";
+}
+
+function formatObservation(value: string | null): string {
+  if (!value) return "Not recorded";
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}Z` : compact(value);
 }
 
 function compact(value: string | null): string {

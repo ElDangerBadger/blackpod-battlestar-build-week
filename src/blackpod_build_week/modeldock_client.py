@@ -313,13 +313,18 @@ class ModelDockClient:
         symbol: str,
         run_mode: object,
         content_validator: ContentValidator | None = None,
+        content_requires_correlation: bool = True,
     ) -> ModelDockCallResult:
         """Generate and validate one correlated narrative.
 
         ``symbol`` is an independently supplied expected value; it is not
-        trusted from request metadata. ``timeout_seconds`` covers request
-        validation, one transport attempt, bounded response reads, and response
-        validation. The method never retries or changes provider or run mode.
+        trusted from request metadata. Callers that deterministically apply the
+        already-validated envelope correlation may set
+        ``content_requires_correlation=False``; the default preserves the
+        standalone canonical-narrative contract. ``timeout_seconds`` covers
+        request validation, one transport attempt, bounded response reads, and
+        response validation. The method never retries or changes provider or
+        run mode.
         """
 
         started_at = _timestamp(self._now())
@@ -409,6 +414,7 @@ class ModelDockClient:
                 expected_max_tokens=expected_max_tokens,
                 run_mode=normalized_mode,
                 content_validator=content_validator,
+                content_requires_correlation=content_requires_correlation,
             )
             safe_response = _safe_response_projection(envelope, include_content=True)
             safe_response_bytes = canonical_json_bytes(safe_response)
@@ -717,6 +723,7 @@ class ModelDockClient:
         expected_max_tokens: int | None,
         run_mode: str,
         content_validator: ContentValidator | None,
+        content_requires_correlation: bool,
     ) -> tuple[Any, str | None]:
         if set(value) != _ENVELOPE_FIELDS:
             raise _ProtocolIssue(
@@ -868,13 +875,14 @@ class ModelDockClient:
             )
         content_bytes = content.encode("utf-8")
         parsed_mapping = _strict_json_object(content_bytes, "ModelDock narrative content")
-        for key in ("mission_id", "request_id", "symbol"):
-            if parsed_mapping.get(key) != expected_correlation[key]:
-                raise _ProtocolIssue(
-                    "narrative_correlation_mismatch",
-                    "ModelDockNarrativeValidationError",
-                    "ModelDock narrative correlation does not match the mission",
-                )
+        if content_requires_correlation:
+            for key in ("mission_id", "request_id", "symbol"):
+                if parsed_mapping.get(key) != expected_correlation[key]:
+                    raise _ProtocolIssue(
+                        "narrative_correlation_mismatch",
+                        "ModelDockNarrativeValidationError",
+                        "ModelDock narrative correlation does not match the mission",
+                    )
         validator = content_validator or _default_content_validator
         try:
             parsed_content = validator(parsed_mapping)

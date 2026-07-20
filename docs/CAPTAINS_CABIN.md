@@ -29,10 +29,34 @@ make cabin-test
 make cabin-build
 ```
 
-`make cabin-prepare` depends on the existing `make judge` target. It validates
-the completed approved mission and copies its mission-relative tree into
-`ui/public/demo/approved/`. That directory, `ui/node_modules/`, frontend test
-coverage, and `ui/dist/` are generated locally and ignored by Git.
+Stage 4 also supports two explicit prepared data slots. Demo remains the
+default; Live must be selected and never falls back:
+
+```bash
+make cabin-prepare-demo
+make cabin-prepare-live LIVE_MISSION_ID=<verified-live-mission-id>
+make cabin-dev-live LIVE_MISSION_ID=<verified-live-mission-id>
+```
+
+Use `make cabin-freeze-live-demo LIVE_MISSION_ID=<id>` only after the strict
+LIVE packager accepts that mission. Full execution, context-capture, and
+packaging instructions are in the [Stage 4 LIVE Demo
+Runbook](LIVE_DEMO_RUNBOOK.md).
+
+`make cabin-prepare` depends on the existing `make judge` target. Without
+changing `make judge`, it then captures the committed AAPL Navigator market
+response with its fixed source revision and timestamp, validates the completed
+approved mission, and copies its mission-relative tree into
+`ui/public/demo/approved/`. This step is deterministic and offline. No
+portfolio source is bundled, so the presentation honestly records and displays
+portfolio status `NOT_CONFIGURED`. That directory, `ui/node_modules/`,
+frontend test coverage, and `ui/dist/` are generated locally and ignored by
+Git.
+
+The captured AAPL tape is a supplemental Navigator reference and is labeled as
+such in the cabin. It is not attributed to Oracle: the mission symbol is
+correlation metadata while the current Oracle interface analyzes its supported
+fixed fleet.
 
 ## Authority and data flow
 
@@ -64,6 +88,14 @@ The principal browser inputs are:
 - `presentation/demo_manifest.json` for revisions, ModelDock mode and identity,
   hashes, and the exact SHADOW safety declaration; and
 - `mission_snapshot.json` when correlation or evidence metadata is needed.
+
+When explicitly captured, Stage 4 adds a separate
+`blackpod.cabin_context.v1` presentation supplement that references the exact
+read-only Navigator market response and optional portfolio snapshot by hash.
+These files provide company/timeframe/latest-bar/chart and portfolio display
+context only. They do not enter the mission snapshot, change an outcome, or
+become trading inputs. If absent, the cabin reports `NOT_CONFIGURED` rather
+than inventing values.
 
 The browser validates schema versions, required shapes, canonical stage order,
 mission correlation, and mission-relative paths before constructing a display

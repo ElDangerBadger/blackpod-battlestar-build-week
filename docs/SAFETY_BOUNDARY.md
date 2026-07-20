@@ -56,9 +56,14 @@ portfolio mutation path.
 ## ModelDock boundary
 
 - Oracle facts are materialized and validated before narrative enrichment.
-- The request contains selected Oracle evidence, never arbitrary filesystem
-  content or absolute paths.
-- Canonical output is structured JSON, not unconstrained prose.
+- Deterministic code enumerates a bounded Oracle fact catalog. Each stable ID
+  records its immutable source artifact, canonical pointer, and exact value;
+  arbitrary filesystem content and absolute paths are excluded.
+- ModelDock selects only catalog IDs and authors interpretation fields. It may
+  not author canonical observed-fact objects or Oracle warnings.
+- Deterministic code expands selected IDs, copies Oracle warnings, and validates
+  the completed canonical `blackpod.oracle_narrative.v1` object. Output is
+  structured JSON, not unconstrained prose.
 - Unsupported numerical claims, authority claims, malformed output,
   correlation mismatches, and mocked LIVE results are rejected.
 - LIVE accepts only the configured local MLX policy at a loopback origin.

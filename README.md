@@ -44,11 +44,19 @@ make cabin-dev
 ```
 
 `make cabin-prepare` first preserves the existing `make judge` workflow, then
-validates and materializes its completed mission beneath the ignored
-`ui/public/demo/approved/` directory. Use `make cabin-test` for the focused
+attaches the committed, read-only AAPL Navigator market capture and validates
+and materializes the completed mission beneath the ignored
+`ui/public/demo/approved/` directory. The capture is fixed to its recorded
+Navigator revision and timestamp, performs no network call, and leaves
+portfolio status `NOT_CONFIGURED`. Use `make cabin-test` for the focused
 frontend tests and `make cabin-build` for a production build. The cabin is an
 interactive presentation of existing evidence; it cannot run or resume a
 mission, record approval, or invoke any execution operation.
+
+The AAPL chart is explicitly labeled as supplemental Navigator reference data.
+The mission symbol is correlation metadata, and the current Oracle interface
+remains a fixed-fleet market analysis; the cabin never relabels fleet posture
+as security-specific Oracle evidence.
 
 `BATTLESTAR_PATH` is required and deliberately has no repository-topology
 default. Both sibling repositories remain read-only. Use a new contained root,
@@ -68,6 +76,32 @@ Detailed reviewer material:
 - [Safety Boundary](docs/SAFETY_BOUNDARY.md)
 - [Build Week Changelog](docs/BUILD_WEEK_CHANGELOG.md)
 - [Captain's Cabin](docs/CAPTAINS_CABIN.md)
+- [Stage 4 LIVE Demo Runbook](docs/LIVE_DEMO_RUNBOOK.md)
+
+## Stage 4: explicit Demo and Live presentation packs
+
+The Captain's Cabin remains read-only. Demo is the default and loads a frozen,
+validated mission from `ui/public/demo/approved/`; Live is an explicit
+selection and loads only `ui/public/demo/live/`. A missing or invalid Live pack
+is an honest failure and never falls back to Demo.
+
+Stage 4 adds operator shortcuts around existing commands only:
+
+```bash
+make preflight-live       # deep, real local ModelDock inference readiness
+make live-mission         # existing Harbormaster workflow, SHADOW-only
+make cabin-capture-live   # optional read-only chart/portfolio supplements
+make package-live-demo    # terminal APPROVED LIVE missions only
+make cabin-prepare-live   # populate ui/public/demo/live/
+make cabin-freeze-live-demo  # freeze the verified mission as default Demo
+```
+
+The LIVE request, Council policy, Governor context, mission ID, ModelDock model,
+and optional presentation sources are all explicit variables; the Makefile
+does not manufacture evidence. A valid Governor `HOLD` remains held and cannot
+reach Navigator or pass the approved-demo packager. See the
+[Stage 4 LIVE Demo Runbook](docs/LIVE_DEMO_RUNBOOK.md) for the exact variables,
+commands, no-fallback behavior, ModelDock canary, and read-only data formats.
 
 Harbormaster owns:
 
@@ -819,9 +853,10 @@ ModelDock is the local LLM appliance for one bounded task: turning validated
 Oracle evidence into a concise, structured explanation. Oracle runs and
 materializes its typed analysis first. The `enrich-oracle` command then builds a
 versioned request from an explicit projection of those recorded artifacts,
-validates ModelDock's structured response, and attaches the narrative and call
-provenance to the Oracle stage. It never overwrites the original Oracle report
-or changes Oracle's native readiness state.
+enumerates a finite fact catalog, validates ModelDock's structured response,
+and attaches the expanded narrative and call provenance to the Oracle stage.
+It never overwrites the original Oracle report or changes Oracle's native
+readiness state.
 
 The authority boundary is strict:
 
@@ -834,6 +869,19 @@ The authority boundary is strict:
   order, or authorize execution.
 - The enrichment path does not call Council, Governor, operator, Navigator,
   ModelDock-external providers, or any broker or order interface.
+
+Fact ownership is deterministic. Build Week assigns stable semantic IDs to a
+small ordered set of allowed Oracle facts and records, for every ID, its full
+immutable source-artifact reference, RFC 6901 pointer, and exact typed value in
+the persisted ModelDock request. Gemma receives that catalog and may return
+only one to five copied fact IDs plus the interpretive prose fields in
+`blackpod.oracle_narrative_selection.v1`. It cannot author `observed_facts` or
+canonical warnings—or echo mission correlation. The transport envelope owns
+correlation, and Build Week applies those validated identifiers while expanding
+IDs in catalog order and copying Oracle warnings. It then validates the
+completed, unchanged downstream contract `blackpod.oracle_narrative.v1`.
+Unknown or duplicate IDs, model-authored facts, invented numerical claims, and
+authority claims fail closed.
 
 Council continues to require the original Oracle fact artifacts. When a
 successful ModelDock call is recorded, Council additionally validates and
@@ -913,12 +961,15 @@ until the explicitly configured model is proven to be a registered MLX text
 model. The generation response requires
 HTTP `200`, envelope status `ok`, request type `text.generate`, provider `mlx`,
 `mocked: false`, matching mission/request correlation, and nonempty structured
-JSON content conforming to `blackpod.oracle_narrative.v1`. The client enforces
-the configured deadline and a one-MiB response limit. It rejects malformed or
-truncated JSON, unsupported schemas, missing fields, provider substitution,
-correlation mismatches, numeric facts absent from the Oracle input, and claims
-of approval or execution authority. There is no retry through another provider
-and no LIVE-to-REPLAY fallback.
+JSON content. The client enforces the configured deadline and a one-MiB
+response limit. The raw model content must conform to
+`blackpod.oracle_narrative_selection.v1`;
+deterministic expansion must then conform to `blackpod.oracle_narrative.v1`.
+The client rejects malformed or truncated JSON, unsupported schemas, missing
+fields, provider substitution, correlation mismatches, unknown fact IDs,
+numeric facts absent from the Oracle input, and claims of approval or execution
+authority. There is no retry through another provider and no LIVE-to-REPLAY
+fallback.
 
 ModelDock may report either native text engine supported by its current MLX
 provider: `mlx-lm`, or `mlx-vlm` when a Gemma/multimodal model is deliberately

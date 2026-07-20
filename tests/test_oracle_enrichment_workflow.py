@@ -18,8 +18,10 @@ from blackpod_build_week.contracts import (
     StageStatus,
 )
 from blackpod_build_week.contracts.oracle_narrative import (
+    ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
     ModelDockReplayPack,
-    OracleNarrative,
+    OracleFactCatalog,
+    OracleNarrativeSelection,
 )
 from blackpod_build_week.council_workflow import _validate_council_preconditions
 from blackpod_build_week.hashing import canonical_json_bytes, sha256_file
@@ -348,36 +350,26 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             evidence=evidence,
         )
         wire = _build_wire_request(self.config, narrative_request)
-        narrative = OracleNarrative.from_mapping(
+        selection = OracleNarrativeSelection.from_mapping(
             {
-                "schema_version": "blackpod.oracle_narrative.v1",
-                "mission_id": narrative_request.mission_id,
-                "request_id": narrative_request.request_id,
-                "symbol": narrative_request.symbol,
-                "summary": "Validated fleet evidence reflects broad participation.",
-                "observed_facts": [
-                    {
-                        "source_artifact": "oracle_measurements",
-                        "json_pointer": "/breadth_score",
-                        "value": 1.0,
-                        "statement": "The source-linked breadth score is 1.0.",
-                    },
-                    {
-                        "source_artifact": "oracle_measurement_diagnostics",
-                        "json_pointer": "/diagnostics_state",
-                        "value": "READY",
-                        "statement": "The diagnostics state is READY.",
-                    },
+                "schema_version": ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+                "selected_fact_ids": [
+                    "oracle.measurements.breadth_score",
+                    "oracle.diagnostics.diagnostics_state",
                 ],
+                "summary": "Validated fleet evidence reflects broad participation.",
                 "interpretation": "Defensive strength exceeds cyclical strength within the validated fleet measurements.",
                 "uncertainties": [
                     "The evidence covers a fixed validation fleet and is not security-specific."
                 ],
-                "warnings": ["MISSING_PRIOR_ORACLE_MEASUREMENTS"],
                 "confidence_explanation": "Confidence is bounded by current-source completeness and absent prior-period comparison.",
                 "prohibited_actions_acknowledged": True,
             }
-        ).validate_against(narrative_request)
+        )
+        narrative = selection.expand(
+            OracleFactCatalog.from_request(narrative_request),
+            narrative_request,
+        )
         model = "mlx-community/test-narrative-model"
         response = {
             "status": "ok",
@@ -385,7 +377,7 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             "profile": "default",
             "provider": "mlx",
             "model": model,
-            "content": narrative.to_canonical_json(),
+            "content": selection.canonical_json_bytes().decode("utf-8"),
             "data": {
                 "engine": "mlx-lm",
                 "model_path": "models/mlx-community/test-narrative-model",
@@ -502,37 +494,26 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             model="mlx-community/test-live-model",
         )
         wire = _build_wire_request(live_config, narrative_request)
-        narrative = OracleNarrative.from_mapping(
+        selection = OracleNarrativeSelection.from_mapping(
             {
-                "schema_version": "blackpod.oracle_narrative.v1",
-                "mission_id": narrative_request.mission_id,
-                "request_id": narrative_request.request_id,
-                "symbol": narrative_request.symbol,
+                "schema_version": ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+                "selected_fact_ids": ["oracle.measurements.breadth_score"],
                 "summary": "Validated fleet evidence reflects broad participation.",
-                "observed_facts": [
-                    {
-                        "source_artifact": "oracle_measurements",
-                        "json_pointer": "/breadth_score",
-                        "value": 1.0,
-                        "statement": "The source-linked breadth score is 1.0.",
-                    }
-                ],
                 "interpretation": "Defensive strength exceeds cyclical strength within the validated fleet measurements.",
                 "uncertainties": [
                     "The evidence covers a fixed validation fleet and is not security-specific."
                 ],
-                "warnings": ["MISSING_PRIOR_ORACLE_MEASUREMENTS"],
                 "confidence_explanation": "Confidence is bounded by current-source completeness and absent prior-period comparison.",
                 "prohibited_actions_acknowledged": True,
             }
-        ).validate_against(narrative_request)
+        )
         response = {
             "status": "ok",
             "request_type": "text.generate",
             "profile": "default",
             "provider": "mlx",
             "model": "mlx-community/test-live-model",
-            "content": narrative.to_canonical_json(),
+            "content": selection.canonical_json_bytes().decode("utf-8"),
             "data": {
                 "engine": "mlx-lm",
                 "model_path": "models/mlx-community/test-live-model",
@@ -606,6 +587,40 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
         response_text = (result.paths.mission_root / artifacts[MODELDOCK_RESPONSE_ARTIFACT].path).read_text()
         self.assertNotIn("model_path", response_text)
         self.assertNotIn(str(self.base), response_text)
+        response_payload = json.loads(response_text)
+        model_selection = json.loads(response_payload["content"])
+        self.assertEqual(
+            model_selection["schema_version"],
+            ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            model_selection["selected_fact_ids"],
+            [
+                "oracle.measurements.breadth_score",
+                "oracle.diagnostics.diagnostics_state",
+            ],
+        )
+        self.assertNotIn("observed_facts", model_selection)
+        self.assertNotIn("warnings", model_selection)
+        self.assertNotIn("mission_id", model_selection)
+        self.assertNotIn("request_id", model_selection)
+        self.assertNotIn("symbol", model_selection)
+
+        narrative_payload = json.loads(
+            (
+                result.paths.mission_root
+                / artifacts[MODELDOCK_NARRATIVE_ARTIFACT].path
+            ).read_text()
+        )
+        self.assertEqual(narrative_payload["schema_version"], "blackpod.oracle_narrative.v1")
+        self.assertEqual(
+            [fact["value"] for fact in narrative_payload["observed_facts"]],
+            [1.0, "READY"],
+        )
+        self.assertEqual(
+            narrative_payload["warnings"],
+            ["MISSING_PRIOR_ORACLE_MEASUREMENTS"],
+        )
 
         revisions = result.paths.snapshots_dir
         running = json.loads((revisions / "mission_snapshot-r0004.json").read_text())
@@ -698,6 +713,37 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
         self.assertEqual(
             result.snapshot.previous_snapshot_sha256,
             sha256_file(result.paths.snapshots_dir / "mission_snapshot-r0004.json"),
+        )
+
+    def test_unknown_model_selected_fact_id_is_a_sanitized_technical_failure(self) -> None:
+        pack = ModelDockReplayPack.from_file(self.replay_pack_path)
+        malformed = copy.deepcopy(pack.response)
+        selection = json.loads(malformed["content"])
+        selection["selected_fact_ids"] = ["oracle.measurements.unknown_fact"]
+        malformed["content"] = json.dumps(
+            selection,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        client = ModelDockClient(
+            self.config,
+            transport=StaticTransport(malformed),
+            monotonic=lambda: 0.0,
+            now=lambda: datetime(2026, 7, 18, 18, 5, tzinfo=UTC),
+        )
+
+        result = self.execute(client=client)
+
+        self.assertEqual(result.snapshot.stages["oracle"].status, StageStatus.FAILED)
+        self.assertEqual(result.call.status, ModelDockCallStatus.FAILED)
+        self.assertEqual(result.snapshot.mission_outcome, MissionOutcome.FAILED)
+        self.assertNotIn(
+            MODELDOCK_NARRATIVE_ARTIFACT,
+            result.snapshot.stages["oracle"].outputs,
+        )
+        self.assertEqual(
+            result.snapshot.stages["oracle"].error.message,
+            "ModelDock narrative failed its versioned contract validation",
         )
 
     def test_identical_repeat_is_no_op_without_rewriting(self) -> None:

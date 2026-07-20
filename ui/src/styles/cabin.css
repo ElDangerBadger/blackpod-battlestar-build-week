@@ -195,6 +195,10 @@ select {
   height: 34.2%;
 }
 
+.status-market > strong {
+  font-size: 0.86em;
+}
+
 .status-fleet {
   top: 27.2%;
   left: 27.23%;
@@ -228,6 +232,10 @@ select {
   left: 63%;
   width: 11.5%;
   height: 24%;
+}
+
+.status-shadow > strong {
+  font-size: 0.76em;
 }
 
 .status-time {
@@ -478,6 +486,48 @@ button.loose-paper:focus-visible {
 .chart-copy p,
 .paper-order-copy p {
   margin: 0 0 0.55em;
+}
+
+.market-copy dl {
+  margin: 0;
+}
+
+.market-copy dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.45em;
+  margin-block-end: 0.2em;
+}
+
+.market-copy dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-source {
+  margin-block-start: 0.4em !important;
+  color: #705035;
+  font-size: 0.72em;
+}
+
+.navigator-chart-overview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  cursor: pointer;
+}
+
+.navigator-chart-overview:focus-visible {
+  outline: max(2px, 0.14cqw) solid #6e471f;
+  outline-offset: 0.12cqw;
+}
+
+.navigator-chart-overview > .paper-title {
+  margin-block-end: 0.25em;
 }
 
 .chart-copy > p {
@@ -731,18 +781,23 @@ button.loose-paper:focus-visible {
 }
 
 .systems-governance {
-  top: 21.5%;
-  height: 35.5%;
+  top: 18%;
+  height: 21.5%;
+}
+
+.systems-portfolio {
+  top: 40.5%;
+  height: 13%;
 }
 
 .systems-modeldock {
-  top: 62%;
-  height: 11.5%;
+  top: 54.5%;
+  height: 21%;
 }
 
 .systems-authority {
-  top: 74.5%;
-  height: 10.5%;
+  top: 76.5%;
+  height: 8.5%;
 }
 
 .systems-safety {
@@ -764,6 +819,24 @@ button.loose-paper:focus-visible {
   margin-block-start: 0.55em !important;
   color: #d3b26c;
   font-size: 0.9em;
+}
+
+.systems-modeldock > p {
+  margin-block-start: 0.25em;
+  color: #a5ad58;
+  font-size: 0.82em;
+  line-height: 1.15;
+}
+
+.systems-modeldock dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 0.65em;
+}
+
+.systems-modeldock dl > div {
+  grid-template-columns: 42% minmax(0, 1fr);
+  margin-block-end: 0.15em;
 }
 
 .cabin-navigation {
@@ -831,6 +904,127 @@ button.loose-paper:focus-visible {
 
 .cabin-foreground > * {
   pointer-events: auto;
+}
+
+.presentation-mode-control {
+  position: absolute;
+  z-index: 84;
+  top: 20.1%;
+  left: 6.5%;
+  display: grid;
+  width: 21.5%;
+  min-height: 2.55%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45cqw;
+  padding: 0.24cqw 0.5cqw;
+  border: max(1px, 0.07cqw) solid #795424;
+  border-radius: 0.25cqw;
+  background: rgb(29 18 9 / 94%);
+  box-shadow: 0 0.3cqw 0.8cqw rgb(0 0 0 / 52%);
+  color: #d3b16b;
+  font: clamp(7px, 0.58cqw, 10px)/1 Georgia, "Times New Roman", serif;
+}
+
+.presentation-mode-control > strong {
+  color: #a7b05a;
+  font-size: 1.08em;
+  letter-spacing: 0.1em;
+}
+
+.presentation-mode-control > span {
+  overflow: hidden;
+  color: #c09a55;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.presentation-mode-control > div {
+  display: flex;
+  gap: 0.2cqw;
+}
+
+.presentation-mode-control button,
+.load-mode-actions button {
+  padding: 0.28em 0.55em;
+  border: max(1px, 0.06cqw) solid #8b652f;
+  border-radius: 0.16cqw;
+  background: #2e1d0e;
+  color: #d7b66e;
+  cursor: pointer;
+  font: inherit;
+}
+
+.presentation-mode-control button[aria-pressed="true"] {
+  border-color: #b89247;
+  background: #5a3c18;
+  color: #f0d28e;
+}
+
+.presentation-mode-control button:focus-visible,
+.load-mode-actions button:focus-visible {
+  outline: max(2px, 0.13cqw) solid #e1bd71;
+  outline-offset: 0.1cqw;
+}
+
+.navigator-focus-layer {
+  position: absolute;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.navigator-focus-surface {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 82%;
+  height: 84%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 1.1cqw 1.5cqw 0;
+  overflow: hidden;
+  border: 0.25cqw solid #5e3a1f;
+  border-radius: 0.55cqw;
+  background:
+    radial-gradient(circle at 37% 26%, rgb(255 244 205 / 45%), transparent 38%),
+    linear-gradient(93deg, #c8a66b 0%, #ead49f 3%, #dfc289 49%, #c59d60 50%, #e2c88f 53%, #d4b576 97%, #a77a40 100%);
+  box-shadow: 0 1.3cqw 3.8cqw rgb(0 0 0 / 72%), inset 0 0 2cqw rgb(82 48 20 / 28%);
+  color: #2f2016;
+  font-size: clamp(12px, 0.94cqw, 17px);
+}
+
+.navigator-focus-surface > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding-block-end: 0.55cqw;
+}
+
+.navigator-focus-surface > header :where(h2, p) {
+  margin: 0;
+}
+
+.navigator-focus-surface > header h2 {
+  color: #4f321b;
+  font-size: clamp(20px, 1.65cqw, 30px);
+}
+
+.navigator-focus-surface > header button {
+  padding: 0.55em 0.8em;
+  border: max(1px, 0.08cqw) solid #79502a;
+  border-radius: 0.2em;
+  background: rgb(225 195 137 / 68%);
+  color: #3c281a;
+  cursor: pointer;
+  font: 700 0.82em/1 Georgia, "Times New Roman", serif;
+}
+
+.navigator-focus-surface > header button:focus-visible {
+  outline: max(2px, 0.14cqw) solid #3b6d87;
+  outline-offset: 0.16cqw;
 }
 
 /* Reusable larger reading surface for a selected book. */
@@ -1143,6 +1337,19 @@ button.loose-paper:focus-visible {
 
 .cabin-load-failure code {
   color: #f0d59c;
+}
+
+.load-mode-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-block: 0.8rem;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.load-mode-actions button[aria-pressed="true"] {
+  border-color: #d2ae66;
+  background: #563817;
 }
 
 .captains-log-fallback {
