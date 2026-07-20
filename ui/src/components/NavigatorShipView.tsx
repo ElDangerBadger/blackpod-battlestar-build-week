@@ -8,6 +8,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 
+import type { ActivePortfolioExposureViewModel } from "../data/viewModel";
 import "../styles/navigator-ship.css";
 
 export type NavigatorShipPoint = Readonly<{
@@ -58,8 +59,18 @@ export type NavigatorShipData = Readonly<{
 
 export type NavigatorShipViewProps = Readonly<{
   data: NavigatorShipData;
+  context: NavigatorShipDisplayContext;
   variant: "overview" | "interactive";
   className?: string;
+}>;
+
+export type NavigatorShipDisplayContext = Readonly<{
+  presentationMode: "DEMO" | "LIVE";
+  runMode: "LIVE" | "REPLAY";
+  capturedAt: string | null;
+  latestCompletedBar: string | null;
+  marketStatus: string | null;
+  exposure: ActivePortfolioExposureViewModel;
 }>;
 
 type LevelKey = keyof NavigatorShipLevels;
@@ -103,9 +114,41 @@ function formatPercent(value: number | null): string {
   return value === null || !Number.isFinite(value) ? "Not present" : `${value.toFixed(2)}%`;
 }
 
+function formatSignedPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Not present";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
 function shortTimestamp(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) return "Not present";
   return new Date(value * 1000).toISOString().slice(0, 10);
+}
+
+function formatObservation(value: string | null): string {
+  if (!value) return "Not recorded";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Not recorded";
+  return parsed.toISOString().replace("T", " ").slice(0, 16) + "Z";
+}
+
+function formatTimeframe(value: string): string {
+  if (value === "1d") return "Daily";
+  if (value === "1h") return "Hourly";
+  if (value === "1wk") return "Weekly";
+  return value;
+}
+
+function sentenceCase(value: string): string {
+  return value.length ? `${value[0]!.toUpperCase()}${value.slice(1).toLowerCase()}` : value;
+}
+
+function exposureBrief(exposure: ActivePortfolioExposureViewModel): string {
+  if (exposure.status === "NOT_CONFIGURED") return "Unavailable";
+  if (exposure.status === "NO_POSITION") return `No ${exposure.symbol} position`;
+  if (exposure.allocationPercent !== null) return `${exposure.allocationPercent.toFixed(2)}% portfolio weight`;
+  if (exposure.marketValue !== null) return formatPrice(exposure.marketValue, exposure.currency ?? "USD");
+  if (exposure.quantity !== null) return `${exposure.quantity.toLocaleString("en-US")} units`;
+  return "Position recorded; exposure not supplied";
 }
 
 function linePath(
@@ -144,7 +187,7 @@ function shipPath(x: number, y: number): string {
  * It maps supplied values to SVG geometry; it never derives indicators, levels,
  * mission outcomes, or trading instructions.
  */
-export function NavigatorShipView({ data, variant, className = "" }: NavigatorShipViewProps) {
+export function NavigatorShipView({ data, context, variant, className = "" }: NavigatorShipViewProps) {
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [windowStart, setWindowStart] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -232,22 +275,39 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
   const currentX = currentPoint ? geometry.x(lastVisibleIndex) : null;
   const currentY = currentPoint ? geometry.y(currentPoint.c) : null;
   const missingLevels = LEVELS.filter(({ key }) => data.levels?.[key] === null || data.levels?.[key] === undefined);
+  const movingAverageObservations = data.points.reduce((count, point) => count + (point.ma === null ? 0 : 1), 0);
+  const hasMovingAverage = movingAverageObservations > 0;
+  const hasVisibleMovingAverage = geometry.maPath.length > 0;
+  const firstObservation = data.points[0]?.t;
+  const lastObservation = data.points.at(-1)?.t;
+  const rangeLabel = firstObservation === undefined || lastObservation === undefined
+    ? "Range not present"
+    : `${shortTimestamp(firstObservation)} — ${shortTimestamp(lastObservation)}`;
+  const postureLabel = `${sentenceCase(data.summary.position)} MA${data.summary.ma_period}`;
+  const chartLabel = hasMovingAverage
+    ? `${data.symbol} recorded price history with supplied ${data.ma_period}-day moving average`
+    : `${data.symbol} recorded price history; ${data.ma_period}-day moving average is unavailable`;
   const rootClassName = ["navigator-ship", `navigator-ship--${variant}`, className].filter(Boolean).join(" ");
 
   return (
-    <figure className={rootClassName} aria-label={`Navigator ship view for ${data.symbol}`}>
+    <figure className={rootClassName} aria-label={`Navigator ship view for ${data.symbol}`} data-sea-state={data.summary.volatility}>
       <header className="navigator-ship__header">
-        <div>
+        <div className="navigator-ship__asset">
           <strong>{data.symbol}</strong>
           <span>{data.name}</span>
         </div>
-        <p>
-          <span>{data.category}</span>
-          <span>{data.timeframe}</span>
-          <span>{data.currency}</span>
-          {data.regime ? <span>Regime: {data.regime}</span> : null}
-        </p>
+        <div className="navigator-ship__mode" aria-label={`Presentation mode ${context.presentationMode}; canonical mission mode ${context.runMode}`}>
+          <strong>{context.presentationMode}</strong>
+          <span>{context.runMode}</span>
+        </div>
       </header>
+
+      <div className="navigator-ship__mission-strip" aria-label="Chart period and data freshness">
+        <span>{formatTimeframe(data.timeframe)} · {rangeLabel}</span>
+        <span>Latest bar {formatObservation(context.latestCompletedBar)}</span>
+        <span>Captured {formatObservation(context.capturedAt)}</span>
+        <span>Market status {context.marketStatus ?? "not recorded"}</span>
+      </div>
 
       {variant === "interactive" ? (
         <div className="navigator-ship__controls" aria-label="Navigator chart controls">
@@ -272,7 +332,9 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
               onChange={(event) => setWindowStart(Number(event.currentTarget.value))}
             />
           </label>
-          <output aria-live="polite">{visiblePoints.length} of {data.points.length} bars</output>
+          <output aria-live="polite">
+            {visiblePoints.length} of {data.points.length} bars · {shortTimestamp(visiblePoints[0]?.t)} — {shortTimestamp(visiblePoints.at(-1)?.t)}
+          </output>
         </div>
       ) : null}
 
@@ -282,7 +344,7 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
           className="navigator-ship__plot"
           viewBox="0 0 1000 430"
           role="img"
-          aria-label={`${data.symbol} price history with supplied ${data.ma_period}-day moving average`}
+          aria-label={chartLabel}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -321,13 +383,19 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
                 </g>
               );
             })}
-            {geometry.maPath ? <path className="navigator-ship__ma" d={geometry.maPath} data-testid="moving-average-path" /> : null}
+            {hasVisibleMovingAverage ? <path className="navigator-ship__ma" d={geometry.maPath} data-testid="moving-average-path" /> : null}
             {geometry.closePath ? <path className="navigator-ship__wake-shadow" d={geometry.closePath} aria-hidden="true" /> : null}
             {geometry.closePath ? <path className="navigator-ship__wake" d={geometry.closePath} data-testid="close-history-path" /> : null}
             {currentPoint && currentX !== null && currentY !== null ? (
               <g className="navigator-ship__vessel" data-testid="current-price-ship" aria-label={`Ship at latest close ${formatPrice(currentPoint.c, data.currency)}`}>
                 <circle cx={currentX} cy={currentY} r="20" />
                 <path d={shipPath(currentX, currentY)} />
+                <text
+                  className="navigator-ship__vessel-label"
+                  x={currentX + (currentX > PLOT.left + PLOT.width * 0.72 ? -25 : 25)}
+                  y={currentY - 10}
+                  textAnchor={currentX > PLOT.left + PLOT.width * 0.72 ? "end" : "start"}
+                >Latest {formatPrice(currentPoint.c, data.currency)}</text>
               </g>
             ) : null}
           </g>
@@ -346,17 +414,25 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
       <figcaption className="navigator-ship__caption">
         <dl className="navigator-ship__summary">
           <div><dt>Last</dt><dd>{formatPrice(data.summary.last_price, data.currency)}</dd></div>
-          <div><dt>MA{data.summary.ma_period}</dt><dd>{formatPrice(data.summary.last_ma, data.currency)}</dd></div>
-          <div><dt>vs MA</dt><dd>{formatPercent(data.summary.pct_vs_ma)}</dd></div>
-          <div><dt>Position</dt><dd>{data.summary.position}</dd></div>
-          <div><dt>Trend slope</dt><dd>{formatPercent(data.summary.trend_slope_pct)}</dd></div>
+          <div><dt>Supplied MA{data.summary.ma_period}</dt><dd>{hasMovingAverage ? formatPrice(data.summary.last_ma, data.currency) : "Unavailable"}</dd></div>
+          <div><dt>Price posture</dt><dd>{hasMovingAverage ? postureLabel : "MA unavailable"}</dd></div>
           <div><dt>Sea state</dt><dd>{data.summary.volatility}</dd></div>
-          <div><dt>ATR</dt><dd>{formatPrice(data.summary.atr, data.currency)} · {formatPercent(data.summary.atr_pct)}</dd></div>
-          <div><dt>Bars</dt><dd>{data.summary.bar_count}</dd></div>
+          <div><dt>Portfolio</dt><dd>{exposureBrief(context.exposure)}</dd></div>
+          <div><dt>Current</dt><dd>{formatSignedPercent(data.summary.trend_slope_pct)} slope</dd></div>
+          <div><dt>vs MA</dt><dd>{hasMovingAverage ? formatPercent(data.summary.pct_vs_ma) : "Unavailable"}</dd></div>
+          <div><dt>ATR / risk</dt><dd>{formatPrice(data.summary.atr, data.currency)} · {formatPercent(data.summary.atr_pct)}</dd></div>
         </dl>
         <div className="navigator-ship__legend" aria-label="Chart legend and supplied navigation levels">
-          <span className="navigator-ship__legend-item navigator-ship__legend-item--wake">Price wake</span>
-          <span className="navigator-ship__legend-item navigator-ship__legend-item--ma">Supplied MA{data.ma_period}</span>
+          <span className="navigator-ship__legend-item navigator-ship__legend-item--wake">
+            {variant === "overview" ? "Price wake" : "Price wake — recorded closes"}
+          </span>
+          <span className="navigator-ship__legend-item navigator-ship__legend-item--ma">
+            {variant === "overview" ? "Dotted course" : "Dotted course —"}{" "}
+            {hasMovingAverage ? `supplied MA${data.ma_period}` : `MA${data.ma_period} unavailable`}
+          </span>
+          <span className="navigator-ship__legend-item navigator-ship__legend-item--ship">
+            {variant === "overview" ? "Ship = latest" : "Ship — latest close"}
+          </span>
           {LEVELS.map(({ key, label, className: levelClass }) => {
             const value = data.levels?.[key];
             return value === null || value === undefined ? null : (
@@ -366,6 +442,34 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
             );
           })}
         </div>
+        {!hasMovingAverage ? (
+          <p className="navigator-ship__ma-unavailable" role="status">
+            <strong>MA{data.ma_period} unavailable.</strong>{" "}
+            {data.points.length < data.ma_period
+              ? `${data.points.length} recorded bars are insufficient and no validated moving-average values were supplied.`
+              : "No validated moving-average values were supplied."}{" "}
+            The Captain&apos;s Cabin does not calculate a replacement.
+          </p>
+        ) : null}
+        {hasMovingAverage && !hasVisibleMovingAverage ? (
+          <p className="navigator-ship__ma-unavailable" role="status">
+            Supplied MA{data.ma_period} exists in this artifact, but no moving-average observations fall inside the selected history window.
+          </p>
+        ) : null}
+        <div className="navigator-ship__detail-grid">
+          <section className="navigator-ship__nautical-key" aria-label="Nautical chart key">
+            <h3>Nautical chart key</h3>
+            <dl>
+              <div><dt>Wake</dt><dd>Recorded closing-price path</dd></div>
+              <div><dt>Dotted course</dt><dd>Supplied MA{data.ma_period} · {movingAverageObservations} observations</dd></div>
+              <div><dt>Ship</dt><dd>Latest recorded close</dd></div>
+              <div><dt>Sea state</dt><dd>Supplied volatility: {data.summary.volatility}</dd></div>
+              <div><dt>Current</dt><dd>Supplied trend slope: {formatSignedPercent(data.summary.trend_slope_pct)}</dd></div>
+              <div><dt>Wind / regime</dt><dd>{data.regime ?? "Not present in this market artifact"}</dd></div>
+            </dl>
+          </section>
+          <ExposureDetail exposure={context.exposure} />
+        </div>
         {missingLevels.length ? (
           <p className="navigator-ship__missing">
             <strong>Navigation levels not present:</strong>{" "}
@@ -374,5 +478,28 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
         ) : null}
       </figcaption>
     </figure>
+  );
+}
+
+function ExposureDetail({ exposure }: { exposure: ActivePortfolioExposureViewModel }) {
+  return (
+    <section className="navigator-ship__exposure" aria-label={`Read-only portfolio exposure for ${exposure.symbol}`}>
+      <h3>Harbor exposure · read only</h3>
+      {exposure.status === "NOT_CONFIGURED" ? (
+        <p>Unavailable — no portfolio snapshot is configured for this mission. No zero exposure is inferred.</p>
+      ) : exposure.status === "NO_POSITION" ? (
+        <p>No recorded {exposure.symbol} position appears in the captured portfolio snapshot.</p>
+      ) : (
+        <dl>
+          <div><dt>Direction</dt><dd>{exposure.direction ?? "Not supplied"}</dd></div>
+          <div><dt>Quantity</dt><dd>{exposure.quantity === null ? "Not supplied" : exposure.quantity.toLocaleString("en-US")}</dd></div>
+          <div><dt>Market value</dt><dd>{formatPrice(exposure.marketValue, exposure.currency ?? "USD")}</dd></div>
+          <div><dt>Portfolio weight</dt><dd>{exposure.allocationPercent === null ? "Not supplied" : `${exposure.allocationPercent.toFixed(2)}%`}</dd></div>
+        </dl>
+      )}
+      {exposure.status !== "NOT_CONFIGURED" ? (
+        <p>Snapshot {exposure.mode ?? "mode not supplied"} · captured {formatObservation(exposure.capturedAt)}</p>
+      ) : null}
+    </section>
   );
 }

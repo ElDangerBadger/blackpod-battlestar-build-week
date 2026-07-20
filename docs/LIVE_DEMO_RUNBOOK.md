@@ -28,6 +28,14 @@ Selecting Live in the browser does not run a mission. Mission execution is an
 explicit terminal operation, and a missing or invalid Live pack is shown as a
 Live error. It never falls back to Demo.
 
+The embedded Navigator Ship View follows the same rule. **Demo** labels its
+canonical mission transport (normally `REPLAY`) alongside the deterministic
+capture. **Live** renders only the market and optional portfolio artifacts
+referenced by that Live mission's hash-validated cabin context. If those
+supplements are absent, corrupt, or correlated to another symbol or run mode,
+the UI reports the failure or unavailable state; it never borrows AAPL replay
+data to fill a Live display.
+
 ## 1. Prepare the local services and inputs
 
 Install the LIVE dependency in the Build Week environment and start ModelDock

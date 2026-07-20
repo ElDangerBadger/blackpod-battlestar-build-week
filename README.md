@@ -53,6 +53,16 @@ frontend tests and `make cabin-build` for a production build. The cabin is an
 interactive presentation of existing evidence; it cannot run or resume a
 mission, record approval, or invoke any execution operation.
 
+The Mission Chart embeds the reusable Navigator Ship View. Its overview labels
+AAPL, Apple Inc., Demo/Replay mode, the captured daily range, latest price,
+supplied MA250, price posture, volatility sea state, capture freshness, and
+read-only portfolio availability. Selecting it opens the same renderer in an
+expanded surface with zoom, drag/pan, a history-position control, and a
+plain-language nautical key. The browser never computes a replacement moving
+average: it renders only validated supplied values and reports insufficient or
+missing history explicitly. Portfolio values likewise appear only when a
+hash-validated `blackpod.portfolio_snapshot.v1` artifact supplies them.
+
 The AAPL chart is explicitly labeled as supplemental Navigator reference data.
 The mission symbol is correlation metadata, and the current Oracle interface
 remains a fixed-fleet market analysis; the cabin never relabels fleet posture

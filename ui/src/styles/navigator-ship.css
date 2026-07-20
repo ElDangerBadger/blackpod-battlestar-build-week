@@ -4,7 +4,7 @@
   --ship-ocean: #163844;
   container-type: inline-size;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 0.55cqw;
   width: 100%;
   height: 100%;
@@ -27,7 +27,7 @@
   border-bottom: 1px solid rgb(75 49 24 / 38%);
 }
 
-.navigator-ship__header > div {
+.navigator-ship__asset {
   display: flex;
   min-width: 0;
   align-items: baseline;
@@ -40,27 +40,54 @@
   letter-spacing: 0.06em;
 }
 
-.navigator-ship__header > div span {
+.navigator-ship__asset span {
   overflow: hidden;
   font-style: italic;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.navigator-ship__header p {
+.navigator-ship__mode {
   display: flex;
   flex: none;
-  gap: 0.55em;
-  margin: 0;
-  color: #694b28;
-  font-size: 0.72em;
-  letter-spacing: 0.05em;
+  align-items: center;
+  gap: 0.32em;
+  font-size: 0.68em;
+  letter-spacing: 0.07em;
+}
+
+.navigator-ship__mode strong,
+.navigator-ship__mode span {
+  padding: 0.18em 0.38em;
+  border: 1px solid rgb(77 51 25 / 48%);
+  border-radius: 0.18em;
+  background: rgb(78 50 20 / 10%);
+  color: #51381f;
+  line-height: 1;
   text-transform: uppercase;
 }
 
-.navigator-ship__header p span + span::before {
-  content: "·";
-  margin-inline-end: 0.55em;
+.navigator-ship__mode strong {
+  background: #493218;
+  color: #e0c27f;
+}
+
+.navigator-ship__mission-strip {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.12em 0.8em;
+  padding-inline: 0.15em;
+  color: #634522;
+  font-size: 0.68em;
+  letter-spacing: 0.025em;
+  line-height: 1.15;
+}
+
+.navigator-ship__mission-strip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navigator-ship__controls {
@@ -123,6 +150,16 @@
   border-radius: 0.22em;
   background: var(--ship-ocean);
   box-shadow: inset 0 0 1.2em rgb(0 0 0 / 36%);
+}
+
+.navigator-ship[data-sea-state="glass"] .navigator-ship__plot-wrap,
+.navigator-ship[data-sea-state="gentle"] .navigator-ship__plot-wrap {
+  --ship-ocean: #264a50;
+}
+
+.navigator-ship[data-sea-state="high"] .navigator-ship__plot-wrap,
+.navigator-ship[data-sea-state="storm"] .navigator-ship__plot-wrap {
+  --ship-ocean: #102c39;
 }
 
 .navigator-ship__plot {
@@ -208,6 +245,15 @@
   vector-effect: non-scaling-stroke;
 }
 
+.navigator-ship__vessel-label {
+  fill: #f3dda1;
+  font: 700 14px Georgia, "Times New Roman", serif;
+  paint-order: stroke;
+  stroke: rgb(12 31 37 / 92%);
+  stroke-width: 4px;
+  vector-effect: non-scaling-stroke;
+}
+
 .navigator-ship__axis text,
 .navigator-ship__empty {
   fill: #d6c594;
@@ -255,6 +301,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+.navigator-ship--interactive .navigator-ship__summary dt {
+  flex: none;
+}
+
+.navigator-ship--interactive .navigator-ship__summary dd {
+  font-size: 0.92em;
+}
+
 .navigator-ship__legend {
   display: flex;
   flex-wrap: wrap;
@@ -274,6 +328,7 @@
 
 .navigator-ship__legend-item--wake { color: #32636a; }
 .navigator-ship__legend-item--ma { color: #a77d0a; }
+.navigator-ship__legend-item--ship { color: #6d4a18; }
 .navigator-ship__legend-item--entry { color: #8d7319; }
 .navigator-ship__legend-item--stop { color: #9c3d2d; }
 .navigator-ship__legend-item--target { color: #2e7041; }
@@ -287,13 +342,120 @@
   line-height: 1.2;
 }
 
+.navigator-ship__ma-unavailable {
+  margin: 0;
+  padding: 0.35em 0.5em;
+  border-left: 0.22em solid #9c6a27;
+  background: rgb(133 86 27 / 9%);
+  color: #5e4024;
+  font-size: 0.76em;
+  line-height: 1.25;
+}
+
+.navigator-ship__detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  gap: 0.8em;
+  min-width: 0;
+}
+
+.navigator-ship__detail-grid section {
+  min-width: 0;
+  padding: 0.42em 0.55em;
+  border: 1px solid rgb(83 54 25 / 30%);
+  background: rgb(255 246 215 / 12%);
+}
+
+.navigator-ship__detail-grid h3 {
+  margin: 0 0 0.28em;
+  color: #65451f;
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.navigator-ship__detail-grid dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.12em 0.65em;
+  margin: 0;
+}
+
+.navigator-ship__detail-grid dl div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 0.35em;
+  border-bottom: 1px dotted rgb(74 46 19 / 24%);
+}
+
+.navigator-ship__detail-grid :where(dt, dd) {
+  margin: 0;
+  font-size: 0.7em;
+  line-height: 1.2;
+}
+
+.navigator-ship__detail-grid dt {
+  color: #72502a;
+  font-weight: 700;
+}
+
+.navigator-ship__detail-grid dd {
+  text-align: right;
+}
+
+.navigator-ship__detail-grid p {
+  margin: 0.15em 0 0;
+  color: #614526;
+  font-size: 0.7em;
+  line-height: 1.25;
+}
+
+.navigator-ship__exposure dl {
+  grid-template-columns: 1fr;
+}
+
 .navigator-ship--overview {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 0.25cqw;
   font-size: clamp(7px, 3.1cqw, 12px);
 }
 
-.navigator-ship--overview .navigator-ship__header p {
+.navigator-ship--overview .navigator-ship__header {
+  align-items: center;
+  gap: 0.35em;
+}
+
+.navigator-ship--overview .navigator-ship__asset {
+  display: grid;
+  gap: 0;
+}
+
+.navigator-ship--overview .navigator-ship__asset strong {
+  font-size: 1.45em;
+}
+
+.navigator-ship--overview .navigator-ship__asset span {
+  font-size: 0.78em;
+}
+
+.navigator-ship--overview .navigator-ship__mode {
+  display: grid;
+  gap: 0.12em;
+  text-align: center;
+}
+
+.navigator-ship--overview .navigator-ship__mission-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.08em 0.4em;
+  padding-block-end: 0.15em;
+  border-bottom: 1px dotted rgb(74 46 19 / 24%);
+  font-size: 0.58em;
+}
+
+.navigator-ship--overview .navigator-ship__mission-strip span:nth-child(2),
+.navigator-ship--overview .navigator-ship__mission-strip span:nth-child(4) {
   display: none;
 }
 
@@ -303,12 +465,84 @@
 
 .navigator-ship--overview .navigator-ship__summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.12em 0.45em;
 }
 
-.navigator-ship--overview .navigator-ship__summary div:nth-child(n + 5),
-.navigator-ship--overview .navigator-ship__legend,
+.navigator-ship--overview .navigator-ship__summary div:nth-child(n + 6),
+.navigator-ship--overview .navigator-ship__detail-grid,
 .navigator-ship--overview .navigator-ship__missing {
   display: none;
+}
+
+.navigator-ship--overview .navigator-ship__summary :where(dt, dd) {
+  font-size: 0.8em;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.navigator-ship--overview .navigator-ship__summary div {
+  display: grid;
+  align-content: start;
+  justify-content: stretch;
+  gap: 0;
+}
+
+.navigator-ship--overview .navigator-ship__summary dt {
+  line-height: 1;
+}
+
+.navigator-ship--overview .navigator-ship__summary dd {
+  font-size: 0.98em;
+  line-height: 1.05;
+  text-align: left;
+}
+
+.navigator-ship--overview .navigator-ship__summary div:nth-child(5) {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4em;
+}
+
+.navigator-ship--overview .navigator-ship__legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.08em 0.35em;
+  font-size: 0.7em;
+  line-height: 1.1;
+}
+
+.navigator-ship--overview .navigator-ship__legend-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navigator-ship--overview .navigator-ship__legend-item:nth-child(n + 4) {
+  display: none;
+}
+
+.navigator-ship--overview .navigator-ship__legend-item::before {
+  width: 0.75em;
+}
+
+.navigator-ship--overview .navigator-ship__ma-unavailable {
+  font-size: 0.7em;
+}
+
+.navigator-ship--overview .navigator-ship__vessel-label {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .navigator-ship--interactive .navigator-ship__detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .navigator-ship--interactive .navigator-ship__nautical-key {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -42,12 +42,28 @@ export function SystemsPanel(props: SystemsPanelProps) {
       <section className="systems-portfolio">
         <h2>Read-only portfolio source</h2>
         {props.portfolio.status === "CAPTURED" ? (
-          <dl>
-            <div><dt>Mode</dt><dd>{props.portfolio.mode}</dd></div>
-            <div><dt>Source</dt><dd title={props.portfolio.sourceIdentity ?? undefined}>{compact(props.portfolio.sourceIdentity)}</dd></div>
-            <div><dt>Captured</dt><dd title={props.portfolio.capturedAt ?? undefined}>{formatObservation(props.portfolio.capturedAt)}</dd></div>
-            <div><dt>Positions</dt><dd>{props.portfolio.positionCount}</dd></div>
-          </dl>
+          <>
+            <dl>
+              <div><dt>Mode</dt><dd>{props.portfolio.mode}</dd></div>
+              <div><dt>Source</dt><dd title={props.portfolio.sourceIdentity ?? undefined}>{compact(props.portfolio.sourceIdentity)}</dd></div>
+              <div><dt>Captured</dt><dd title={props.portfolio.capturedAt ?? undefined}>{formatObservation(props.portfolio.capturedAt)}</dd></div>
+              <div><dt>Positions</dt><dd>{props.portfolio.positionCount}</dd></div>
+              <div><dt>Active asset</dt><dd>{props.portfolio.activeExposure.symbol}</dd></div>
+              {props.portfolio.activeExposure.status === "POSITION" ? (
+                <>
+                  <div><dt>Direction</dt><dd>{props.portfolio.activeExposure.direction ?? "Not supplied"}</dd></div>
+                  <div><dt>Weight</dt><dd>{formatWeight(props.portfolio.activeExposure.allocationPercent)}</dd></div>
+                  <div><dt>Market value</dt><dd>{formatMoney(props.portfolio.activeExposure.marketValue, props.portfolio.activeExposure.currency)}</dd></div>
+                </>
+              ) : null}
+              {props.portfolio.activeExposure.totalExposure !== null ? (
+                <div><dt>Total exposure</dt><dd>{formatMoney(props.portfolio.activeExposure.totalExposure, props.portfolio.activeExposure.currency)}</dd></div>
+              ) : null}
+            </dl>
+            {props.portfolio.activeExposure.status === "NO_POSITION" ? (
+              <p>No recorded {props.portfolio.activeExposure.symbol} position in the captured snapshot.</p>
+            ) : null}
+          </>
         ) : <p>Not configured — no illustrative holdings shown.</p>}
       </section>
 
@@ -86,6 +102,20 @@ function formatLatency(value: number | null): string {
 function formatMocked(value: boolean | null): string {
   if (value === null) return "Not recorded";
   return value ? "YES" : "NO";
+}
+
+function formatWeight(value: number | null): string {
+  return value === null ? "Not supplied" : `${value.toFixed(2)}%`;
+}
+
+function formatMoney(value: number | null, currency: string | null): string {
+  if (value === null) return "Not supplied";
+  if (!currency) return value.toFixed(2);
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency}`;
+  }
 }
 
 function formatObservation(value: string | null): string {

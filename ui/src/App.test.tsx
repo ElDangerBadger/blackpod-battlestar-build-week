@@ -149,6 +149,7 @@ describe("Captain's Cabin", () => {
     fireEvent.click(screen.getByRole("button", { name: "Live" }));
 
     expect(await screen.findByText("LIVE current mission")).toBeInTheDocument();
+    expect(screen.getByLabelText("Presentation mode LIVE; canonical mission mode LIVE")).toBeInTheDocument();
     expect(screen.getByText("LOCAL INFERENCE VERIFIED AT MISSION TIME")).toBeInTheDocument();
     expect(mockedLoadMissionBundle).toHaveBeenCalledWith("/demo/live/");
   });
@@ -158,7 +159,12 @@ describe("Captain's Cabin", () => {
 
     render(<App />);
 
-    const openShip = await screen.findByRole("button", { name: "Open Navigator ship view for AAPL" });
+    const openShip = await screen.findByRole("button", { name: "Open expanded Navigator ship view for AAPL" });
+    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("DEMO").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("REPLAY").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$215.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$202.20").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Apple Inc.").length).toBeGreaterThan(0);
     expect(screen.getByText(/Supplemental; not Oracle evidence/i)).toBeInTheDocument();
     expect(screen.getByText(/Market status: not recorded/i)).toBeInTheDocument();
@@ -168,6 +174,17 @@ describe("Captain's Cabin", () => {
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
     expect(screen.getAllByText(/Navigation levels not present/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Not Oracle evidence · SHADOW presentation only/i)).toBeInTheDocument();
+
+    const returnButton = screen.getByRole("button", { name: "Return to bridge" });
+    expect(returnButton).toHaveFocus();
+    fireEvent.click(returnButton);
+    expect(screen.queryByRole("dialog", { name: "Navigator Ship View" })).not.toBeInTheDocument();
+    await waitFor(() => expect(openShip).toHaveFocus());
+
+    fireEvent.click(openShip);
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigator Ship View" })).not.toBeInTheDocument());
+    expect(openShip).toHaveFocus();
   });
 
   it("never presents a SHADOW plan when canonical Navigator plan state is absent", async () => {

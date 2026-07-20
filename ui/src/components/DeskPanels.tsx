@@ -1,5 +1,11 @@
+import type { Ref } from "react";
+
 import type { MarketContextViewModel } from "../data/viewModel";
-import { NavigatorShipView, type NavigatorShipData } from "./NavigatorShipView";
+import {
+  NavigatorShipView,
+  type NavigatorShipData,
+  type NavigatorShipDisplayContext,
+} from "./NavigatorShipView";
 
 export function SentryAlerts({ warnings, onFocus }: { warnings: readonly string[]; onFocus: () => void }) {
   return (
@@ -47,19 +53,23 @@ export function MissionChart({
   snapshotCount,
   revision,
   shipData,
+  shipContext,
+  triggerRef,
   onOpenShip,
 }: {
   missionId: string;
   snapshotCount: number;
   revision: number;
   shipData: NavigatorShipData | null;
+  shipContext: NavigatorShipDisplayContext;
+  triggerRef?: Ref<HTMLButtonElement>;
   onOpenShip: () => void;
 }) {
   if (shipData) {
     return (
-      <button className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`}>
+      <button ref={triggerRef} className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open expanded Navigator ship view for ${shipData.symbol}`}>
         <span className="paper-title">Navigator reference chart · open</span>
-        <NavigatorShipView data={shipData} variant="overview" />
+        <NavigatorShipView data={shipData} context={shipContext} variant="overview" />
       </button>
     );
   }

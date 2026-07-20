@@ -105,8 +105,106 @@ describe("mission presentation view model", () => {
     expect(viewModel.market.navigatorMarket?.summary.last_price).toBe(213);
     expect(viewModel.portfolio.status).toBe("CAPTURED");
     expect(viewModel.portfolio.mode).toBe("FROZEN");
+    expect(viewModel.portfolio.activeExposure).toMatchObject({
+      status: "NO_POSITION",
+      symbol: "AAPL",
+      direction: null,
+      quantity: null,
+      marketValue: null,
+      allocationPercent: null,
+      cash: null,
+      equity: null,
+      totalExposure: null,
+    });
     expect(viewModel.modeldock.latencyMs).toBe(842);
     expect(viewModel.modeldock.lastSuccessfulInference).toBe("2026-07-18T18:06:01Z");
     expect(viewModel.modeldock.availability).toBe("FROZEN INFERENCE PROVENANCE");
+  });
+
+  it("projects an active-symbol position and optional portfolio totals exactly as supplied", () => {
+    const bundle = createStageFourBundle();
+    bundle.portfolio = {
+      ...bundle.portfolio!,
+      cash: 12_345.67,
+      equity: 98_765.43,
+      total_exposure: 86_419.76,
+      positions: [
+        {
+          symbol: "MSFT",
+          quantity: 4,
+          market_value: 1_800,
+          allocation_percent: 1.82,
+        },
+        {
+          symbol: "AAPL",
+          name: "Apple Inc.",
+          quantity: -12.5,
+          market_value: -4_171.75,
+          allocation_percent: 4.224,
+          cost_basis: 3_900.25,
+          unrealized_pnl: -271.5,
+        },
+      ],
+    };
+
+    const exposure = createMissionViewModel(bundle).portfolio.activeExposure;
+
+    expect(exposure).toEqual({
+      status: "POSITION",
+      symbol: "AAPL",
+      direction: "SHORT",
+      quantity: -12.5,
+      marketValue: -4_171.75,
+      allocationPercent: 4.224,
+      costBasis: 3_900.25,
+      unrealizedPnl: -271.5,
+      cash: 12_345.67,
+      equity: 98_765.43,
+      totalExposure: 86_419.76,
+      currency: "USD",
+      capturedAt: "2026-07-18T18:07:00Z",
+      mode: "FROZEN",
+      sourceIdentity: "build-week-read-only-snapshot",
+    });
+  });
+
+  it("keeps an absent portfolio source distinct from a captured snapshot with no active position", () => {
+    const bundle = createMissionBundleFixture();
+    const exposure = createMissionViewModel(bundle).portfolio.activeExposure;
+
+    expect(exposure).toEqual({
+      status: "NOT_CONFIGURED",
+      symbol: "AAPL",
+      direction: null,
+      quantity: null,
+      marketValue: null,
+      allocationPercent: null,
+      costBasis: null,
+      unrealizedPnl: null,
+      cash: null,
+      equity: null,
+      totalExposure: null,
+      currency: null,
+      capturedAt: null,
+      mode: null,
+      sourceIdentity: null,
+    });
+  });
+
+  it("does not infer portfolio direction when a captured position omits quantity", () => {
+    const bundle = createStageFourBundle();
+    bundle.portfolio = {
+      ...bundle.portfolio!,
+      positions: [{ symbol: "AAPL", market_value: 2_500 }],
+    };
+
+    expect(createMissionViewModel(bundle).portfolio.activeExposure).toMatchObject({
+      status: "POSITION",
+      symbol: "AAPL",
+      direction: null,
+      quantity: null,
+      marketValue: 2_500,
+      allocationPercent: null,
+    });
   });
 });

@@ -109,7 +109,26 @@ export interface PortfolioViewModel {
   accountType: string | null;
   currency: string | null;
   positionCount: number;
+  activeExposure: ActivePortfolioExposureViewModel;
   snapshot: PortfolioSnapshotV1 | null;
+}
+
+export interface ActivePortfolioExposureViewModel {
+  status: "NOT_CONFIGURED" | "NO_POSITION" | "POSITION";
+  symbol: string;
+  direction: "LONG" | "SHORT" | "FLAT" | null;
+  quantity: number | null;
+  marketValue: number | null;
+  allocationPercent: number | null;
+  costBasis: number | null;
+  unrealizedPnl: number | null;
+  cash: number | null;
+  equity: number | null;
+  totalExposure: number | null;
+  currency: string | null;
+  capturedAt: string | null;
+  mode: string | null;
+  sourceIdentity: string | null;
 }
 
 export interface SafetyBoundaryViewModel {
@@ -172,6 +191,39 @@ function stageSummary(bundle: MissionBundle, id: StageBookId): StageBookSummaryV
     displayState: ordered.display_state,
     summary: ordered.summary,
     artifactPaths: ordered.artifact_paths,
+  };
+}
+
+function activePortfolioExposure(
+  portfolio: PortfolioSnapshotV1 | null,
+  symbol: string,
+): ActivePortfolioExposureViewModel {
+  const position = portfolio?.positions.find((candidate) => candidate.symbol === symbol) ?? null;
+  const quantity = position?.quantity ?? null;
+  const direction = quantity === null
+    ? null
+    : quantity > 0
+      ? "LONG"
+      : quantity < 0
+        ? "SHORT"
+        : "FLAT";
+
+  return {
+    status: portfolio === null ? "NOT_CONFIGURED" : position === null ? "NO_POSITION" : "POSITION",
+    symbol,
+    direction,
+    quantity,
+    marketValue: position?.market_value ?? null,
+    allocationPercent: position?.allocation_percent ?? null,
+    costBasis: position?.cost_basis ?? null,
+    unrealizedPnl: position?.unrealized_pnl ?? null,
+    cash: portfolio?.cash ?? null,
+    equity: portfolio?.equity ?? null,
+    totalExposure: portfolio?.total_exposure ?? null,
+    currency: portfolio?.currency ?? null,
+    capturedAt: portfolio?.captured_at ?? null,
+    mode: portfolio?.mode ?? null,
+    sourceIdentity: portfolio?.source_identity ?? null,
   };
 }
 
@@ -264,6 +316,7 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
       accountType: bundle.portfolio?.account_type ?? null,
       currency: bundle.portfolio?.currency ?? null,
       positionCount: bundle.portfolio?.positions.length ?? 0,
+      activeExposure: activePortfolioExposure(bundle.portfolio, summary.symbol),
       snapshot: bundle.portfolio,
     },
     safety: {

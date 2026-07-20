@@ -29,6 +29,13 @@ make cabin-test
 make cabin-build
 ```
 
+At the default judge viewport, select the chart parchment labeled **Navigator
+reference chart · open** to enter the expanded market view. Use the `+` and `−`
+buttons or mouse wheel to zoom, drag the plotted sea to pan, and use **History
+position** for deterministic keyboard-accessible horizontal exploration.
+**Return to bridge** or Escape closes the view and restores focus to the chart
+trigger.
+
 Stage 4 also supports two explicit prepared data slots. Demo remains the
 default; Live must be selected and never falls back:
 
@@ -96,6 +103,46 @@ These files provide company/timeframe/latest-bar/chart and portfolio display
 context only. They do not enter the mission snapshot, change an outcome, or
 become trading inputs. If absent, the cabin reports `NOT_CONFIGURED` rather
 than inventing values.
+
+## Navigator market visualization
+
+Stage 5 extends the existing `NavigatorShipView`; it does not introduce a new
+market contract or chart backend. Both the compact Mission Chart and expanded
+reading surface consume the same validated `navigator.api.ohlc.v1` object.
+
+The view exposes the source facts directly:
+
+- active symbol, asset name, category, currency, and timeframe;
+- first and final recorded bar, latest completed bar, and cabin capture time;
+- recorded closing-price history and the exact supplied moving-average series;
+- supplied MA period, last price, last MA, position relative to MA, trend
+  slope, volatility, ATR, and ATR percentage; and
+- optional entry, stop, target, support, or resistance levels only if the
+  selected artifact actually contains them.
+
+The nautical vocabulary is always paired with a literal explanation:
+
+- **price wake** means the recorded close series;
+- **dotted course** means the supplied moving average;
+- **ship** means the latest recorded close;
+- **sea state** means the supplied volatility classification;
+- **current** means the supplied trend slope;
+- **wind / regime** is shown only when the market artifact supplies one; and
+- **harbor exposure** means the active symbol's exact record in an optional
+  read-only portfolio snapshot.
+
+The Captain's Cabin does not calculate MA250. When a validated artifact has no
+moving-average observations, it says whether the recorded bar count is shorter
+than the requested period and explicitly states that no replacement was
+calculated. A captured portfolio renders only supplied quantity, market value,
+allocation, totals, and capture metadata. No portfolio artifact means
+`Unavailable`; a captured snapshot with no matching row means `No recorded
+position`. Neither condition is converted to a fabricated zero.
+
+The current deterministic AAPL capture contains 753 daily bars, 504 supplied
+MA250 observations, and no portfolio snapshot or security-specific market
+regime. Those absences remain visible in Demo mode. A Live selection reads only
+the explicitly prepared Live pack and never substitutes the Demo tape.
 
 The browser validates schema versions, required shapes, canonical stage order,
 mission correlation, and mission-relative paths before constructing a display
