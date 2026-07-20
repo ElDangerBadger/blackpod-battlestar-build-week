@@ -1,5 +1,13 @@
 """Versioned contracts owned by the Build Week submission spine."""
 
+from .demo import (
+    DEMO_MANIFEST_PATH,
+    DEMO_MANIFEST_SCHEMA_VERSION,
+    SHADOW_ONLY_DECLARATION,
+    DemoManifest,
+    DemoModelDockMode,
+    DemoScenario,
+)
 from .mission_request import (
     MISSION_REQUEST_SCHEMA_VERSION,
     ContractValidationError,
@@ -72,18 +80,27 @@ from .presentation import (
     CAPTAINS_LOG_SCHEMA_VERSION,
     CANONICAL_SNAPSHOT_PATH,
     MISSION_SUMMARY_PATH,
+    MISSION_SUMMARY_ARTIFACT_LINKS,
     MISSION_SUMMARY_SCHEMA_VERSION,
+    PRESENTATION_COMPONENT_STAGES,
     PRESENTATION_STAGES,
     CaptainsLog,
     CaptainsLogEntry,
     MissionSummary,
     PresentationModelDockState,
     PresentationNavigatorState,
+    PresentationOrderedStage,
     PresentationOperatorState,
     PresentationStageState,
 )
 
 __all__ = [
+    "DEMO_MANIFEST_PATH",
+    "DEMO_MANIFEST_SCHEMA_VERSION",
+    "SHADOW_ONLY_DECLARATION",
+    "DemoManifest",
+    "DemoModelDockMode",
+    "DemoScenario",
     "MISSION_REQUEST_SCHEMA_VERSION",
     "MISSION_SNAPSHOT_SCHEMA_VERSION",
     "CAPTAINS_LOG_MARKDOWN_PATH",
@@ -91,7 +108,9 @@ __all__ = [
     "CAPTAINS_LOG_SCHEMA_VERSION",
     "CANONICAL_SNAPSHOT_PATH",
     "MISSION_SUMMARY_PATH",
+    "MISSION_SUMMARY_ARTIFACT_LINKS",
     "MISSION_SUMMARY_SCHEMA_VERSION",
+    "PRESENTATION_COMPONENT_STAGES",
     "PRESENTATION_STAGES",
     "MODELDOCK_EXPECTED_PROVENANCE_SCHEMA_VERSION",
     "MODELDOCK_EXPECTED_SNAPSHOT_CHANGES_SCHEMA_VERSION",
@@ -145,6 +164,7 @@ __all__ = [
     "OperatorState",
     "PresentationModelDockState",
     "PresentationNavigatorState",
+    "PresentationOrderedStage",
     "PresentationOperatorState",
     "PresentationStageState",
     "OracleTransportKind",

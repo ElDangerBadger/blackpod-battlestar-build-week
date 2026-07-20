@@ -1,0 +1,240 @@
+{
+  "schema_version": "blackpod.demo_scenarios.v1",
+  "safety": {
+    "shadow_only": true,
+    "allowed_operations": [
+      "VALIDATE",
+      "PLAN_ONLY"
+    ],
+    "prohibited_operations": [
+      "SUBMIT_ORDER",
+      "CANCEL_ORDER",
+      "MODIFY_PORTFOLIO",
+      "BROKER_CALL"
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "approved",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": true,
+      "through": "NAVIGATOR",
+      "operator_action": "APPROVE_HANDOFF",
+      "operator_id": "demo-operator",
+      "operator_reason": "Approved for deterministic Navigator SHADOW planning.",
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": {
+        "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
+        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+      },
+      "council_fixture": {
+        "path": "fixtures/council_replay_policy.v1.json",
+        "sha256": "65176f5c59a041f8ef5fc3a3c099642895d32cacd391c3b266db0e5d224a6081"
+      },
+      "governor_fixture": {
+        "path": "fixtures/governor_replay_context.proceed.v1.json",
+        "sha256": "ed378067f3ac4b1f976496b1b6391e20185eb2f5d29a8493c798d2d84d9630a6"
+      },
+      "operator_fixture": {
+        "path": "fixtures/operator_replay_action.approve.v1.json",
+        "sha256": "dbec9cc50c56a5c6317cc983e80f6a4671fec224c6fc073f17669a0aec6d58e5"
+      },
+      "navigator_fixture": {
+        "path": "fixtures/navigator_replay.shadow.v1.json",
+        "sha256": "22fe27d0cf6d7fd5a4fd77ccc68df5abe61819bacbb7ceb4332f4d2c5190bdbb"
+      },
+      "expected_outcome": "APPROVED",
+      "expected_phase": "COMPLETE",
+      "expected_terminal": true,
+      "expected_snapshot_count": 13,
+      "expected_exit_code": 0
+    },
+    {
+      "name": "held",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": true,
+      "through": "GOVERNOR",
+      "operator_action": null,
+      "operator_id": null,
+      "operator_reason": null,
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": {
+        "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
+        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+      },
+      "council_fixture": {
+        "path": "fixtures/council_replay_policy.v1.json",
+        "sha256": "65176f5c59a041f8ef5fc3a3c099642895d32cacd391c3b266db0e5d224a6081"
+      },
+      "governor_fixture": {
+        "path": "fixtures/governor_replay_context.proceed.v1.json",
+        "sha256": "ed378067f3ac4b1f976496b1b6391e20185eb2f5d29a8493c798d2d84d9630a6"
+      },
+      "operator_fixture": null,
+      "navigator_fixture": null,
+      "expected_outcome": "HELD",
+      "expected_phase": "OPERATOR",
+      "expected_terminal": false,
+      "expected_snapshot_count": 9,
+      "expected_exit_code": 0
+    },
+    {
+      "name": "vetoed",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": true,
+      "through": "OPERATOR",
+      "operator_action": "REJECT",
+      "operator_id": "demo-operator",
+      "operator_reason": "Rejected at the deterministic operator gate.",
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": {
+        "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
+        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+      },
+      "council_fixture": {
+        "path": "fixtures/council_replay_policy.v1.json",
+        "sha256": "65176f5c59a041f8ef5fc3a3c099642895d32cacd391c3b266db0e5d224a6081"
+      },
+      "governor_fixture": {
+        "path": "fixtures/governor_replay_context.proceed.v1.json",
+        "sha256": "ed378067f3ac4b1f976496b1b6391e20185eb2f5d29a8493c798d2d84d9630a6"
+      },
+      "operator_fixture": {
+        "path": "fixtures/operator_replay_action.reject.v1.json",
+        "sha256": "5ee56a714cc77e30fbb4e0d924fbceeb09a29c3f42c1574d4487675fc1d42d08"
+      },
+      "navigator_fixture": null,
+      "expected_outcome": "VETOED",
+      "expected_phase": "COMPLETE",
+      "expected_terminal": true,
+      "expected_snapshot_count": 11,
+      "expected_exit_code": 0
+    },
+    {
+      "name": "failed",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": true,
+      "through": "NAVIGATOR",
+      "operator_action": "APPROVE_HANDOFF",
+      "operator_id": "demo-operator",
+      "operator_reason": "Approved for deterministic Navigator SHADOW planning.",
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": {
+        "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
+        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+      },
+      "council_fixture": {
+        "path": "fixtures/council_replay_policy.v1.json",
+        "sha256": "65176f5c59a041f8ef5fc3a3c099642895d32cacd391c3b266db0e5d224a6081"
+      },
+      "governor_fixture": {
+        "path": "fixtures/governor_replay_context.proceed.v1.json",
+        "sha256": "ed378067f3ac4b1f976496b1b6391e20185eb2f5d29a8493c798d2d84d9630a6"
+      },
+      "operator_fixture": {
+        "path": "fixtures/operator_replay_action.approve.v1.json",
+        "sha256": "dbec9cc50c56a5c6317cc983e80f6a4671fec224c6fc073f17669a0aec6d58e5"
+      },
+      "navigator_fixture": {
+        "path": "fixtures/navigator_replay.intake-failure.v1.json",
+        "sha256": "77c1d8fed1bafd31c761c1b96bec26126929629d2bc9ac92c3e75ae0dc2d8a16"
+      },
+      "expected_outcome": "FAILED",
+      "expected_phase": "NAVIGATOR",
+      "expected_terminal": true,
+      "expected_snapshot_count": 13,
+      "expected_exit_code": 11
+    },
+    {
+      "name": "incomplete",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": true,
+      "through": "ORACLE",
+      "operator_action": null,
+      "operator_id": null,
+      "operator_reason": null,
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": {
+        "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
+        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+      },
+      "council_fixture": null,
+      "governor_fixture": null,
+      "operator_fixture": null,
+      "navigator_fixture": null,
+      "expected_outcome": "INCOMPLETE",
+      "expected_phase": "COUNCIL",
+      "expected_terminal": false,
+      "expected_snapshot_count": 5,
+      "expected_exit_code": 0
+    },
+    {
+      "name": "without-modeldock",
+      "request": {
+        "path": "examples/mission_request.replay.json",
+        "sha256": "dbb3877b5d08242152128b8c7c54e6fae6615f55d597a8af6c3f243fc48f749f"
+      },
+      "with_modeldock": false,
+      "through": "NAVIGATOR",
+      "operator_action": "APPROVE_HANDOFF",
+      "operator_id": "demo-operator",
+      "operator_reason": "Approved for deterministic Navigator SHADOW planning.",
+      "oracle_fixture": {
+        "path": "fixtures/oracle_replay_quotes.v1.json",
+        "sha256": "ea220cb858210556c1e2da521d32f4f5ed98a2f58b14340ba5aefd87e9ece266"
+      },
+      "modeldock_fixture": null,
+      "council_fixture": {
+        "path": "fixtures/council_replay_policy.v1.json",
+        "sha256": "65176f5c59a041f8ef5fc3a3c099642895d32cacd391c3b266db0e5d224a6081"
+      },
+      "governor_fixture": {
+        "path": "fixtures/governor_replay_context.proceed.v1.json",
+        "sha256": "ed378067f3ac4b1f976496b1b6391e20185eb2f5d29a8493c798d2d84d9630a6"
+      },
+      "operator_fixture": {
+        "path": "fixtures/operator_replay_action.approve.v1.json",
+        "sha256": "dbec9cc50c56a5c6317cc983e80f6a4671fec224c6fc073f17669a0aec6d58e5"
+      },
+      "navigator_fixture": {
+        "path": "fixtures/navigator_replay.shadow.v1.json",
+        "sha256": "22fe27d0cf6d7fd5a4fd77ccc68df5abe61819bacbb7ceb4332f4d2c5190bdbb"
+      },
+      "expected_outcome": "APPROVED",
+      "expected_phase": "COMPLETE",
+      "expected_terminal": true,
+      "expected_snapshot_count": 11,
+      "expected_exit_code": 0
+    }
+  ]
+}

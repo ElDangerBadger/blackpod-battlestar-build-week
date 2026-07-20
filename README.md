@@ -12,7 +12,48 @@ after Oracle succeeds and before Council runs. ModelDock is a local LLM
 appliance in this path; it does not become an analytical or decision authority.
 Stage 2, Phase 2 adds the canonical one-command orchestration path, resumable
 stage stops, and deterministic presentation projections over that existing
-mission lifecycle.
+mission lifecycle. Stage 2, Phase 3 packages those frozen capabilities into
+validated demo scenarios, replay/live preflight, and a repeatable reviewer
+runbook without adding another mission engine.
+
+## Judge / Reviewer Quick Start
+
+The deterministic judge path is offline and ends at a Navigator SHADOW plan.
+It never starts ModelDock, calls a market-data service, or imports or invokes a
+broker operation.
+
+```bash
+export BATTLESTAR_PATH=/absolute/path/to/blackpod_battlestar
+make setup
+make test
+make preflight-replay
+make demo-approved
+.venv/bin/python3.11 -m json.tool \
+  artifacts/demo-readiness/approved/missions/mission-buildweek-replay-001/presentation/mission_summary.json
+```
+
+The adjacent `captains_log.md` is the concise reviewer narrative, and
+`demo_manifest.json` binds both presentation artifacts to the final snapshot
+by hash. Run `make validate-demo-packs` for all scenarios and
+`make rehearse-approved` for the cold/warm idempotency proof.
+
+`BATTLESTAR_PATH` is required and deliberately has no repository-topology
+default. Both sibling repositories remain read-only. Use a new contained root,
+such as `DEMO_ROOT=artifacts/rehearsal-002`, when a visibly fresh run is
+needed; completed identical missions otherwise return an explicit idempotent
+no-op.
+
+The approved rehearsal proves the complete sequence from mission acceptance
+through explicit `APPROVE_HANDOFF` and a created Navigator SHADOW plan. It
+validates the snapshot hash chain, captured artifact hashes, Captain's Log, and
+mission summary. Governor `PROCEED` alone never means approval.
+
+Detailed reviewer material:
+
+- [Demo Runbook](docs/DEMO_RUNBOOK.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Safety Boundary](docs/SAFETY_BOUNDARY.md)
+- [Build Week Changelog](docs/BUILD_WEEK_CHANGELOG.md)
 
 Harbormaster owns:
 

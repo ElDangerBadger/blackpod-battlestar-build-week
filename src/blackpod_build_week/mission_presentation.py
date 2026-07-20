@@ -12,6 +12,7 @@ from .contracts import (
     CAPTAINS_LOG_PATH,
     CAPTAINS_LOG_SCHEMA_VERSION,
     MISSION_SUMMARY_PATH,
+    MISSION_SUMMARY_ARTIFACT_LINKS,
     MISSION_SUMMARY_SCHEMA_VERSION,
     ArtifactReference,
     CaptainsLog,
@@ -425,7 +426,35 @@ def _important_warnings(loaded: LoadedMission) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
-def _mission_summary_mapping(loaded: LoadedMission) -> dict[str, object]:
+def _presentation_display_state(
+    snapshot: MissionSnapshot, stage_name: str, modeldock_status: str
+) -> str:
+    if stage_name == "MODELDOCK":
+        return modeldock_status
+    if stage_name == "OPERATOR":
+        if snapshot.operator.result is not None:
+            return snapshot.operator.result.value
+        if snapshot.operator.route is not None:
+            return snapshot.operator.route.value
+        return snapshot.operator.action_status.value
+    canonical_name = stage_name.lower()
+    stage = snapshot.stages[canonical_name]
+    if stage_name == "GOVERNOR" and stage.native_state is not None:
+        return stage.native_state
+    if stage_name == "NAVIGATOR" and (
+        snapshot.navigator.mode is not None
+        and snapshot.navigator.plan_status is not None
+    ):
+        return (
+            f"{snapshot.navigator.mode.value} PLAN "
+            f"{snapshot.navigator.plan_status.value}"
+        )
+    return stage.status.value
+
+
+def _mission_summary_mapping(
+    loaded: LoadedMission, captain_log: CaptainsLog
+) -> dict[str, object]:
     current = loaded.snapshot
     call = (
         current.stages["oracle"].modeldock_calls[-1]
@@ -493,6 +522,27 @@ def _mission_summary_mapping(loaded: LoadedMission) -> dict[str, object]:
         "important_warnings": list(_important_warnings(loaded)),
         "snapshot_count": len(loaded.snapshot_history),
         "canonical_snapshot_path": "mission_snapshot.json",
+        "display_title": f"BlackPod Mission: {loaded.request.symbol}",
+        "subtitle": (
+            f"{current.run_mode.value} | {current.mission_outcome.value} | "
+            f"{current.current_phase.value}"
+        ),
+        "ordered_stages": [
+            {
+                "stage": entry.stage,
+                "display_state": _presentation_display_state(
+                    current, entry.stage, modeldock["status"]
+                ),
+                "summary": entry.summary,
+                "artifact_paths": [
+                    artifact.path for artifact in entry.source_artifacts
+                ],
+            }
+            for entry in captain_log.entries[:-1]
+        ],
+        "resumable": not current.terminal,
+        "event_count": len(captain_log.entries),
+        "artifact_links": dict(MISSION_SUMMARY_ARTIFACT_LINKS),
     }
 
 
@@ -554,7 +604,9 @@ def render_mission_presentation(
         )
 
     captain_log = CaptainsLog.from_mapping(_captains_log_mapping(loaded))
-    mission_summary = MissionSummary.from_mapping(_mission_summary_mapping(loaded))
+    mission_summary = MissionSummary.from_mapping(
+        _mission_summary_mapping(loaded, captain_log)
+    )
     captain_log_bytes = canonical_json_bytes(captain_log.to_dict())
     captain_markdown_bytes = render_captains_log_markdown(captain_log)
     mission_summary_bytes = canonical_json_bytes(mission_summary.to_dict())
