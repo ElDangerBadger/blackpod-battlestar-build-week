@@ -5,6 +5,8 @@ BOOTSTRAP_PYTHON ?= python3.11
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python3.11
 DEMO_ROOT ?= artifacts/demo-readiness
+JUDGE_ROOT ?= $(DEMO_ROOT)/judge
+JUDGE_MISSION_ID := mission-buildweek-replay-001
 
 # REPLAY still validates the strict local ModelDock configuration, but never
 # opens a network connection.  MODELDOCK_MODEL is deliberately removed so an
@@ -22,7 +24,7 @@ REPLAY_ENV := env -u MODELDOCK_MODEL \
 	MODELDOCK_PROFILE="$(MODELDOCK_PROFILE)" \
 	MODELDOCK_PROVIDER="$(MODELDOCK_PROVIDER)"
 
-.PHONY: help setup test require-battlestar preflight-replay \
+.PHONY: help setup test require-battlestar preflight-replay judge \
 	validate-demo-packs demo demo-approved demo-held demo-vetoed demo-failed \
 	demo-incomplete demo-outcomes rehearse-approved
 
@@ -32,6 +34,7 @@ help:
 	@echo "  make setup                 Create .venv and install the package"
 	@echo "  make test                  Run the complete offline test suite"
 	@echo "  make preflight-replay      Validate replay demo readiness"
+	@echo "  make judge                 Run the judge-ready APPROVED replay and brief"
 	@echo "  make validate-demo-packs   Validate every committed demo pack"
 	@echo "  make demo                  Run the canonical APPROVED replay"
 	@echo "  make demo-outcomes         Run all five canonical outcomes"
@@ -59,6 +62,14 @@ require-battlestar:
 
 preflight-replay: require-battlestar
 	$(REPLAY_ENV) $(CLI) preflight --mode replay --artifacts-root "$(DEMO_ROOT)/preflight"
+
+judge: require-battlestar
+	$(REPLAY_ENV) $(CLI) preflight --mode replay --artifacts-root "$(JUDGE_ROOT)/preflight"
+	$(REPLAY_ENV) $(CLI) demo approved --no-color --artifacts-root "$(JUDGE_ROOT)/approved"
+	test -f "$(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)/presentation/mission_brief.html"
+	@echo
+	@echo "Judge mission brief:"
+	@echo "$(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)/presentation/mission_brief.html"
 
 validate-demo-packs: require-battlestar
 	$(REPLAY_ENV) $(CLI) validate-demo-packs --artifacts-root "$(DEMO_ROOT)/validation"

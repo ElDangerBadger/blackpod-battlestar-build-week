@@ -20,8 +20,10 @@ from blackpod_build_week.contracts import (
 )
 from blackpod_build_week.hashing import canonical_json_bytes, sha256_file
 from blackpod_build_week.mission_presentation import (
+    MISSION_BRIEF_PATH,
     MissionPresentationError,
     render_mission_presentation,
+    render_mission_brief_html,
 )
 from blackpod_build_week.mission_store import MissionStore
 from blackpod_build_week.mission_transitions import begin_oracle, fail_oracle
@@ -139,6 +141,7 @@ class MissionPresentationTests(unittest.TestCase):
             result.captains_log_json_path,
             result.captains_log_markdown_path,
             result.mission_summary_path,
+            result.mission_brief_path,
         ):
             self.assertTrue(path.resolve().is_relative_to(loaded.paths.mission_root))
         self.assertEqual(
@@ -164,6 +167,23 @@ class MissionPresentationTests(unittest.TestCase):
         markdown = result.captains_log_markdown_path.read_text(encoding="utf-8")
         self.assertIn("# Captain's Log: mission-presentation-001", markdown)
         self.assertNotIn(str(self.base), markdown)
+        self.assertEqual(
+            result.mission_brief_path.relative_to(loaded.paths.mission_root).as_posix(),
+            MISSION_BRIEF_PATH,
+        )
+        self.assertEqual(
+            result.mission_brief_path.read_bytes(),
+            render_mission_brief_html(result.mission_summary, result.captain_log),
+        )
+        brief = result.mission_brief_path.read_text(encoding="utf-8")
+        self.assertIn("BlackPod Mission: NVDA", brief)
+        self.assertIn("Navigator SHADOW handoff only", brief)
+        self.assertIn("JSON contracts and immutable snapshot chain remain authoritative", brief)
+        self.assertIn('href="../snapshots/mission_snapshot-r0001.json"', brief)
+        self.assertIn('href="mission_summary.json"', brief)
+        self.assertNotIn("<script", brief.lower())
+        self.assertNotIn("file://", brief)
+        self.assertNotIn(str(self.base), brief)
         self.assertEqual(tuple(loaded.paths.snapshots_dir.iterdir()), original_snapshots)
 
         for entry in result.captain_log.entries:
@@ -180,7 +200,7 @@ class MissionPresentationTests(unittest.TestCase):
             for artifact_path in stage.artifact_paths:
                 self.assertFalse(Path(artifact_path).is_absolute())
 
-    def test_identical_render_is_an_explicit_three_file_no_op(self) -> None:
+    def test_identical_render_is_an_explicit_four_file_no_op(self) -> None:
         first = render_mission_presentation(
             self.store, self.store.load_mission(self.initialized.snapshot.mission_id)
         )
@@ -188,6 +208,7 @@ class MissionPresentationTests(unittest.TestCase):
             first.captains_log_json_path,
             first.captains_log_markdown_path,
             first.mission_summary_path,
+            first.mission_brief_path,
         )
         before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
 
@@ -198,10 +219,35 @@ class MissionPresentationTests(unittest.TestCase):
         self.assertFalse(second.captains_log_json_written)
         self.assertFalse(second.captains_log_markdown_written)
         self.assertFalse(second.mission_summary_written)
+        self.assertFalse(second.mission_brief_written)
         self.assertEqual(
             {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths},
             before,
         )
+
+    def test_html_escapes_contract_text_and_remains_byte_deterministic(self) -> None:
+        result = render_mission_presentation(
+            self.store, self.store.load_mission(self.initialized.snapshot.mission_id)
+        )
+        unsafe = '<script>alert("brief")</script>'
+        summary = replace(
+            result.mission_summary,
+            symbol=unsafe,
+            display_title=f"BlackPod Mission: {unsafe}",
+        )
+        log = replace(result.captain_log, symbol=unsafe)
+
+        first = render_mission_brief_html(summary, log)
+        second = render_mission_brief_html(summary, log)
+
+        self.assertEqual(first, second)
+        text = first.decode("utf-8")
+        self.assertNotIn(unsafe, text)
+        self.assertIn(
+            "&lt;script&gt;alert(&quot;brief&quot;)&lt;/script&gt;",
+            text,
+        )
+        self.assertNotIn("<script", text.lower())
 
     def test_failed_stage_uses_only_structured_canonical_failure(self) -> None:
         mission_id = self.initialized.snapshot.mission_id

@@ -25,17 +25,15 @@ broker operation.
 ```bash
 export BATTLESTAR_PATH=/absolute/path/to/blackpod_battlestar
 make setup
-make test
-make preflight-replay
-make demo-approved
-.venv/bin/python3.11 -m json.tool \
-  artifacts/demo-readiness/approved/missions/mission-buildweek-replay-001/presentation/mission_summary.json
+make judge
 ```
 
-The adjacent `captains_log.md` is the concise reviewer narrative, and
-`demo_manifest.json` binds both presentation artifacts to the final snapshot
-by hash. Run `make validate-demo-packs` for all scenarios and
-`make rehearse-approved` for the cold/warm idempotency proof.
+`make judge` runs replay preflight and the canonical approved mission, then
+prints the path to `presentation/mission_brief.html`. The brief is a
+deterministic, read-only view; `mission_summary.json`, `captains_log.json`,
+`demo_manifest.json`, and the immutable snapshot chain remain canonical. Run
+`make test` for the full offline suite, `make validate-demo-packs` for all
+scenarios, and `make rehearse-approved` for the cold/warm idempotency proof.
 
 `BATTLESTAR_PATH` is required and deliberately has no repository-topology
 default. Both sibling repositories remain read-only. Use a new contained root,
@@ -88,7 +86,8 @@ Stage 1 contains no ModelDock integration. Stage 2 adds the bounded local
 narrative seam plus orchestration and presentation over existing stage logic.
 The repository contains no broker execution, order submission, order
 cancellation, portfolio modification, web service, database, queue, daemon,
-scheduler, or UI.
+scheduler, or interactive/state-changing UI. The generated mission brief is a
+static, read-only projection of canonical JSON.
 
 ## Python and setup
 
@@ -1330,14 +1329,15 @@ no-op.
 ### Captain's Log and mission summary
 
 Every unified run that leaves a valid canonical snapshot, including a
-controlled technical failure or deliberate stop, writes three deterministic,
+controlled technical failure or deliberate stop, writes four deterministic,
 presentation-oriented projections:
 
 ```text
 artifacts/missions/<mission-id>/presentation/
 ├── captains_log.json
 ├── captains_log.md
-└── mission_summary.json
+├── mission_summary.json
+└── mission_brief.html
 ```
 
 The Captain's Log contains only events proven by canonical snapshots and
@@ -1353,6 +1353,10 @@ symbol, run mode, all stage states, ModelDock provider/model/trace identity,
 Governor disposition, operator result, Navigator SHADOW state, current
 outcome, important warnings, snapshot count, and canonical current-snapshot
 path.
+
+`mission_brief.html` is a self-contained, script-free reviewer view rendered
+only from the validated Captain's Log and mission summary contracts. It is not
+canonical evidence and is not added to the snapshot or demo-manifest schemas.
 
 These files are derived presentation state, not replacements for the immutable
 snapshot chain. They are atomically refreshed when a stopped mission advances

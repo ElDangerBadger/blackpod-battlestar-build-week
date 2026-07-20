@@ -65,9 +65,11 @@ class UnifiedMissionCliTests(unittest.TestCase):
             captains_log_json_path=self.presentation_root / "captains_log.json",
             captains_log_markdown_path=self.presentation_root / "captains_log.md",
             mission_summary_path=self.presentation_root / "mission_summary.json",
+            mission_brief_path=self.presentation_root / "mission_brief.html",
             captains_log_json_written=False,
             captains_log_markdown_written=False,
             mission_summary_written=False,
+            mission_brief_written=False,
         )
 
     def result(

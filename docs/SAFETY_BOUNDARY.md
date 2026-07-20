@@ -84,8 +84,9 @@ does not format, install into, or generate files inside them. ModelDock must be
 started separately for an explicit LIVE call. REPLAY never calls its network
 endpoint.
 
-There is no UI, web service, database, queue, daemon, or scheduler in this
-submission.
+There is no interactive or state-changing UI, web service, database, queue,
+daemon, or scheduler in this submission. The generated HTML mission brief is
+static, script-free, and read-only.
 
 ## Failure semantics
 
@@ -97,4 +98,3 @@ valid domain results when their owning contract says so.
 The demo's controlled failure is deliberate evidence of this fail-closed
 behavior. It creates a canonical failure snapshot and returns workflow exit
 code `11`.
-

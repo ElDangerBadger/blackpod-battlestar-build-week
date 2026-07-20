@@ -30,7 +30,10 @@ from blackpod_build_week.demo_validation import (
     validate_demo_packs,
 )
 from blackpod_build_week.hashing import canonical_json_bytes
-from blackpod_build_week.mission_presentation import render_mission_presentation
+from blackpod_build_week.mission_presentation import (
+    MISSION_BRIEF_PATH,
+    render_mission_presentation,
+)
 from blackpod_build_week.mission_store import MissionStore
 from blackpod_build_week.oracle_adapter import (
     EXPECTED_ORACLE_OUTPUT_FILENAMES,
@@ -251,6 +254,13 @@ class GeneratedDemoValidationTests(unittest.TestCase):
         path.write_bytes(canonical_json_bytes(value))
 
         with self.assertRaisesRegex(DemoValidationError, "artifact hashes"):
+            self.validate()
+
+    def test_changed_mission_brief_is_rejected_as_a_nondeterministic_view(self) -> None:
+        path = self.generated.mission_root / MISSION_BRIEF_PATH
+        path.write_bytes(path.read_bytes() + b"<!-- changed -->\n")
+
+        with self.assertRaisesRegex(DemoValidationError, "deterministic rendering"):
             self.validate()
 
     def test_absolute_path_secret_and_execution_operation_are_rejected(self) -> None:

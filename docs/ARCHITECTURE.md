@@ -97,6 +97,7 @@ it is not a second mission engine.
     ├── captains_log.json
     ├── captains_log.md
     ├── mission_summary.json
+    ├── mission_brief.html
     └── demo_manifest.json
 ```
 
@@ -107,12 +108,13 @@ Containment checks reject paths outside the mission root.
 
 ### Presentation
 
-`mission_presentation.py` derives `captains_log.json`, `captains_log.md`, and
-the versioned UI-facing `mission_summary.json` from validated snapshots and
-recorded artifacts. The demo layer adds `demo_manifest.json`, which hashes
-those views and the final canonical snapshot. These files are deterministic
-views for judges and a future read-only UI; they are not sources of mission
-truth.
+`mission_presentation.py` derives `captains_log.json`, `captains_log.md`, the
+versioned UI-facing `mission_summary.json`, and a script-free
+`mission_brief.html` from validated snapshots and recorded artifacts. The HTML
+consumes the validated JSON projections and remains explicitly non-canonical.
+The demo layer adds `demo_manifest.json`, which hashes the JSON views and the
+final canonical snapshot. These files are deterministic views for judges and a
+future read-only UI; they are not sources of mission truth.
 
 ## State and outcome authority
 

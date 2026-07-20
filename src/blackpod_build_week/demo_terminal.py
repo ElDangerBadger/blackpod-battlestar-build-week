@@ -67,6 +67,7 @@ def render_demo_terminal(
             f"Unified action: {unified.action.value}",
             f"Captain's Log: {presentation.captains_log_markdown_path.resolve()}",
             f"Mission summary: {presentation.mission_summary_path.resolve()}",
+            f"Mission brief: {presentation.mission_brief_path.resolve()}",
             f"Demo manifest: {result.manifest_path.resolve()}",
         ]
     )

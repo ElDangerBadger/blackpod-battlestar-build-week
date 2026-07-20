@@ -44,6 +44,10 @@ make validate-demo-packs
 make rehearse-approved
 ```
 
+For the shortest reviewer path, run `make judge`. It performs replay preflight,
+runs the approved scenario, and prints the generated `mission_brief.html` path.
+The HTML is a non-canonical projection of the existing JSON contracts.
+
 The rehearsal performs the approved deterministic mission, validates its
 immutable evidence, and prints the presentation paths. Its safety boundary is
 Navigator `SHADOW`; no order or portfolio operation exists.
@@ -117,6 +121,7 @@ artifacts/demo-readiness/approved/
             ├── captains_log.json
             ├── captains_log.md
             ├── mission_summary.json
+            ├── mission_brief.html
             └── demo_manifest.json
 ```
 
