@@ -25,17 +25,30 @@ broker operation.
 ```bash
 export BATTLESTAR_PATH=/absolute/path/to/blackpod_battlestar
 make setup
-make test
-make preflight-replay
-make demo-approved
-.venv/bin/python3.11 -m json.tool \
-  artifacts/demo-readiness/approved/missions/mission-buildweek-replay-001/presentation/mission_summary.json
+make judge
 ```
 
-The adjacent `captains_log.md` is the concise reviewer narrative, and
-`demo_manifest.json` binds both presentation artifacts to the final snapshot
-by hash. Run `make validate-demo-packs` for all scenarios and
-`make rehearse-approved` for the cold/warm idempotency proof.
+`make judge` runs replay preflight and the canonical approved mission, then
+prints the path to `presentation/mission_brief.html`. The brief is a
+deterministic, read-only view; `mission_summary.json`, `captains_log.json`,
+`demo_manifest.json`, and the immutable snapshot chain remain canonical. Run
+`make test` for the full offline suite, `make validate-demo-packs` for all
+scenarios, and `make rehearse-approved` for the cold/warm idempotency proof.
+
+To open the same approved mission in the read-only Captain's Cabin:
+
+```bash
+npm --prefix ui install
+make cabin-prepare
+make cabin-dev
+```
+
+`make cabin-prepare` first preserves the existing `make judge` workflow, then
+validates and materializes its completed mission beneath the ignored
+`ui/public/demo/approved/` directory. Use `make cabin-test` for the focused
+frontend tests and `make cabin-build` for a production build. The cabin is an
+interactive presentation of existing evidence; it cannot run or resume a
+mission, record approval, or invoke any execution operation.
 
 `BATTLESTAR_PATH` is required and deliberately has no repository-topology
 default. Both sibling repositories remain read-only. Use a new contained root,
@@ -54,6 +67,7 @@ Detailed reviewer material:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Safety Boundary](docs/SAFETY_BOUNDARY.md)
 - [Build Week Changelog](docs/BUILD_WEEK_CHANGELOG.md)
+- [Captain's Cabin](docs/CAPTAINS_CABIN.md)
 
 Harbormaster owns:
 
@@ -88,7 +102,8 @@ Stage 1 contains no ModelDock integration. Stage 2 adds the bounded local
 narrative seam plus orchestration and presentation over existing stage logic.
 The repository contains no broker execution, order submission, order
 cancellation, portfolio modification, web service, database, queue, daemon,
-scheduler, or UI.
+scheduler, or state-changing UI. The generated mission brief and Captain's
+Cabin are read-only projections of canonical JSON.
 
 ## Python and setup
 
@@ -1330,14 +1345,15 @@ no-op.
 ### Captain's Log and mission summary
 
 Every unified run that leaves a valid canonical snapshot, including a
-controlled technical failure or deliberate stop, writes three deterministic,
+controlled technical failure or deliberate stop, writes four deterministic,
 presentation-oriented projections:
 
 ```text
 artifacts/missions/<mission-id>/presentation/
 ├── captains_log.json
 ├── captains_log.md
-└── mission_summary.json
+├── mission_summary.json
+└── mission_brief.html
 ```
 
 The Captain's Log contains only events proven by canonical snapshots and
@@ -1353,6 +1369,49 @@ symbol, run mode, all stage states, ModelDock provider/model/trace identity,
 Governor disposition, operator result, Navigator SHADOW state, current
 outcome, important warnings, snapshot count, and canonical current-snapshot
 path.
+
+`mission_brief.html` is a self-contained, script-free reviewer view rendered
+only from the validated Captain's Log and mission summary contracts. It is not
+canonical evidence and is not added to the snapshot or demo-manifest schemas.
+
+The Captain's Cabin is a separate Vite, React, and TypeScript presentation
+renderer anchored to `ui/public/captains-cabin-template.png`. It consumes the
+same canonical presentation JSON and does not replace the static mission
+brief. The approved development mission is prepared with:
+
+```bash
+npm --prefix ui install
+make cabin-prepare
+make cabin-dev
+
+# Non-interactive verification
+make cabin-test
+make cabin-build
+```
+
+The prepared local data set preserves the mission-relative layout and is
+ignored by Git. Its primary inputs are:
+
+- `presentation/mission_summary.json`;
+- `presentation/captains_log.json`, with the deterministic Markdown form used
+  only as a display fallback;
+- `presentation/demo_manifest.json`; and
+- `mission_snapshot.json` for correlation and evidence references.
+
+The authority flow is intentionally one-way:
+
+```text
+immutable mission snapshots and artifacts
+    -> canonical presentation JSON
+        -> Python reference renderer -> mission_brief.html
+        -> validated TypeScript view model -> Captain's Cabin
+```
+
+The TypeScript view model selects, formats, and progressively reveals recorded
+values. It does not derive outcomes, reinterpret dispositions, invent missing
+analysis, or mutate the source files. See
+[Captain's Cabin](docs/CAPTAINS_CABIN.md) for its architecture and known data
+gaps.
 
 These files are derived presentation state, not replacements for the immutable
 snapshot chain. They are atomically refreshed when a stopped mission advances

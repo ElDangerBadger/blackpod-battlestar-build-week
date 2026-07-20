@@ -117,7 +117,30 @@ EXIT_DEMO_VALIDATION_FAILURE = 13
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m blackpod_build_week.harbormaster",
-        description="Initialize one BlackPod Build Week mission spine.",
+        description=(
+            "Run the BlackPod Build Week mission lifecycle or initialize one "
+            "mission directly."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""commands:
+  preflight             Check replay or live demonstration readiness
+  demo                  Run one deterministic presentation scenario
+  validate-demo-packs   Validate every committed replay scenario
+  mission-run           Initialize and orchestrate a unified mission
+  mission-resume        Resume a validated existing mission
+  run-oracle            Run the Oracle stage
+  enrich-oracle         Add validated ModelDock narrative enrichment
+  modeldock-preflight   Probe ModelDock inference readiness
+  run-council           Run Council synthesis and executive summary
+  run-governor          Run Governor preparation and rendered decision
+  operator-action       Record one explicit operator action
+  run-navigator         Run Navigator handoff, intake, and SHADOW plan
+
+Run '<command> --help' for command-specific options.
+
+direct initialization:
+  python -m blackpod_build_week.harbormaster --request REQUEST.json
+""",
     )
     parser.add_argument("--request", required=True, type=Path, help="mission request JSON")
     parser.add_argument(

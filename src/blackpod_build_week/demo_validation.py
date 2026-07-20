@@ -46,7 +46,11 @@ from .demo_catalog import (
     load_demo_catalog,
 )
 from .hashing import canonical_json_bytes, sha256_file
-from .mission_presentation import render_captains_log_markdown
+from .mission_presentation import (
+    MISSION_BRIEF_PATH,
+    render_captains_log_markdown,
+    render_mission_brief_html,
+)
 from .mission_store import LoadedMission, MissionStore, MissionStoreError
 
 
@@ -242,6 +246,7 @@ def validate_demo_mission(
     summary_path = _mission_file(mission_root, MISSION_SUMMARY_PATH)
     manifest_path = _mission_file(mission_root, DEMO_MANIFEST_PATH)
     markdown_path = _mission_file(mission_root, CAPTAINS_LOG_MARKDOWN_PATH)
+    brief_path = _mission_file(mission_root, MISSION_BRIEF_PATH)
 
     log = _load_canonical_contract(log_path, CaptainsLog.from_mapping, "Captain's Log")
     summary = _load_canonical_contract(
@@ -257,6 +262,10 @@ def validate_demo_mission(
     if markdown_path.read_bytes() != render_captains_log_markdown(log):
         raise DemoValidationError(
             "Captain's Log Markdown is not the deterministic rendering of its JSON"
+        )
+    if brief_path.read_bytes() != render_mission_brief_html(summary, log):
+        raise DemoValidationError(
+            "mission brief HTML is not the deterministic rendering of canonical JSON"
         )
     _validate_portable_tree(mission_root)
 
@@ -632,7 +641,7 @@ def _validate_portable_tree(mission_root: Path) -> None:
                     # prohibited operations without inventing a new schema.
                     continue
                 _scan_portable_value(value, location=f"{relative}:{line_number}")
-        elif path.suffix in {".md", ".txt", ".yaml", ".yml", ".log"}:
+        elif path.suffix in {".html", ".md", ".txt", ".yaml", ".yml", ".log"}:
             try:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeError) as exc:

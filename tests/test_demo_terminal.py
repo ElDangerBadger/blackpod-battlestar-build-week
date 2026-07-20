@@ -61,9 +61,11 @@ class DemoTerminalTests(unittest.TestCase):
             captains_log_json_path=self.presentation_root / "captains_log.json",
             captains_log_markdown_path=self.presentation_root / "captains_log.md",
             mission_summary_path=self.presentation_root / "mission_summary.json",
+            mission_brief_path=self.presentation_root / "mission_brief.html",
             captains_log_json_written=True,
             captains_log_markdown_written=True,
             mission_summary_written=True,
+            mission_brief_written=True,
         )
         navigator_status = StageStatus.FAILED if failed else StageStatus.SUCCEEDED
         snapshot = SimpleNamespace(
@@ -137,6 +139,7 @@ class DemoTerminalTests(unittest.TestCase):
         self.assertIn("Outcome: APPROVED\n", first)
         self.assertIn("Approval scope: NAVIGATOR_SHADOW_HANDOFF\n", first)
         self.assertIn("ModelDock mode: REPLAYED\n", first)
+        self.assertIn("Mission brief:", first)
 
     def test_failed_output_is_sanitized_and_actionable(self) -> None:
         output = render_demo_terminal(self.result(failed=True))

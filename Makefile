@@ -5,6 +5,12 @@ BOOTSTRAP_PYTHON ?= python3.11
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python3.11
 DEMO_ROOT ?= artifacts/demo-readiness
+JUDGE_ROOT ?= $(DEMO_ROOT)/judge
+JUDGE_MISSION_ID := mission-buildweek-replay-001
+UI_DIR ?= ui
+NPM ?= npm
+CABIN_SOURCE ?= $(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)
+CABIN_DEMO_ROOT ?= $(UI_DIR)/public/demo/approved
 
 # REPLAY still validates the strict local ModelDock configuration, but never
 # opens a network connection.  MODELDOCK_MODEL is deliberately removed so an
@@ -22,9 +28,10 @@ REPLAY_ENV := env -u MODELDOCK_MODEL \
 	MODELDOCK_PROFILE="$(MODELDOCK_PROFILE)" \
 	MODELDOCK_PROVIDER="$(MODELDOCK_PROVIDER)"
 
-.PHONY: help setup test require-battlestar preflight-replay \
+.PHONY: help setup test require-battlestar preflight-replay judge \
 	validate-demo-packs demo demo-approved demo-held demo-vetoed demo-failed \
-	demo-incomplete demo-outcomes rehearse-approved
+	demo-incomplete demo-outcomes rehearse-approved cabin-prepare cabin-dev \
+	cabin-build cabin-test
 
 help:
 	@echo "BlackPod Battlestar Build Week demo targets"
@@ -32,10 +39,15 @@ help:
 	@echo "  make setup                 Create .venv and install the package"
 	@echo "  make test                  Run the complete offline test suite"
 	@echo "  make preflight-replay      Validate replay demo readiness"
+	@echo "  make judge                 Run the judge-ready APPROVED replay and brief"
 	@echo "  make validate-demo-packs   Validate every committed demo pack"
 	@echo "  make demo                  Run the canonical APPROVED replay"
 	@echo "  make demo-outcomes         Run all five canonical outcomes"
 	@echo "  make rehearse-approved     Validate, run, and inspect APPROVED"
+	@echo "  make cabin-prepare         Materialize the approved mission for the cabin"
+	@echo "  make cabin-dev             Prepare and launch the Captain's Cabin"
+	@echo "  make cabin-build           Prepare and build the Captain's Cabin"
+	@echo "  make cabin-test            Run the focused Captain's Cabin tests"
 	@echo
 	@echo "Set BATTLESTAR_PATH to the read-only Battlestar checkout first."
 	@echo "Override DEMO_ROOT for a fresh isolated rehearsal."
@@ -59,6 +71,14 @@ require-battlestar:
 
 preflight-replay: require-battlestar
 	$(REPLAY_ENV) $(CLI) preflight --mode replay --artifacts-root "$(DEMO_ROOT)/preflight"
+
+judge: require-battlestar
+	$(REPLAY_ENV) $(CLI) preflight --mode replay --artifacts-root "$(JUDGE_ROOT)/preflight"
+	$(REPLAY_ENV) $(CLI) demo approved --no-color --artifacts-root "$(JUDGE_ROOT)/approved"
+	test -f "$(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)/presentation/mission_brief.html"
+	@echo
+	@echo "Judge mission brief:"
+	@echo "$(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)/presentation/mission_brief.html"
 
 validate-demo-packs: require-battlestar
 	$(REPLAY_ENV) $(CLI) validate-demo-packs --artifacts-root "$(DEMO_ROOT)/validation"
@@ -92,3 +112,17 @@ demo-outcomes: demo-approved demo-held demo-vetoed demo-failed demo-incomplete
 
 rehearse-approved: require-battlestar
 	$(REPLAY_ENV) $(CLI) demo approved --rehearse --artifacts-root "$(DEMO_ROOT)/approved-rehearsal"
+
+cabin-prepare: judge
+	$(PYTHON) scripts/prepare_cabin_demo.py \
+		--source "$(CABIN_SOURCE)" \
+		--destination "$(CABIN_DEMO_ROOT)"
+
+cabin-dev: cabin-prepare
+	$(NPM) --prefix "$(UI_DIR)" run dev
+
+cabin-build: cabin-prepare
+	$(NPM) --prefix "$(UI_DIR)" run build
+
+cabin-test:
+	$(NPM) --prefix "$(UI_DIR)" run test
