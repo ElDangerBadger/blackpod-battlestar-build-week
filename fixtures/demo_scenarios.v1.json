@@ -31,7 +31,7 @@
       },
       "modeldock_fixture": {
         "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
-        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+        "sha256": "b37b311f35d15cc5e0d83226af751ea832fdf95ee577f828214b14e1b0fcf704"
       },
       "council_fixture": {
         "path": "fixtures/council_replay_policy.v1.json",
@@ -72,7 +72,7 @@
       },
       "modeldock_fixture": {
         "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
-        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+        "sha256": "b37b311f35d15cc5e0d83226af751ea832fdf95ee577f828214b14e1b0fcf704"
       },
       "council_fixture": {
         "path": "fixtures/council_replay_policy.v1.json",
@@ -107,7 +107,7 @@
       },
       "modeldock_fixture": {
         "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
-        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+        "sha256": "b37b311f35d15cc5e0d83226af751ea832fdf95ee577f828214b14e1b0fcf704"
       },
       "council_fixture": {
         "path": "fixtures/council_replay_policy.v1.json",
@@ -145,7 +145,7 @@
       },
       "modeldock_fixture": {
         "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
-        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+        "sha256": "b37b311f35d15cc5e0d83226af751ea832fdf95ee577f828214b14e1b0fcf704"
       },
       "council_fixture": {
         "path": "fixtures/council_replay_policy.v1.json",
@@ -186,7 +186,7 @@
       },
       "modeldock_fixture": {
         "path": "fixtures/modeldock_oracle_narrative.replay.v1.json",
-        "sha256": "2611cc6aa6648e5f4d6f62bad25d1c77eec41a08f44c41b9b097a8c101491eb6"
+        "sha256": "b37b311f35d15cc5e0d83226af751ea832fdf95ee577f828214b14e1b0fcf704"
       },
       "council_fixture": null,
       "governor_fixture": null,

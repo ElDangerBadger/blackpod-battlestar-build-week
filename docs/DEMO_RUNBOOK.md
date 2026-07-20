@@ -199,6 +199,10 @@ A shallow health response is insufficient. LIVE readiness requires a real,
 non-mocked smoke inference. Build Week never starts or reconfigures ModelDock
 and never falls back from LIVE to REPLAY.
 
+For the complete Stage 4 path from explicit LIVE mission inputs through strict
+approved packaging and the two Captain's Cabin data slots, see the [Stage 4
+LIVE Demo Runbook](LIVE_DEMO_RUNBOOK.md).
+
 Add `--strict-clean` to either preflight mode when both the Build Week and
 Battlestar worktrees must be clean rather than reported with warnings.
 

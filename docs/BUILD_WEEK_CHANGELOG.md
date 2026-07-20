@@ -35,6 +35,10 @@ Battlestar or ModelDock changelog; both sibling repositories remain read-only.
 - Added strict loopback-only ModelDock configuration and `/text/generate`
   client validation.
 - Added a versioned Oracle narrative request and response contract.
+- Tightened the model boundary to a deterministic, source-linked fact catalog:
+  ModelDock selects stable fact IDs and writes prose, while Build Week expands
+  exact observed facts and Oracle warnings into the unchanged canonical
+  narrative contract.
 - Attached validated narrative output to Oracle provenance without changing
   Oracle facts or native readiness.
 - Added deterministic REPLAY and explicit, non-mocked LIVE behavior.

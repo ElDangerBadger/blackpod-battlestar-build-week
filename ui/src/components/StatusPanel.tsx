@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 
 export type StatusPanelProps = {
+  presentationMode: "DEMO" | "LIVE";
   symbol: string;
+  companyName: string | null;
+  timeframe: string | null;
+  marketStatus: string | null;
+  latestCompletedBar: string | null;
   mode: string;
   outcome: string;
   phase: string;
@@ -20,8 +25,11 @@ export function StatusPanel(props: StatusPanelProps) {
     <section className="status-panel" aria-label="Canonical mission status">
       <StatusCell
         className="status-market"
-        label="Mission"
-        value={`${props.symbol} · ${props.mode}`}
+        label={`Mission symbol · ${props.presentationMode}`}
+        value={`${props.symbol} · correlation`}
+        detail={props.companyName
+          ? `Navigator reference: ${props.companyName} · ${props.timeframe ?? "frame not recorded"}`
+          : `${props.mode} source · security context not recorded`}
       />
       <StatusCell
         className="status-fleet"
@@ -33,7 +41,12 @@ export function StatusPanel(props: StatusPanelProps) {
         label="ModelDock"
         value={`${props.modeldockMode} · ${props.modeldockStatus}`}
       />
-      <StatusCell className="status-count" label="Snapshots" value={String(props.snapshotCount)} />
+      <StatusCell
+        className="status-count"
+        label="Timeframe"
+        value={props.timeframe ?? "N/A"}
+        detail={`${props.snapshotCount} snapshots`}
+      />
       <StatusCell
         className="status-mission"
         label="Mission ID"
@@ -41,8 +54,18 @@ export function StatusPanel(props: StatusPanelProps) {
         detail={props.activeMilestone ? `${props.activeMilestone} · ${props.activeStatus}` : "Ready to replay"}
         title={props.missionId}
       />
-      <StatusCell className="status-shadow" label="Navigator mode" value="SHADOW" />
-      <StatusCell className="status-time" label="Canonical time" value={formatTimestamp(props.timestamp)} />
+      <StatusCell
+        className="status-shadow"
+        label="Market / latest bar"
+        value={props.marketStatus ?? "Not recorded"}
+        detail={props.latestCompletedBar ? formatBarTimestamp(props.latestCompletedBar) : "Bar not recorded"}
+      />
+      <StatusCell
+        className="status-time"
+        label="Mission time"
+        value={formatDate(props.timestamp)}
+        detail={formatClock(props.timestamp)}
+      />
       <StatusCell
         className="status-scope"
         label="Approval scope"
@@ -64,7 +87,17 @@ function StatusCell({ className, label, value, detail, title }: { className: str
   );
 }
 
-function formatTimestamp(timestamp: string): string {
+function formatClock(timestamp: string): string {
   const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2})?Z$/);
   return match ? `${match[1]} UTC` : timestamp;
+}
+
+function formatDate(timestamp: string): string {
+  return /^\d{4}-\d{2}-\d{2}T/.test(timestamp) ? timestamp.slice(0, 10) : timestamp;
+}
+
+function formatBarTimestamp(timestamp: string): string {
+  const date = formatDate(timestamp);
+  const clock = timestamp.match(/T(\d{2}:\d{2})/)?.[1];
+  return clock && clock !== "00:00" ? `${date} ${clock}Z` : date;
 }

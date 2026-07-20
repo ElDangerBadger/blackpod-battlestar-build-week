@@ -121,7 +121,44 @@ def _copy_if_changed(source: Path, destination: Path) -> bool:
     return True
 
 
-def prepare(source_value: Path, destination_value: Path) -> tuple[str, str, int, int]:
+def _synchronize_destination(
+    destination: Path,
+    expected_files: set[Path],
+) -> int:
+    """Remove only stale regular files from one validated public demo slot."""
+
+    if not destination.exists():
+        return 0
+    if destination.is_symlink() or not destination.is_dir():
+        raise PreparationError("destination must be a non-symlink directory")
+    destination_root = destination.resolve(strict=True)
+    stale_files: list[Path] = []
+    directories: list[Path] = []
+    for candidate in destination.rglob("*"):
+        if candidate.is_symlink():
+            raise PreparationError(f"destination contains a symbolic link: {candidate}")
+        resolved = candidate.resolve(strict=True)
+        try:
+            resolved.relative_to(destination_root)
+        except ValueError as exc:  # defensive after rejecting symbolic links
+            raise PreparationError("destination entry escapes its demo slot") from exc
+        relative = candidate.relative_to(destination)
+        if candidate.is_file() and relative not in expected_files:
+            stale_files.append(candidate)
+        elif candidate.is_dir():
+            directories.append(candidate)
+
+    for candidate in stale_files:
+        candidate.unlink()
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return len(stale_files)
+
+
+def prepare(source_value: Path, destination_value: Path) -> tuple[str, str, int, int, int]:
     source = source_value.expanduser().resolve()
     destination = destination_value.expanduser().resolve()
     public_demo_root = PUBLIC_DEMO_ROOT.resolve()
@@ -138,20 +175,28 @@ def prepare(source_value: Path, destination_value: Path) -> tuple[str, str, int,
         raise PreparationError("destination must select one named demo beneath public/demo")
 
     mission_id, outcome = _validate_source(source)
-    copied = 0
-    unchanged = 0
+    source_files: list[tuple[Path, Path]] = []
     for source_path in sorted(source.rglob("*")):
         if source_path.is_symlink():
             raise PreparationError(f"mission source contains a symbolic link: {source_path}")
         if not source_path.is_file():
             continue
         relative = source_path.relative_to(source)
+        source_files.append((source_path, relative))
+
+    removed = _synchronize_destination(
+        destination,
+        {relative for _, relative in source_files},
+    )
+    copied = 0
+    unchanged = 0
+    for source_path, relative in source_files:
         destination_path = destination / relative
         if _copy_if_changed(source_path, destination_path):
             copied += 1
         else:
             unchanged += 1
-    return mission_id, outcome, copied, unchanged
+    return mission_id, outcome, copied, unchanged, removed
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -166,7 +211,9 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     try:
-        mission_id, outcome, copied, unchanged = prepare(args.source, args.destination)
+        mission_id, outcome, copied, unchanged, removed = prepare(
+            args.source, args.destination
+        )
     except Exception as exc:  # normal command mode emits a concise, sanitized failure
         print(f"Captain's Cabin preparation failed: {exc}")
         return 2
@@ -174,6 +221,7 @@ def main() -> int:
     print(f"Outcome: {outcome}")
     print(f"Prepared files: {copied}")
     print(f"Unchanged files: {unchanged}")
+    print(f"Removed stale files: {removed}")
     print(f"Cabin data: {args.destination}")
     return 0
 

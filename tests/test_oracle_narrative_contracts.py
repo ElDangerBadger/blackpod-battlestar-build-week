@@ -12,11 +12,15 @@ from blackpod_build_week.contracts.oracle_narrative import (
     MODELDOCK_EXPECTED_PROVENANCE_SCHEMA_VERSION,
     MODELDOCK_EXPECTED_SNAPSHOT_CHANGES_SCHEMA_VERSION,
     MODELDOCK_REPLAY_PACK_SCHEMA_VERSION,
+    ORACLE_FACT_CATALOG_SCHEMA_VERSION,
     ORACLE_NARRATIVE_REQUEST_SCHEMA_VERSION,
     ORACLE_NARRATIVE_SCHEMA_VERSION,
+    ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
     ModelDockReplayPack,
+    OracleFactCatalog,
     OracleNarrative,
     OracleNarrativeRequest,
+    OracleNarrativeSelection,
     build_oracle_narrative_prompt,
     resolve_json_pointer,
 )
@@ -56,10 +60,40 @@ def valid_request() -> dict[str, object]:
             "price": 42.5,
             "volume": 1000,
             "series": [{"close": 41.0}, {"close": 42.5}],
+            "breadth_score": 0.8,
+            "cyclical_strength": 0.4,
+            "defensive_strength": 0.6,
+            "leadership_concentration": 0.2,
+            "risk_off_score": 0.6,
+            "risk_on_score": 0.4,
+            "rotation_velocity": 0.1,
+            "sector_dispersion": 0.3,
         },
-        "diagnostics": {"quality": "GOOD", "missing_fields": 0},
-        "readiness": {"state": "READY", "coverage": 0.95},
-        "assessment": {"conclusion": "OBSERVED_STRENGTH", "score": 0.7},
+        "diagnostics": {
+            "quality": "GOOD",
+            "missing_fields": 0,
+            "diagnostics_state": "READY",
+            "provenance_complete": True,
+            "fallback_count": 0,
+        },
+        "readiness": {
+            "state": "READY",
+            "coverage": 0.95,
+            "readiness_state": "READY",
+            "downstream_ready": True,
+            "coverage_ok": True,
+            "completeness_ok": True,
+            "freshness_ok": True,
+        },
+        "assessment": {
+            "conclusion": "OBSERVED_STRENGTH",
+            "score": 0.7,
+            "breadth_posture": "EXPANDING_BREADTH",
+            "leadership_posture": "BROAD_LEADERSHIP",
+            "rotation_posture": "DEFENSIVE_ROTATION",
+            "risk_regime_posture": "NEUTRAL",
+            "confidence": 0.7,
+        },
         "report": {
             "headline": "Validated Oracle report",
             "as_of": "2026-07-19T18:55:00Z",
@@ -101,9 +135,32 @@ def valid_narrative() -> dict[str, object]:
     }
 
 
+def valid_selection(
+    request: OracleNarrativeRequest,
+    *,
+    fact_ids: list[str] | None = None,
+) -> dict[str, object]:
+    narrative = valid_narrative()
+    return {
+        "schema_version": ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION,
+        "selected_fact_ids": fact_ids
+        or [
+            "oracle.measurements.breadth_score",
+            "oracle.readiness.coverage_ok",
+        ],
+        "summary": narrative["summary"],
+        "interpretation": narrative["interpretation"],
+        "uncertainties": narrative["uncertainties"],
+        "confidence_explanation": narrative["confidence_explanation"],
+        "prohibited_actions_acknowledged": True,
+    }
+
+
 def valid_replay_pack() -> dict[str, object]:
     request = OracleNarrativeRequest.from_mapping(valid_request())
-    narrative = OracleNarrative.from_mapping(valid_narrative()).validate_against(request)
+    catalog = OracleFactCatalog.from_request(request)
+    selection = OracleNarrativeSelection.from_mapping(valid_selection(request))
+    narrative = selection.expand(catalog, request)
     correlation = {
         "mission_id": request.mission_id,
         "request_id": request.request_id,
@@ -127,7 +184,7 @@ def valid_replay_pack() -> dict[str, object]:
             "provider": "mlx",
             "model": "mlx-community/test-model",
             "data": {"model_revision": "revision-test-001"},
-            "content": narrative.to_canonical_json(),
+            "content": selection.canonical_json_bytes().decode("utf-8"),
             "trace_id": "trace-replay-001",
             "mocked": False,
             "metadata": {"blackpod_correlation": correlation},
@@ -540,22 +597,167 @@ class OracleNarrativePromptTests(unittest.TestCase):
 
         first = build_oracle_narrative_prompt(request)
         second = request.build_prompt()
+        catalog = OracleFactCatalog.from_request(request)
 
         self.assertEqual(first, second)
-        self.assertTrue(first.endswith(request.to_canonical_json()))
+        self.assertTrue(first.endswith(catalog.to_model_json()))
         self.assertIn("only source of market facts", first)
         self.assertIn("Do not approve a mission", first)
         self.assertIn("no markdown", first)
-        self.assertIn("mission symbol is correlation-only", first)
+        self.assertIn("Do not write mission_id", first)
         self.assertIn("fixed validation fleet", first)
+        self.assertIn("Select between one and five", first)
+        self.assertIn("Do not write observed_facts", first)
+        self.assertIn(ORACLE_NARRATIVE_SELECTION_SCHEMA_VERSION, first)
+        self.assertNotIn(request.mission_id, first)
+        self.assertNotIn(request.request_id, first)
         self.assertLessEqual(len(first.encode("utf-8")), 512 * 1024)
-        self.assertIn(ORACLE_NARRATIVE_SCHEMA_VERSION, first)
 
     def test_request_and_prompt_share_the_client_half_mibibyte_limit(self) -> None:
         value = valid_request()
         value["report"] = {"bounded_blob": "x" * (512 * 1024)}
         with self.assertRaisesRegex(ContractValidationError, "exceeds"):
             OracleNarrativeRequest.from_mapping(value)
+
+
+class OracleFactSelectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.request = OracleNarrativeRequest.from_mapping(valid_request())
+        self.catalog = OracleFactCatalog.from_request(self.request)
+
+    def test_catalog_is_small_ordered_stable_and_exact(self) -> None:
+        repeated = OracleFactCatalog.from_request(self.request)
+
+        self.assertEqual(self.catalog.schema_version, ORACLE_FACT_CATALOG_SCHEMA_VERSION)
+        self.assertEqual(self.catalog.canonical_json_bytes(), repeated.canonical_json_bytes())
+        self.assertEqual(len(self.catalog.facts), 22)
+        self.assertEqual(
+            self.catalog.facts[0].fact_id,
+            "oracle.assessment.breadth_posture",
+        )
+        self.assertEqual(
+            self.catalog.facts[-1].fact_id,
+            "oracle.report.headline",
+        )
+        self.assertEqual(
+            set(self.catalog.source_artifacts),
+            {artifact.name for artifact in self.request.source_artifacts.values()},
+        )
+        for source_name, artifact in self.catalog.source_artifacts.items():
+            self.assertEqual(source_name, artifact.name)
+            self.assertIn(artifact, self.request.source_artifacts.values())
+            self.assertFalse(Path(artifact.path).is_absolute())
+        for fact in self.catalog.facts:
+            self.assertEqual(
+                fact.value,
+                self.request.resolve_pointer(fact.source_artifact, fact.json_pointer),
+            )
+            self.assertIn(fact.source_artifact, self.catalog.source_artifacts)
+            self.assertNotIn("generated_at", fact.fact_id)
+            self.assertNotIn("_id", fact.fact_id)
+
+        changed = valid_request()
+        changed["measurements"]["breadth_score"] = 0.25
+        changed_catalog = OracleFactCatalog.from_request(
+            OracleNarrativeRequest.from_mapping(changed)
+        )
+        original = self.catalog.require("oracle.measurements.breadth_score")
+        updated = changed_catalog.require("oracle.measurements.breadth_score")
+        self.assertEqual(original.fact_id, updated.fact_id)
+        self.assertEqual(original.json_pointer, updated.json_pointer)
+        self.assertEqual(updated.value, 0.25)
+
+    def test_catalog_fails_before_transport_when_allowed_fact_is_missing(self) -> None:
+        value = valid_request()
+        value["assessment"].pop("breadth_posture")
+        request = OracleNarrativeRequest.from_mapping(value)
+
+        with self.assertRaisesRegex(ContractValidationError, "does not resolve"):
+            OracleFactCatalog.from_request(request)
+
+    def test_selection_expands_exact_facts_in_catalog_order_and_copies_warnings(self) -> None:
+        selection = OracleNarrativeSelection.from_mapping(
+            valid_selection(
+                self.request,
+                fact_ids=[
+                    "oracle.readiness.coverage_ok",
+                    "oracle.measurements.breadth_score",
+                ],
+            )
+        )
+
+        narrative = selection.expand(self.catalog, self.request)
+
+        self.assertEqual(narrative.schema_version, ORACLE_NARRATIVE_SCHEMA_VERSION)
+        self.assertEqual(narrative.warnings, self.request.warnings)
+        self.assertEqual(
+            [fact.json_pointer for fact in narrative.observed_facts],
+            ["/breadth_score", "/coverage_ok"],
+        )
+        self.assertEqual(
+            [fact.value for fact in narrative.observed_facts],
+            [0.8, True],
+        )
+        self.assertEqual(
+            narrative.observed_facts[0].statement,
+            "The source-linked breadth score is 0.8.",
+        )
+        self.assertEqual(
+            narrative.observed_facts[1].statement,
+            "The source-linked coverage ok is true.",
+        )
+
+    def test_selection_rejects_fact_or_warning_authorship_and_bad_ids(self) -> None:
+        mutations = (
+            (lambda value: value.update({"observed_facts": []}), "unknown fields"),
+            (lambda value: value.update({"warnings": []}), "unknown fields"),
+            (
+                lambda value: value.update({"mission_id": self.request.mission_id}),
+                "unknown fields",
+            ),
+            (lambda value: value.update({"selected_fact_ids": []}), "must not be empty"),
+            (
+                lambda value: value.update(
+                    {
+                        "selected_fact_ids": [
+                            "oracle.measurements.breadth_score",
+                            "oracle.measurements.breadth_score",
+                        ]
+                    }
+                ),
+                "duplicates",
+            ),
+            (
+                lambda value: value.update({"selected_fact_ids": ["not-a-fact"]}),
+                "canonical fact ID",
+            ),
+        )
+        for mutation, message in mutations:
+            value = valid_selection(self.request)
+            mutation(value)
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ContractValidationError, message):
+                    OracleNarrativeSelection.from_mapping(value)
+
+        unknown = valid_selection(
+            self.request,
+            fact_ids=["oracle.measurements.unknown_fact"],
+        )
+        selection = OracleNarrativeSelection.from_mapping(unknown)
+        with self.assertRaisesRegex(ContractValidationError, "unknown Oracle fact ID"):
+            selection.expand(self.catalog, self.request)
+
+    def test_expansion_preserves_existing_numeric_and_authority_guards(self) -> None:
+        for replacement, message in (
+            ("Breadth is 0.8.", "numeric claims"),
+            ("The mission is approved.", "approval claim"),
+        ):
+            value = valid_selection(self.request)
+            value["summary"] = replacement
+            selection = OracleNarrativeSelection.from_mapping(value)
+            with self.subTest(replacement=replacement):
+                with self.assertRaisesRegex(ContractValidationError, message):
+                    selection.expand(self.catalog, self.request)
 
 
 class ModelDockReplayPackContractTests(unittest.TestCase):
@@ -575,9 +777,12 @@ class ModelDockReplayPackContractTests(unittest.TestCase):
         )
         self.assertEqual(
             pack.expected_narrative.to_dict(),
-            OracleNarrative.from_json_bytes(
+            OracleNarrativeSelection.from_json_bytes(
                 pack.response["content"].encode("utf-8")
-            ).validate_against(pack.oracle_input).to_dict(),
+            ).expand(
+                OracleFactCatalog.from_request(pack.oracle_input),
+                pack.oracle_input,
+            ).to_dict(),
         )
 
     def test_valid_pack_preserves_exact_raw_sections_and_round_trips(self) -> None:
@@ -652,7 +857,7 @@ class ModelDockReplayPackContractTests(unittest.TestCase):
         value = valid_replay_pack()
         response = copy.deepcopy(value["response"])
         assert isinstance(response, dict)
-        different = valid_narrative()
+        different = json.loads(response["content"])
         different["summary"] = "Oracle evidence contains a different bounded summary."
         response["content"] = json.dumps(different)
         value["response"] = response
