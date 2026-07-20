@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Sequence
 
 from .battlestar_config import BattlestarConfigurationError
 from .contracts import ContractValidationError, StageStatus
+from .demo_catalog import DemoCatalogError, load_demo_catalog
+from .demo_terminal import render_demo_terminal
+from .demo_validation import (
+    DemoMissionTarget,
+    DemoValidationError,
+    validate_demo_packs,
+)
+from .demo_workflow import DemoSettings, DemoWorkflowError, run_demo
 from .council_workflow import (
     CouncilInvocationError,
     CouncilRunSettings,
@@ -41,6 +51,7 @@ from .modeldock_config import (
     load_modeldock_config,
 )
 from .modeldock_preflight import run_modeldock_preflight
+from .preflight import PreflightError, PreflightSettings, run_preflight
 from .oracle_workflow import (
     OracleInvocationError,
     OracleRunSettings,
@@ -99,6 +110,8 @@ EXIT_OPERATOR_FAILURE = 8
 EXIT_NAVIGATOR_FAILURE = 9
 EXIT_MODELDOCK_FAILURE = 10
 EXIT_UNIFIED_MISSION_FAILURE = 11
+EXIT_PREFLIGHT_FAILURE = 12
+EXIT_DEMO_VALIDATION_FAILURE = 13
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -174,6 +187,96 @@ def build_modeldock_preflight_parser() -> argparse.ArgumentParser:
         prog="python -m blackpod_build_week.harbormaster modeldock-preflight",
         description="Check ModelDock health and one real, non-mocked MLX inference.",
     )
+
+
+def build_preflight_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster preflight",
+        description="Check complete Build Week demonstration readiness.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("replay", "live"),
+        default="replay",
+        help="readiness policy to validate (default: replay)",
+    )
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        default=Path("artifacts/preflight"),
+        help="contained writable root used only for a readiness probe",
+    )
+    parser.add_argument(
+        "--strict-clean",
+        action="store_true",
+        help="require both Build Week and Battlestar worktrees to be clean",
+    )
+    return parser
+
+
+def build_demo_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster demo",
+        description="Run one deterministic unified-mission demonstration.",
+    )
+    parser.add_argument(
+        "scenario",
+        choices=("approved", "held", "vetoed", "failed", "incomplete"),
+    )
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        help="mission artifact root; omitted creates a fresh isolated temporary root",
+    )
+    parser.add_argument(
+        "--without-modeldock",
+        action="store_true",
+        help="run the approved scenario without ModelDock enrichment",
+    )
+    parser.add_argument(
+        "--rehearse",
+        action="store_true",
+        help="run approved cold and warm, verifying an unchanged idempotent no-op",
+    )
+    parser.add_argument(
+        "--strict-battlestar-clean",
+        action="store_true",
+        help="reject a dirty Battlestar worktree",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="force plain output (the default renderer is already plain text)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="re-raise development exceptions instead of printing sanitized failures",
+    )
+    return parser
+
+
+def build_validate_demo_packs_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m blackpod_build_week.harbormaster validate-demo-packs",
+        description="Run and validate every committed deterministic demo pack.",
+    )
+    parser.add_argument(
+        "--artifacts-root",
+        type=Path,
+        help="validation output root; omitted creates a fresh isolated temporary root",
+    )
+    parser.add_argument(
+        "--strict-battlestar-clean",
+        action="store_true",
+        help="reject a dirty Battlestar worktree",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="re-raise development exceptions instead of reporting pack failures",
+    )
+    return parser
 
 
 def build_council_parser() -> argparse.ArgumentParser:
@@ -747,6 +850,190 @@ def _run_modeldock_preflight_command(argv: Sequence[str]) -> int:
     return EXIT_SUCCESS if report.ready else EXIT_MODELDOCK_FAILURE
 
 
+def _run_preflight_command(argv: Sequence[str]) -> int:
+    args = build_preflight_parser().parse_args(argv)
+    try:
+        report = run_preflight(
+            PreflightSettings(
+                mode=args.mode,
+                artifacts_root=args.artifacts_root,
+                strict_clean=args.strict_clean,
+            )
+        )
+    except (PreflightError, ContractValidationError, ValueError) as exc:
+        print(f"harbormaster: invalid preflight invocation: {exc}", file=sys.stderr)
+        return EXIT_INVALID_REQUEST
+    except (OSError, RuntimeError) as exc:
+        print(
+            "harbormaster: preflight could not complete: "
+            + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_PREFLIGHT_FAILURE
+
+    print(f"preflight_mode={report.mode.value}")
+    print(
+        "battlestar_path="
+        + (os.environ.get("BATTLESTAR_PATH", "").strip() or "NOT_CONFIGURED")
+    )
+    print(
+        "modeldock_base_url="
+        + (
+            os.environ.get("MODELDOCK_BASE_URL", "").strip()
+            or (
+                "NOT_REQUIRED_FOR_REPLAY"
+                if report.mode.value == "REPLAY"
+                else "NOT_CONFIGURED"
+            )
+        )
+    )
+    for check in report.checks:
+        message = check.message.replace("\n", " ").replace(":", ";")
+        print(
+            f"preflight_check={check.component}.{check.name}:"
+            f"{check.status.value}:{message}"
+        )
+        if check.details:
+            print(
+                f"preflight_detail={check.component}.{check.name}:"
+                + json.dumps(
+                    check.details,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+    print(f"preflight_ready={str(report.ready).lower()}")
+    return EXIT_SUCCESS if report.ready else EXIT_PREFLIGHT_FAILURE
+
+
+def _run_demo_command(argv: Sequence[str]) -> int:
+    args = build_demo_parser().parse_args(argv)
+    try:
+        result = run_demo(
+            DemoSettings(
+                scenario=args.scenario,
+                artifacts_root=args.artifacts_root,
+                without_modeldock=args.without_modeldock,
+                rehearse=args.rehearse,
+                strict_battlestar_clean=args.strict_battlestar_clean,
+            )
+        )
+    except (
+        DemoCatalogError,
+        DemoWorkflowError,
+        BattlestarConfigurationError,
+        ModelDockConfigurationError,
+        ContractValidationError,
+        IdentifierError,
+        UnifiedMissionInvocationError,
+        UnsafePathError,
+    ) as exc:
+        if args.debug:
+            raise
+        print(
+            "harbormaster: invalid demo invocation: " + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_INVALID_REQUEST
+    except (PersistenceError, MissionStoreError, OSError) as exc:
+        if args.debug:
+            raise
+        print(
+            "harbormaster: demo integrity failure: " + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_PERSISTENCE_FAILURE
+    except Exception as exc:
+        if args.debug:
+            raise
+        print(
+            "harbormaster: demo failed safely: " + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_DEMO_VALIDATION_FAILURE
+
+    print(render_demo_terminal(result, no_color=args.no_color), end="")
+    return (
+        EXIT_SUCCESS
+        if result.unified.technical_success
+        else EXIT_UNIFIED_MISSION_FAILURE
+    )
+
+
+def _run_validate_demo_packs_command(argv: Sequence[str]) -> int:
+    args = build_validate_demo_packs_parser().parse_args(argv)
+    try:
+        catalog = load_demo_catalog()
+        if args.artifacts_root is None:
+            base = Path(
+                tempfile.mkdtemp(prefix="blackpod-build-week-pack-validation-")
+            ).resolve(strict=True)
+        else:
+            base = args.artifacts_root
+
+        def runner(resolved):
+            spec = resolved.spec
+            without_modeldock = spec.name == "without-modeldock"
+            public_scenario = "approved" if without_modeldock else spec.name
+            demo = run_demo(
+                DemoSettings(
+                    scenario=public_scenario,
+                    artifacts_root=base / spec.name,
+                    without_modeldock=without_modeldock,
+                    strict_battlestar_clean=args.strict_battlestar_clean,
+                ),
+                catalog=catalog,
+            )
+            return DemoMissionTarget(
+                artifacts_root=demo.artifacts_root,
+                mission_id=demo.unified.snapshot.mission_id,
+                exit_code=(
+                    EXIT_SUCCESS
+                    if demo.unified.technical_success
+                    else EXIT_UNIFIED_MISSION_FAILURE
+                ),
+            )
+
+        report = validate_demo_packs(catalog, runner)
+    except (DemoCatalogError, DemoValidationError, ValueError) as exc:
+        if args.debug:
+            raise
+        print(
+            "harbormaster: demo-pack validation could not start: "
+            + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_DEMO_VALIDATION_FAILURE
+    except Exception as exc:
+        if args.debug:
+            raise
+        print(
+            "harbormaster: demo-pack validation failed safely: "
+            + _one_line_error(exc),
+            file=sys.stderr,
+        )
+        return EXIT_DEMO_VALIDATION_FAILURE
+
+    for result in report.results:
+        print(
+            f"demo_pack={result.scenario}:PASS:{result.outcome.value}:"
+            f"{result.snapshot_count}"
+        )
+    for failure in report.failures:
+        print(
+            f"demo_pack={failure.scenario}:FAIL:{failure.reason}",
+            file=sys.stderr,
+        )
+    print(f"validation_artifacts_root={Path(base).resolve()}")
+    print(f"demo_packs_ready={str(report.ready).lower()}")
+    return EXIT_SUCCESS if report.ready else EXIT_DEMO_VALIDATION_FAILURE
+
+
+def _one_line_error(exc: BaseException) -> str:
+    value = str(exc).replace("\r", " ").replace("\n", " ").strip()
+    return value[:1024] if value else type(exc).__name__
+
+
 def _run_council_command(argv: Sequence[str]) -> int:
     args = build_council_parser().parse_args(argv)
     settings = CouncilRunSettings(
@@ -1068,6 +1355,12 @@ def _run_mission_resume_command(argv: Sequence[str]) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "preflight":
+        return _run_preflight_command(arguments[1:])
+    if arguments and arguments[0] == "demo":
+        return _run_demo_command(arguments[1:])
+    if arguments and arguments[0] == "validate-demo-packs":
+        return _run_validate_demo_packs_command(arguments[1:])
     if arguments and arguments[0] == "mission-run":
         return _run_mission_command(arguments[1:])
     if arguments and arguments[0] == "mission-resume":

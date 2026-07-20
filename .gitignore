@@ -4,4 +4,15 @@ __pycache__/
 .pytest_cache/
 .venv/
 /artifacts/
-
+/missions/
+/build/
+/dist/
+.coverage
+.coverage.*
+/htmlcov/
+/coverage.xml
+/logs/
+*.log
+.env
+.env.*
+!.env.example

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 from ..identifiers import IdentifierError, validate_identifier, validate_mission_id
@@ -28,7 +29,7 @@ from .mission_snapshot import (
 
 
 CAPTAINS_LOG_SCHEMA_VERSION = "blackpod.captains_log.v1"
-MISSION_SUMMARY_SCHEMA_VERSION = "blackpod.mission_summary.v1"
+MISSION_SUMMARY_SCHEMA_VERSION = "blackpod.mission_summary.v2"
 CAPTAINS_LOG_PATH = "presentation/captains_log.json"
 CAPTAINS_LOG_MARKDOWN_PATH = "presentation/captains_log.md"
 MISSION_SUMMARY_PATH = "presentation/mission_summary.json"
@@ -44,6 +45,14 @@ PRESENTATION_STAGES = (
     "NAVIGATOR",
     "MISSION",
 )
+PRESENTATION_COMPONENT_STAGES = PRESENTATION_STAGES[:-1]
+
+MISSION_SUMMARY_ARTIFACT_LINKS = {
+    "captains_log_json": CAPTAINS_LOG_PATH,
+    "captains_log_markdown": CAPTAINS_LOG_MARKDOWN_PATH,
+    "mission_summary": MISSION_SUMMARY_PATH,
+    "canonical_snapshot": CANONICAL_SNAPSHOT_PATH,
+}
 
 _STATUS_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SNAPSHOT_PATH_PATTERN = re.compile(
@@ -150,6 +159,21 @@ def _snapshot_reference(
     if reference.name != expected_name or not mission_id:
         raise ContractValidationError("generated snapshot identity is inconsistent")
     return reference
+
+
+def _relative_path(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ContractValidationError(f"{field_name} must be a relative POSIX path")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or any(part in {"", "."} for part in path.parts)
+        or path.as_posix() != value
+    ):
+        raise ContractValidationError(f"{field_name} must remain mission-relative")
+    _text(value, field_name, max_length=512)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +488,62 @@ class PresentationNavigatorState:
 
 
 @dataclass(frozen=True, slots=True)
+class PresentationOrderedStage:
+    """One display-only stage row derived from canonical mission evidence."""
+
+    stage: str
+    display_state: str
+    summary: str
+    artifact_paths: tuple[str, ...]
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "PresentationOrderedStage":
+        if not isinstance(value, Mapping):
+            raise ContractValidationError("ordered mission stage must be an object")
+        _require_exact_fields(
+            value,
+            {"stage", "display_state", "summary", "artifact_paths"},
+            "ordered mission stage",
+        )
+        stage = value["stage"]
+        if stage not in PRESENTATION_COMPONENT_STAGES:
+            raise ContractValidationError(
+                f"unsupported ordered mission stage: {stage!r}"
+            )
+        paths_value = value["artifact_paths"]
+        if not isinstance(paths_value, list) or not paths_value:
+            raise ContractValidationError(
+                "ordered mission stage requires at least one artifact path"
+            )
+        artifact_paths = tuple(
+            _relative_path(item, "ordered mission stage artifact path")
+            for item in paths_value
+        )
+        if len(set(artifact_paths)) != len(artifact_paths):
+            raise ContractValidationError(
+                "ordered mission stage artifact paths must be unique"
+            )
+        return cls(
+            stage=str(stage),
+            display_state=str(
+                _text(value["display_state"], "ordered stage display_state", max_length=128)
+            ),
+            summary=str(
+                _text(value["summary"], "ordered stage summary", max_length=1024)
+            ),
+            artifact_paths=artifact_paths,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "display_state": self.display_state,
+            "summary": self.summary,
+            "artifact_paths": list(self.artifact_paths),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MissionSummary:
     schema_version: str
     mission_id: str
@@ -484,6 +564,12 @@ class MissionSummary:
     important_warnings: tuple[str, ...]
     snapshot_count: int
     canonical_snapshot_path: str
+    display_title: str
+    subtitle: str
+    ordered_stages: tuple[PresentationOrderedStage, ...]
+    resumable: bool
+    event_count: int
+    artifact_links: dict[str, str]
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MissionSummary":
@@ -509,6 +595,12 @@ class MissionSummary:
             "important_warnings",
             "snapshot_count",
             "canonical_snapshot_path",
+            "display_title",
+            "subtitle",
+            "ordered_stages",
+            "resumable",
+            "event_count",
+            "artifact_links",
         }
         _require_exact_fields(value, fields, "mission summary")
         if value["schema_version"] != MISSION_SUMMARY_SCHEMA_VERSION:
@@ -567,6 +659,49 @@ class MissionSummary:
             raise ContractValidationError(
                 "mission summary generated_at must equal its source snapshot timestamp"
             )
+        ordered_value = value["ordered_stages"]
+        if not isinstance(ordered_value, list) or len(ordered_value) != len(
+            PRESENTATION_COMPONENT_STAGES
+        ):
+            raise ContractValidationError(
+                "ordered_stages must contain all seven presentation components"
+            )
+        ordered_stages = tuple(
+            PresentationOrderedStage.from_mapping(item) for item in ordered_value
+        )
+        if tuple(item.stage for item in ordered_stages) != PRESENTATION_COMPONENT_STAGES:
+            raise ContractValidationError(
+                "ordered_stages must use canonical presentation order"
+            )
+        resumable = value["resumable"]
+        if type(resumable) is not bool or resumable is terminal:
+            raise ContractValidationError(
+                "mission summary resumable must be the inverse of terminal"
+            )
+        event_count = value["event_count"]
+        if (
+            isinstance(event_count, bool)
+            or not isinstance(event_count, int)
+            or event_count != len(PRESENTATION_STAGES)
+        ):
+            raise ContractValidationError(
+                "event_count must equal the canonical presentation event count"
+            )
+        links_value = value["artifact_links"]
+        if not isinstance(links_value, Mapping) or set(links_value) != set(
+            MISSION_SUMMARY_ARTIFACT_LINKS
+        ):
+            raise ContractValidationError(
+                "artifact_links must contain the canonical presentation links"
+            )
+        artifact_links = {
+            name: _relative_path(links_value[name], f"artifact_links.{name}")
+            for name in MISSION_SUMMARY_ARTIFACT_LINKS
+        }
+        if artifact_links != MISSION_SUMMARY_ARTIFACT_LINKS:
+            raise ContractValidationError(
+                "artifact_links must use canonical mission-relative paths"
+            )
         return cls(
             schema_version=MISSION_SUMMARY_SCHEMA_VERSION,
             mission_id=mission_id,
@@ -594,6 +729,16 @@ class MissionSummary:
             important_warnings=warnings,
             snapshot_count=snapshot_count,
             canonical_snapshot_path=CANONICAL_SNAPSHOT_PATH,
+            display_title=str(
+                _text(value["display_title"], "mission summary display_title", max_length=256)
+            ),
+            subtitle=str(
+                _text(value["subtitle"], "mission summary subtitle", max_length=512)
+            ),
+            ordered_stages=ordered_stages,
+            resumable=resumable,
+            event_count=event_count,
+            artifact_links=artifact_links,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -619,4 +764,10 @@ class MissionSummary:
             "important_warnings": list(self.important_warnings),
             "snapshot_count": self.snapshot_count,
             "canonical_snapshot_path": self.canonical_snapshot_path,
+            "display_title": self.display_title,
+            "subtitle": self.subtitle,
+            "ordered_stages": [stage.to_dict() for stage in self.ordered_stages],
+            "resumable": self.resumable,
+            "event_count": self.event_count,
+            "artifact_links": dict(self.artifact_links),
         }

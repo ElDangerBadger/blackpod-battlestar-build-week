@@ -8,7 +8,9 @@ from pathlib import Path
 
 from blackpod_build_week.contracts import (
     CAPTAINS_LOG_SCHEMA_VERSION,
+    MISSION_SUMMARY_ARTIFACT_LINKS,
     MISSION_SUMMARY_SCHEMA_VERSION,
+    PRESENTATION_COMPONENT_STAGES,
     CaptainsLog,
     ComponentProvenance,
     ContractValidationError,
@@ -77,6 +79,37 @@ class MissionPresentationTests(unittest.TestCase):
         )
         self.assertEqual(result.mission_summary.modeldock.status, "NOT_RECORDED")
         self.assertEqual(
+            result.mission_summary.display_title, "BlackPod Mission: NVDA"
+        )
+        self.assertEqual(
+            result.mission_summary.subtitle, "REPLAY | INCOMPLETE | ORACLE"
+        )
+        self.assertEqual(
+            tuple(stage.stage for stage in result.mission_summary.ordered_stages),
+            PRESENTATION_COMPONENT_STAGES,
+        )
+        self.assertEqual(
+            tuple(
+                stage.display_state
+                for stage in result.mission_summary.ordered_stages
+            ),
+            (
+                "SUCCEEDED",
+                "NOT_STARTED",
+                "NOT_RECORDED",
+                "NOT_STARTED",
+                "NOT_STARTED",
+                "NOT_STARTED",
+                "NOT_STARTED",
+            ),
+        )
+        self.assertTrue(result.mission_summary.resumable)
+        self.assertEqual(result.mission_summary.event_count, 8)
+        self.assertEqual(
+            result.mission_summary.artifact_links,
+            MISSION_SUMMARY_ARTIFACT_LINKS,
+        )
+        self.assertEqual(
             tuple(entry.stage for entry in result.captain_log.entries),
             (
                 "HARBORMASTER",
@@ -142,6 +175,10 @@ class MissionPresentationTests(unittest.TestCase):
                 )
                 self.assertEqual(sha256_file(source_path), source.sha256)
                 self.assertEqual(source_path.stat().st_size, source.byte_size)
+        for stage in result.mission_summary.ordered_stages:
+            self.assertTrue(stage.artifact_paths)
+            for artifact_path in stage.artifact_paths:
+                self.assertFalse(Path(artifact_path).is_absolute())
 
     def test_identical_render_is_an_explicit_three_file_no_op(self) -> None:
         first = render_mission_presentation(
@@ -235,6 +272,37 @@ class MissionPresentationTests(unittest.TestCase):
         )
         malformed_summary = result.mission_summary.to_dict()
         malformed_summary["invented"] = True
+        with self.assertRaises(ContractValidationError):
+            MissionSummary.from_mapping(malformed_summary)
+
+        malformed_summary = result.mission_summary.to_dict()
+        malformed_summary["schema_version"] = "blackpod.mission_summary.v1"
+        with self.assertRaises(ContractValidationError):
+            MissionSummary.from_mapping(malformed_summary)
+
+        malformed_summary = result.mission_summary.to_dict()
+        malformed_summary["ordered_stages"][0]["artifact_paths"] = [
+            "/tmp/local-artifact.json"
+        ]
+        with self.assertRaises(ContractValidationError):
+            MissionSummary.from_mapping(malformed_summary)
+
+        malformed_summary = result.mission_summary.to_dict()
+        malformed_summary["ordered_stages"] = list(
+            reversed(malformed_summary["ordered_stages"])
+        )
+        with self.assertRaises(ContractValidationError):
+            MissionSummary.from_mapping(malformed_summary)
+
+        malformed_summary = result.mission_summary.to_dict()
+        malformed_summary["resumable"] = False
+        with self.assertRaises(ContractValidationError):
+            MissionSummary.from_mapping(malformed_summary)
+
+        malformed_summary = result.mission_summary.to_dict()
+        malformed_summary["artifact_links"]["mission_summary"] = (
+            "presentation/other.json"
+        )
         with self.assertRaises(ContractValidationError):
             MissionSummary.from_mapping(malformed_summary)
 
