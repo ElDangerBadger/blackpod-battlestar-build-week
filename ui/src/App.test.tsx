@@ -167,7 +167,23 @@ describe("Captain's Cabin", () => {
     expect(screen.getByRole("dialog", { name: "Navigator Ship View" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
     expect(screen.getAllByText(/Navigation levels not present/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/3D ocean unavailable; canonical chart shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/Latest captured bar:/i)).toBeInTheDocument();
     expect(screen.getByText(/Not Oracle evidence · SHADOW presentation only/i)).toBeInTheDocument();
+  });
+
+  it("closes the expanded Navigator with Escape and restores focus to its overview", async () => {
+    mockedLoadMissionBundle.mockResolvedValue(missionWithNavigatorMarket());
+    render(<App />);
+
+    const openShip = await screen.findByRole("button", { name: "Open Navigator ship view for AAPL" });
+    openShip.focus();
+    fireEvent.click(openShip);
+    expect(screen.getByRole("dialog", { name: "Navigator Ship View" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigator Ship View" })).not.toBeInTheDocument());
+    await waitFor(() => expect(openShip).toHaveFocus());
   });
 
   it("never presents a SHADOW plan when canonical Navigator plan state is absent", async () => {

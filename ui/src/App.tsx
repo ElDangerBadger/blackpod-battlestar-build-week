@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BookFocus } from "./books/BookFocus";
 import { buildBookDefinitions, type BookDefinition, type StageBookId } from "./books/bookPages";
@@ -6,7 +6,8 @@ import { BottomNavigation, type CabinDestination } from "./components/BottomNavi
 import { CaptainsLog } from "./components/CaptainsLog";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
-import { NavigatorShipView, type NavigatorShipData } from "./components/NavigatorShipView";
+import { NavigatorOceanBoundary } from "./components/NavigatorOceanBoundary";
+import { useReducedMotion } from "./components/navigator-ocean/useReducedMotion";
 import { ReplayControls } from "./components/ReplayControls";
 import { StatusPanel } from "./components/StatusPanel";
 import { SystemsPanel } from "./components/SystemsPanel";
@@ -14,6 +15,7 @@ import { loadMissionBundle, MissionBundleLoadError, type MissionBundle } from ".
 import { createMissionViewModel, type MissionViewModel } from "./data/viewModel";
 import { useReplayTheater } from "./replay/useReplayTheater";
 import { CabinScene } from "./scene/CabinScene";
+import type { NavigatorMarket } from "./contracts/cabinContext";
 
 export type PresentationMode = "DEMO" | "LIVE";
 
@@ -77,23 +79,30 @@ function MissionCabin({
   const [notice, setNotice] = useState<NoticeState>(null);
   const [activeDestination, setActiveDestination] = useState<CabinDestination>("bridge");
   const [shipFocused, setShipFocused] = useState(false);
+  const shipTriggerRef = useRef<HTMLButtonElement>(null);
+  const reducedMotion = useReducedMotion();
   const theater = useReplayTheater();
   const currentEntry = theater.revealCount > 0 ? mission.captainsLog[theater.revealCount - 1] : undefined;
+
+  const closeShipFocus = useCallback(() => {
+    setShipFocused(false);
+    queueMicrotask(() => shipTriggerRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setSelectedBookId(null);
       setNotice(null);
-      setShipFocused(false);
+      if (shipFocused) closeShipFocus();
       setActiveDestination("bridge");
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, []);
+  }, [closeShipFocus, shipFocused]);
 
   const selectedBook = selectedBookId === null ? undefined : books.find((book) => book.id === selectedBookId);
-  const shipData = useMemo<NavigatorShipData | null>(() => {
+  const shipData = useMemo(() => {
     if (!mission.market.navigatorMarket) return null;
     return mission.market.navigatorMarket;
   }, [mission.market.navigatorMarket]);
@@ -180,6 +189,7 @@ function MissionCabin({
           snapshotCount={mission.status.snapshotCount}
           revision={mission.status.snapshotCount}
           shipData={shipData}
+          triggerRef={shipTriggerRef}
           onOpenShip={() => setShipFocused(true)}
         />}
         paperOrder={navigatorRevealed
@@ -215,7 +225,16 @@ function MissionCabin({
           <ReplayControls theater={theater} announcement={announcement} />
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
           {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus} /> : null}
-          {shipFocused && shipData ? <NavigatorShipFocus data={shipData} onClose={() => setShipFocused(false)} /> : null}
+          {shipFocused && shipData ? (
+            <NavigatorShipFocus
+              data={shipData}
+              presentationMode={presentationMode}
+              runMode={mission.status.runMode}
+              capturedAt={mission.market.capturedAt}
+              reducedMotion={reducedMotion}
+              onClose={closeShipFocus}
+            />
+          ) : null}
         </>}
       />
     </main>
@@ -243,7 +262,21 @@ function PresentationModeControl({
   );
 }
 
-function NavigatorShipFocus({ data, onClose }: { data: NavigatorShipData; onClose: () => void }) {
+function NavigatorShipFocus({
+  data,
+  presentationMode,
+  runMode,
+  capturedAt,
+  reducedMotion,
+  onClose,
+}: {
+  data: NavigatorMarket;
+  presentationMode: PresentationMode;
+  runMode: "LIVE" | "REPLAY";
+  capturedAt: string | null;
+  reducedMotion: boolean;
+  onClose: () => void;
+}) {
   return (
     <div className="navigator-focus-layer" role="dialog" aria-modal="true" aria-labelledby="navigator-focus-title">
       <button className="book-focus-scrim" type="button" aria-label="Close Navigator ship view" onClick={onClose} />
@@ -253,9 +286,15 @@ function NavigatorShipFocus({ data, onClose }: { data: NavigatorShipData; onClos
             <p className="eyebrow">Supplemental read-only Navigator market reference</p>
             <h2 id="navigator-focus-title">Navigator Ship View</h2>
           </div>
-          <button type="button" onClick={onClose}>Return to bridge</button>
+          <button type="button" onClick={onClose} autoFocus>Return to bridge</button>
         </header>
-        <NavigatorShipView data={data} variant="interactive" />
+        <NavigatorOceanBoundary
+          data={data}
+          presentationMode={presentationMode}
+          runMode={runMode}
+          capturedAt={capturedAt}
+          reducedMotion={reducedMotion}
+        />
         <p className="focus-safety-line">Not Oracle evidence · SHADOW presentation only · no trade or order execution</p>
       </section>
     </div>

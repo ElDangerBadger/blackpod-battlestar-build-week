@@ -1,3 +1,5 @@
+import type { Ref } from "react";
+
 import type { MarketContextViewModel } from "../data/viewModel";
 import { NavigatorShipView, type NavigatorShipData } from "./NavigatorShipView";
 
@@ -47,17 +49,19 @@ export function MissionChart({
   snapshotCount,
   revision,
   shipData,
+  triggerRef,
   onOpenShip,
 }: {
   missionId: string;
   snapshotCount: number;
   revision: number;
   shipData: NavigatorShipData | null;
+  triggerRef?: Ref<HTMLButtonElement>;
   onOpenShip: () => void;
 }) {
   if (shipData) {
     return (
-      <button className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`}>
+      <button ref={triggerRef} className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`}>
         <span className="paper-title">Navigator reference chart · open</span>
         <NavigatorShipView data={shipData} variant="overview" />
       </button>
