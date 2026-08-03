@@ -167,7 +167,38 @@ describe("Captain's Cabin", () => {
     expect(screen.getByRole("dialog", { name: "Navigator Ship View" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
     expect(screen.getAllByText(/Navigation levels not present/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/3D ocean unavailable; canonical chart shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/Latest captured bar:/i)).toBeInTheDocument();
     expect(screen.getByText(/Not Oracle evidence · SHADOW presentation only/i)).toBeInTheDocument();
+  });
+
+  it("closes the expanded Navigator with Escape and restores focus to its overview", async () => {
+    mockedLoadMissionBundle.mockResolvedValue(missionWithNavigatorMarket());
+    render(<App />);
+
+    const openShip = await screen.findByRole("button", { name: "Open Navigator ship view for AAPL" });
+    openShip.focus();
+    fireEvent.click(openShip);
+    const dialog = screen.getByRole("dialog", { name: "Navigator Ship View" });
+    expect(dialog).toBeInTheDocument();
+
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ));
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) throw new Error("Navigator dialog must expose focusable controls");
+    expect(first).toHaveTextContent("Return to bridge");
+    last.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(first).toHaveFocus();
+    first.focus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigator Ship View" })).not.toBeInTheDocument());
+    await waitFor(() => expect(openShip).toHaveFocus());
   });
 
   it("never presents a SHADOW plan when canonical Navigator plan state is absent", async () => {

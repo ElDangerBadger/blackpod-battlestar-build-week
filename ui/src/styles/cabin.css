@@ -1027,6 +1027,25 @@ button.loose-paper:focus-visible {
   outline-offset: 0.16cqw;
 }
 
+.navigator-ocean-fallback {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.navigator-ocean-fallback > p {
+  margin: 0;
+  color: #5b3d22;
+  font-size: 0.72em;
+}
+
+.navigator-ocean-fallback .navigator-ship {
+  min-height: 0;
+}
+
 /* Reusable larger reading surface for a selected book. */
 .cabin-focus-layer {
   position: absolute;

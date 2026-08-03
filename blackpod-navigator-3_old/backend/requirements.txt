@@ -1,0 +1,18 @@
+# BlackPod Navigator — backend runtime dependencies
+# Pinned with compatible-release specifiers for reproducible production builds.
+
+# Web framework + ASGI server
+fastapi~=0.135.0
+uvicorn[standard]~=0.29.0
+
+# Settings / validation
+pydantic~=2.11
+pydantic-settings~=2.0
+
+# Rate limiting / abuse controls
+slowapi~=0.1.9
+
+# Market-data provider (yfinance implementation)
+yfinance~=1.5
+pandas~=2.3
+requests~=2.32

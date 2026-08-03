@@ -1,0 +1,10 @@
+{
+  "name": "blackpod-navigator",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:local": "cd frontend && bun run build:local",
+    "build": "cd frontend && bun run build",
+    "dev": "cd frontend && bun run dev"
+  }
+}
