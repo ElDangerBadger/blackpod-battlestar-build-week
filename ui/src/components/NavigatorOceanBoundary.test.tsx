@@ -101,6 +101,25 @@ describe("NavigatorOceanBoundary", () => {
     expect(LazyStub).toHaveBeenCalledWith(expect.objectContaining({ reducedMotion: true, data: market() }), undefined);
   });
 
+  it("preserves the provider, stale cache status and disclaimer in the SVG fallback", () => {
+    render(
+      <NavigatorOceanBoundary
+        {...baseProps}
+        data={{
+          ...market(),
+          data: { stale: true, age_seconds: 120.5, source: "disk", provider: "yfinance" },
+          disclaimer: "Educational visualization only. Data may be delayed.",
+        }}
+        capabilityProbe={() => false}
+      />,
+    );
+    expect(screen.getByLabelText("Navigator market provenance")).toHaveTextContent("Provider: yfinance");
+    expect(screen.getByLabelText("Navigator market provenance")).toHaveTextContent("STALE at capture");
+    expect(screen.getByLabelText("Navigator market provenance")).toHaveTextContent("Source: disk");
+    expect(screen.getByLabelText("Navigator market provenance")).toHaveTextContent("120.5s");
+    expect(screen.getByText("Educational visualization only. Data may be delayed.")).toBeInTheDocument();
+  });
+
   it("uses the SVG renderer for a valid single-observation history", () => {
     const loadView = vi.fn();
     const data = market();

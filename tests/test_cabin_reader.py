@@ -339,6 +339,25 @@ class CabinReaderTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(cabin_reader.UnsafePathError):
                 cabin_reader._read_file(self.root, path)
 
+    def test_live_reader_rejects_synthetic_market_even_with_valid_rehashed_context(self):
+        fixture = Path(__file__).resolve().parents[1] / "fixtures/cabin/aapl_navigator_market.live_capture.json"
+        value = json.loads(fixture.read_bytes())
+        value["data"] = {"stale": True, "age_seconds": 120.5, "source": "disk", "provider": "yfinance"}
+        source = canonical_json_bytes(value)
+        capture_cabin_context(self.store, mission_id=MISSION_ID, captured_at=OBSERVED_AT,
+                              market_bytes=source, market_transport=CaptureTransport.LOCAL_JSON,
+                              market_source_identity="reader-market-fixture", navigator_git_revision="a" * 40)
+        feed, _ = self.manifest()
+        self.assertEqual(self.reader.artifact(feed["publication_id"], "presentation/navigator_market.json"), source)
+        value["data"]["provider"] = "synthetic"
+        synthetic = canonical_json_bytes(value)
+        (self.root / "presentation/navigator_market.json").write_bytes(synthetic)
+        context_path = self.root / CABIN_CONTEXT_PATH
+        context = json.loads(context_path.read_bytes())
+        context["market_artifact"].update(sha256=sha256_bytes(synthetic), byte_size=len(synthetic))
+        context_path.write_bytes(canonical_json_bytes(context))
+        self.assertEqual(self.reader.current()["status"], "UNAVAILABLE")
+
     def test_reader_imports_no_orchestration_or_external_service_clients(self):
         tree = ast.parse(Path(cabin_reader.__file__).read_text())
         imports = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]

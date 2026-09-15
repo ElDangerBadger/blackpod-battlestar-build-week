@@ -152,6 +152,57 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.assertFalse(report.ready)
         self.assertEqual(report.issues[-1]["code"], "connection_failure")
 
+    def test_current_health_requires_real_inference_for_ready_and_busy_states(self) -> None:
+        for state in ("READY", "BUSY"):
+            with self.subTest(state=state):
+                current_health = {
+                    "status": "ok", "service": "modeldock", "version": "1.0.0",
+                    "state": state, "ready": True, "provider_available": True,
+                }
+                transport = QueueTransport([response(current_health), models(), smoke()])
+                report = self.run_preflight(transport)
+                self.assertTrue(report.ready)
+                self.assertTrue(report.health_ready)
+                self.assertTrue(report.inference_ready)
+                self.assertEqual(report.health_response, current_health)
+                self.assertEqual(len(transport.calls), 3)
+                self.assertEqual(transport.calls[-1]["method"], "POST")
+
+                failed_transport = QueueTransport([
+                    response(current_health), models(), ConnectionError("offline")
+                ])
+                failed = self.run_preflight(failed_transport)
+                self.assertTrue(failed.health_ready)
+                self.assertFalse(failed.inference_ready)
+                self.assertFalse(failed.ready)
+
+    def test_current_health_remains_strict_and_fail_closed(self) -> None:
+        current_health = {
+            "status": "ok", "service": "modeldock", "version": "1.0.0",
+            "state": "READY", "ready": True, "provider_available": True,
+        }
+        invalid_responses = [
+            {**current_health, "status": "degraded"},
+            {**current_health, "state": "STARTING"},
+            {**current_health, "state": []},
+            {**current_health, "ready": False},
+            {**current_health, "ready": 1},
+            {**current_health, "ready": "true"},
+            {**current_health, "provider_available": False},
+            {**current_health, "provider_available": 1},
+            {**current_health, "unexpected": True},
+            {key: value for key, value in current_health.items() if key != "state"},
+        ]
+        for candidate in invalid_responses:
+            with self.subTest(health=candidate):
+                transport = QueueTransport([response(candidate)])
+                report = self.run_preflight(transport)
+                self.assertFalse(report.health_ready)
+                self.assertFalse(report.inference_ready)
+                self.assertFalse(report.ready)
+                self.assertEqual(report.issues[-1]["code"], "health_contract_invalid")
+                self.assertEqual(len(transport.calls), 1)
+
     def test_mocked_smoke_fails_live_readiness(self) -> None:
         report = self.run_preflight(
             QueueTransport([health(), models(), smoke(mocked=True)])

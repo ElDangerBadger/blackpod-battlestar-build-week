@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { NavigatorMarketProvenance } from "../NavigatorMarketProvenance";
 import { HowToRead } from "./HowToRead";
 import { NavigatorOceanScene } from "./NavigatorOceanScene";
 import { projectNavigatorOcean } from "./projection";
@@ -120,7 +121,9 @@ export function NavigatorOceanView({
         <div className="navigator-ocean__ma-label" aria-hidden="true">MA{data.ma_period} bearing</div>
       </div>
 
-      <HowToRead maPeriod={data.ma_period} />
+      <HowToRead maPeriod={data.ma_period}>
+        <NavigatorMarketProvenance market={data} />
+      </HowToRead>
       <p className="navigator-ocean__authority">
         Market series is a captured Navigator reference artifact. Operational Navigator state remains in the Navigator book.
       </p>

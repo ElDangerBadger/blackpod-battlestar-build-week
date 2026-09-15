@@ -117,11 +117,25 @@ def run_modeldock_preflight(
             "/health",
         )
         service_reachable = True
-        if set(candidate_health) != {"status", "service", "version"} or (
+        legacy_health_fields = {"status", "service", "version"}
+        current_health_fields = legacy_health_fields | {
+            "state", "ready", "provider_available"
+        }
+        health_fields = set(candidate_health)
+        # ModelDock 1.0 adds explicit readiness to its health contract. Accept
+        # only the documented shapes, and do not promote a degraded runtime.
+        if health_fields not in (legacy_health_fields, current_health_fields) or (
             candidate_health.get("status") != "ok"
             or candidate_health.get("service") != "modeldock"
             or not isinstance(candidate_health.get("version"), str)
             or not candidate_health["version"]
+        ) or (
+            health_fields == current_health_fields
+            and (
+                candidate_health.get("state") not in ("READY", "BUSY")
+                or candidate_health.get("ready") is not True
+                or candidate_health.get("provider_available") is not True
+            )
         ):
             raise _PreflightIssue(
                 "health_contract_invalid",

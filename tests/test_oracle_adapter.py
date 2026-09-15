@@ -4,6 +4,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from blackpod_build_week.contracts import ContractValidationError, MissionRequest, RunMode
 from blackpod_build_week.contracts.mission_snapshot import OracleTransportKind, StageStatus
@@ -13,11 +15,14 @@ from blackpod_build_week.oracle_adapter import (
     ORACLE_REPLAY_SCHEMA_VERSION,
     ORACLE_SYMBOLS,
     OracleAdapter,
+    OracleAdapterValidationError,
     OracleMissionContext,
     OracleTransportRequest,
     OracleTransportTimeout,
     ProcessOracleTransport,
     ReplayOracleInput,
+    _live_yfinance,
+    _oracle_worker,
 )
 
 
@@ -134,6 +139,95 @@ class _RecordingTransport:
         if self.malformed:
             del result["run_id"]
         return result
+
+
+class LiveOracleCacheTests(unittest.TestCase):
+    def test_real_provider_configured_before_use_with_contained_runtime_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            provider = SimpleNamespace(set_tz_cache_location=Mock())
+            with patch(
+                "blackpod_build_week.oracle_adapter.importlib.import_module",
+                return_value=provider,
+            ) as imported:
+                self.assertIs(_live_yfinance(root), provider)
+            imported.assert_called_once_with("yfinance")
+            cache = root / "runtime/provider-cache"
+            provider.set_tz_cache_location.assert_called_once_with(str(cache))
+            self.assertTrue(cache.is_dir())
+            self.assertFalse((root / "oracle").exists())
+
+    def test_symlinked_cache_parent_target_or_database_rejected(self) -> None:
+        for target in ("runtime", "runtime/provider-cache", "runtime/provider-cache/cookies.db"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve() / "mission"
+                root.mkdir()
+                outside = root.parent / "outside"
+                outside.mkdir()
+                linked = root / target
+                linked.parent.mkdir(parents=True, exist_ok=True)
+                linked.symlink_to(outside, target_is_directory=True)
+                with patch("blackpod_build_week.oracle_adapter.importlib.import_module") as imported:
+                    with self.assertRaises(OracleAdapterValidationError):
+                        _live_yfinance(root)
+                imported.assert_not_called()
+                self.assertEqual(list(outside.iterdir()), [])
+
+    def test_provider_without_cache_configuration_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "blackpod_build_week.oracle_adapter.importlib.import_module",
+            return_value=SimpleNamespace(),
+        ):
+            with self.assertRaisesRegex(OracleAdapterValidationError, "cannot configure"):
+                _live_yfinance(Path(directory).resolve())
+
+    def test_worker_uses_real_provider_only_for_live_and_preserves_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            native_path = root / "blackpod/runtime/oracle_pipeline.py"
+            native_path.parent.mkdir(parents=True)
+            native_path.touch()
+            for mode in (RunMode.LIVE, RunMode.REPLAY):
+                with self.subTest(mode=mode):
+                    request = OracleTransportRequest(
+                        battlestar_path=root,
+                        mission_root=root,
+                        fleet_path="oracle/inputs/fleet.yaml",
+                        output_dir="oracle/attempt-0001",
+                        run_mode=mode,
+                        generated_at="2026-07-18T18:05:00Z" if mode is RunMode.REPLAY else None,
+                        replay_quotes=ReplayOracleInput.from_mapping(_replay_mapping()).quote_payload()
+                        if mode is RunMode.REPLAY else None,
+                    )
+                    result = _native_result(request)
+                    paths = result.pop("declared_paths")
+                    native = SimpleNamespace(
+                        __file__=str(native_path),
+                        run_oracle_pipeline=Mock(return_value=SimpleNamespace(**result, **paths)),
+                    )
+                    provider = object()
+                    sender = Mock()
+                    with (
+                        patch("blackpod_build_week.oracle_adapter._live_yfinance", return_value=provider) as setup,
+                        patch("blackpod_build_week.oracle_adapter.os.chdir"),
+                        patch("blackpod_build_week.oracle_adapter.sys.path", []),
+                        patch("blackpod_build_week.oracle_adapter.sys.dont_write_bytecode", False),
+                        patch("blackpod_build_week.oracle_adapter.importlib.import_module", return_value=native),
+                    ):
+                        _oracle_worker(sender, request)
+                    self.assertTrue(sender.send.call_args.args[0]["ok"])
+                    sender.close.assert_called_once_with()
+                    arguments = native.run_oracle_pipeline.call_args.kwargs
+                    self.assertEqual(arguments["generated_at"], request.generated_at)
+                    if mode is RunMode.LIVE:
+                        setup.assert_called_once_with(root)
+                        self.assertIs(arguments["yf_module"], provider)
+                    else:
+                        setup.assert_not_called()
+                        self.assertEqual(
+                            arguments["yf_module"].Ticker("SPY").fast_info,
+                            request.replay_quotes["SPY"],
+                        )
 
 
 class ReplayOracleInputTests(unittest.TestCase):

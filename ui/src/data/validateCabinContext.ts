@@ -293,9 +293,27 @@ function parseMarketPoint(value: unknown, index: number): NavigatorMarketPoint {
   };
 }
 
-export function parseNavigatorMarket(value: unknown, expectedSymbol?: string): NavigatorMarket {
+export function parseNavigatorMarket(value: unknown, expectedSymbol?: string, runMode?: RunMode): NavigatorMarket {
   const item = objectValue(value, "Navigator market response");
-  exactKeys(item, ["symbol", "name", "category", "timeframe", "ma_period", "currency", "points", "summary"], [], "Navigator market response");
+  exactKeys(item, ["symbol", "name", "category", "timeframe", "ma_period", "currency", "points", "summary"], ["disclaimer", "data"], "Navigator market response");
+  const metadata: Pick<NavigatorMarket, "disclaimer" | "data"> = {};
+  if ("disclaimer" in item) metadata.disclaimer = text(item.disclaimer, "Navigator market disclaimer", 4096);
+  if ("data" in item) {
+    const data = objectValue(item.data, "Navigator market data");
+    exactKeys(data, ["stale", "age_seconds", "source", "provider"], [], "Navigator market data");
+    if (typeof data.stale !== "boolean") {
+      throw new PresentationContractError("Navigator market data.stale must be a boolean");
+    }
+    metadata.data = {
+      stale: data.stale,
+      age_seconds: finiteNumber(data.age_seconds, "Navigator market data.age_seconds", { nonnegative: true }),
+      source: enumValue(data.source, ["memory", "disk", "provider"] as const, "Navigator market data.source"),
+      provider: enumValue(data.provider, ["yfinance", "synthetic"] as const, "Navigator market data.provider"),
+    };
+    if (runMode === "LIVE" && metadata.data.provider === "synthetic") {
+      throw new PresentationContractError("LIVE Navigator market capture may not use synthetic data");
+    }
+  }
   const symbol = text(item.symbol, "Navigator market symbol", 64);
   if (expectedSymbol !== undefined && symbol !== expectedSymbol) {
     throw new PresentationContractError("Navigator market symbol does not match the mission request");
@@ -356,6 +374,7 @@ export function parseNavigatorMarket(value: unknown, expectedSymbol?: string): N
     currency: parsedCurrency,
     points,
     summary,
+    ...metadata,
   };
 }
 

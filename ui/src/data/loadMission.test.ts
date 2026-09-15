@@ -89,6 +89,8 @@ describe("optional cabin presentation supplements", () => {
       timeframe: "1d",
       ma_period: 250,
       currency: "USD",
+      disclaimer: "Educational visualization only. Data may be delayed.",
+      data: { stale: true, age_seconds: 120.5, source: "disk", provider: "yfinance" },
       points: [
         { t: 100, o: 190, h: 192, l: 189, c: 191, v: 1000, ma: null, atr: null },
         { t: 200, o: 191, h: 194, l: 190, c: 193, v: 1200, ma: 188, atr: 3 },
@@ -116,7 +118,7 @@ describe("optional cabin presentation supplements", () => {
       cash: 8000,
       positions: [{ symbol: "AAPL", quantity: 10, allocation_percent: 19.3 }],
     };
-    const marketPayload = `${JSON.stringify(market)}\n`;
+    let marketPayload = `${JSON.stringify(market)}\n`;
     const portfolioPayload = `${JSON.stringify(portfolio)}\n`;
     const context = {
       schema_version: "blackpod.cabin_context.v1",
@@ -172,6 +174,8 @@ describe("optional cabin presentation supplements", () => {
 
     expect(loaded.cabinContext?.capture_provenance.market.status).toBe("CAPTURED");
     expect(loaded.navigatorMarket?.summary.last_price).toBe(193);
+    expect(loaded.navigatorMarket?.data).toEqual(market.data);
+    expect(loaded.navigatorMarket?.disclaimer).toBe(market.disclaimer);
     expect(loaded.portfolio?.source_identity).toBe("local-paper-ledger");
 
     const replayContext = { ...context, run_mode: "REPLAY" };
@@ -193,6 +197,13 @@ describe("optional cabin presentation supplements", () => {
       { ...correlation, run_mode: "REPLAY" },
       replayFetch as typeof fetch,
     )).rejects.toThrow(/portfolio mode must be LIVE for LIVE missions and FROZEN for REPLAY/);
+
+    // Valid byte hashes do not make an explicitly synthetic series LIVE.
+    marketPayload = `${JSON.stringify({ ...market, data: { ...market.data, provider: "synthetic" } })}\n`;
+    context.market_artifact.sha256 = await digest(marketPayload);
+    context.market_artifact.byte_size = new TextEncoder().encode(marketPayload).byteLength;
+    await expect(loadCabinPresentationSupplements("./demo/live", correlation, fetchImpl as typeof fetch))
+      .rejects.toThrow(/may not use synthetic/);
   });
 
   it("rejects corrupted referenced bytes instead of falling back", async () => {

@@ -1,8 +1,11 @@
+import type { ReactNode } from "react";
+
 type HowToReadProps = Readonly<{
   maPeriod: number;
+  children?: ReactNode;
 }>;
 
-export function HowToRead({ maPeriod }: HowToReadProps) {
+export function HowToRead({ maPeriod, children }: HowToReadProps) {
   return (
     <aside className="navigator-ocean__how-to" aria-label="How to read the Navigator ocean">
       <strong>How to read this sea chart</strong>
@@ -13,6 +16,7 @@ export function HowToRead({ maPeriod }: HowToReadProps) {
         <li><i className="legend-sea" aria-hidden="true" />Sea state: supplied volatility class.</li>
       </ul>
       <p>Wake color compares each supplied close with its supplied MA. It is presentation context, not a trade signal.</p>
+      {children}
     </aside>
   );
 }

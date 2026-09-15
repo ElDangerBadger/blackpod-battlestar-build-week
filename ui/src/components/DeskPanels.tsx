@@ -26,6 +26,7 @@ function warningForDesk(warning: string): string {
 }
 
 export function MarketConditions({ symbol, market }: { symbol: string; market: MarketContextViewModel }) {
+  const providerData = market.navigatorMarket?.data;
   return (
     <section className="loose-paper market-copy" aria-label="Supplemental Navigator market reference">
       <span className="paper-title">Navigator reference tape</span>
@@ -40,6 +41,7 @@ export function MarketConditions({ symbol, market }: { symbol: string; market: M
         </dl>
       ) : <p>Security-specific market tape is not present in this mission artifact.</p>}
       <p className="market-source">Supplemental; not Oracle evidence. Market status: {market.marketStatus ?? "not recorded"}.</p>
+      {providerData ? <p className="market-source">{providerData.provider} · {providerData.stale ? "STALE at capture" : "captured reference"} · {providerData.source}</p> : null}
     </section>
   );
 }

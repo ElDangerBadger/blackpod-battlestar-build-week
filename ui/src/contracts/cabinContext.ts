@@ -42,6 +42,15 @@ export interface NavigatorMarket {
   currency: string;
   points: NavigatorMarketPoint[];
   summary: NavigatorMarketSummary;
+  /** Optional in older captures. Absence is unknown provenance, not a live feed. */
+  disclaimer?: string;
+  data?: {
+    stale: boolean;
+    /** Provider cache age at capture, not the age of the latest price bar. */
+    age_seconds: number;
+    source: "memory" | "disk" | "provider";
+    provider: "yfinance" | "synthetic";
+  };
 }
 
 export interface PortfolioPosition {

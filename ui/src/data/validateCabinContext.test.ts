@@ -125,4 +125,39 @@ describe("Stage 4 presentation supplement contracts", () => {
       positions: [{ ...value.positions[0], broker_action: "SUBMIT_ORDER" }],
     })).toThrow(/unknown broker_action/);
   });
+
+  it("preserves supplied provider/cache metadata and disclaimer without changing recorded bars", () => {
+    const supplied = {
+      ...market(),
+      disclaimer: "Educational visualization only. Data may be delayed.",
+      data: { stale: true, age_seconds: 120.5, source: "disk", provider: "yfinance" },
+    };
+    expect(parseNavigatorMarket(supplied, "AAPL", "LIVE")).toEqual(supplied);
+    expect(parseNavigatorMarket(market(), "AAPL", "LIVE")).not.toHaveProperty("data");
+    expect(parseNavigatorMarket(market(), "AAPL", "LIVE")).not.toHaveProperty("disclaimer");
+  });
+
+  it.each([
+    { stale: "false" }, { age_seconds: -1 }, { age_seconds: true },
+    { age_seconds: Infinity }, { source: "broker" }, { provider: "unknown" }, { execution: true },
+  ])("rejects malformed Navigator metadata %j", (changed) => {
+    expect(() => parseNavigatorMarket({
+      ...market(),
+      data: { stale: false, age_seconds: 0, source: "provider", provider: "yfinance", ...changed },
+    })).toThrow();
+  });
+
+  it("rejects synthetic data for LIVE but permits explicitly recorded replay and stale metadata", () => {
+    const synthetic = {
+      ...market(), data: { stale: false, age_seconds: 0, source: "provider", provider: "synthetic" },
+    };
+    expect(() => parseNavigatorMarket(synthetic, "AAPL", "LIVE")).toThrow(/may not use synthetic/);
+    expect(parseNavigatorMarket(synthetic, "AAPL", "REPLAY")).toEqual(synthetic);
+    for (const data of [null, {}, { provider: "yfinance" }]) {
+      expect(() => parseNavigatorMarket({ ...market(), data })).toThrow();
+    }
+    for (const disclaimer of [null, "", "unsafe\ntext", "x".repeat(4097)]) {
+      expect(() => parseNavigatorMarket({ ...market(), disclaimer })).toThrow();
+    }
+  });
 });

@@ -20,7 +20,7 @@ from blackpod_build_week.cabin_context import (
     capture_cabin_context,
     fetch_navigator_market,
 )
-from blackpod_build_week.contracts import ContractValidationError, MissionRequest
+from blackpod_build_week.contracts import ContractValidationError, MissionRequest, RunMode
 from blackpod_build_week.hashing import sha256_bytes
 from blackpod_build_week.mission_store import MissionStore
 
@@ -167,6 +167,57 @@ class CabinContextTests(unittest.TestCase):
         invalid["cash"] = -1
         with self.assertRaisesRegex(ContractValidationError, "nonnegative"):
             PortfolioSnapshot.from_mapping(invalid)
+
+    def test_preserves_navigator_v3_metadata_and_exact_capture_bytes(self) -> None:
+        value = {
+            **market_value(),
+            "disclaimer": "Educational visualization only. Data may be delayed.",
+            "data": {"stale": True, "age_seconds": 120.5, "source": "disk", "provider": "yfinance"},
+        }
+        self.assertEqual(
+            NavigatorMarket.from_mapping(value, expected_symbol="AAPL", run_mode=RunMode.LIVE).to_dict(),
+            value,
+        )
+        source = (json.dumps(value, indent=1) + "\n").encode()
+        capture_cabin_context(
+            self.store,
+            mission_id=self.initialized.snapshot.mission_id,
+            captured_at=CAPTURED_AT,
+            market_bytes=source,
+            market_transport=CaptureTransport.LOCAL_JSON,
+            market_source_identity="navigator-yfinance-aapl",
+            navigator_git_revision=REVISION,
+        )
+        self.assertEqual((self.initialized.paths.mission_root / NAVIGATOR_MARKET_PATH).read_bytes(), source)
+
+    def test_navigator_metadata_is_strict_and_synthetic_is_not_live(self) -> None:
+        data = {"stale": False, "age_seconds": 0, "source": "provider", "provider": "yfinance"}
+        for change in (
+            {"stale": "false"}, {"age_seconds": -1}, {"age_seconds": True},
+            {"age_seconds": float("inf")}, {"source": "broker"},
+            {"provider": "unknown"}, {"execution": True},
+        ):
+            with self.subTest(change=change), self.assertRaises(ContractValidationError):
+                NavigatorMarket.from_mapping({**market_value(), "data": {**data, **change}})
+        for metadata in (None, {}, {"provider": "yfinance"}):
+            with self.subTest(metadata=metadata), self.assertRaises(ContractValidationError):
+                NavigatorMarket.from_mapping({**market_value(), "data": metadata})
+        for disclaimer in (None, "", "unsafe\ntext", "x" * 4097):
+            with self.subTest(disclaimer=disclaimer), self.assertRaises(ContractValidationError):
+                NavigatorMarket.from_mapping({**market_value(), "disclaimer": disclaimer})
+        synthetic = {**market_value(), "data": {**data, "provider": "synthetic"}}
+        self.assertEqual(NavigatorMarket.from_mapping(synthetic, run_mode=RunMode.REPLAY).to_dict(), synthetic)
+        with self.assertRaisesRegex(ContractValidationError, "may not use synthetic"):
+            capture_cabin_context(
+                self.store,
+                mission_id=self.initialized.snapshot.mission_id,
+                captured_at=CAPTURED_AT,
+                market_bytes=json.dumps(synthetic).encode(),
+                market_transport=CaptureTransport.LOCAL_JSON,
+                market_source_identity="navigator-synthetic-aapl",
+                navigator_git_revision=REVISION,
+            )
+        self.assertFalse((self.initialized.paths.mission_root / NAVIGATOR_MARKET_PATH).exists())
 
     def test_portfolio_capture_mode_must_match_mission_transport(self) -> None:
         replay_request = MissionRequest.from_mapping(

@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { NavigatorShipView } from "./NavigatorShipView";
+import { NavigatorMarketProvenance } from "./NavigatorMarketProvenance";
 import type { NavigatorOceanViewProps } from "./navigator-ocean/NavigatorOceanView";
 
 type OceanModule = { default: ComponentType<NavigatorOceanViewProps> };
@@ -61,6 +62,7 @@ function OceanFallback({ props, reason }: { props: NavigatorOceanViewProps; reas
         <p>Final supplied MA{props.data.ma_period}: unavailable. No value was inferred or substituted.</p>
       ) : null}
       <NavigatorShipView data={props.data} variant="interactive" />
+      <NavigatorMarketProvenance market={props.data} />
     </section>
   );
 }

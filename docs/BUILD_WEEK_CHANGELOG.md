@@ -5,6 +5,35 @@ changes. It is not the upstream Battlestar or ModelDock changelog; both sibling
 repositories remain read-only. The [product specification](PRODUCT_SPEC.md)
 now governs scope.
 
+## 2026-09-15 — Initial LIVE data capture and compatibility
+
+- Acquired a real canonical Oracle market snapshot and 751 AAPL daily bars
+  using Battlestar's Navigator provider. Created a new local LIVE mission;
+  preserved the prior July evidence unchanged. The read-only Cabin now follows
+  `mission-live-aapl-20260915-001` under `artifacts/initial-live-20260915`.
+- Accepted current Navigator V3 provider/cache metadata and disclaimer without
+  rewriting captured bytes, prices, or presentation contracts. Explicit
+  synthetic data is rejected in LIVE capture, reader, and browser validation.
+  Expanded V3 and SVG fallback expose supplied provenance; provider cache age
+  is not presented as streaming quote freshness.
+- Contained Oracle's real yfinance runtime caches within the Build Week mission
+  directory. Canonical Battlestar and ModelDock remain unmodified.
+- Updated the ModelDock preflight consumer for the documented readiness fields,
+  retaining the strict pinned, local, non-mocked deep-inference check.
+- Real Gemma inference passed preflight but failed the subsequent narrative
+  contract. The mission correctly stopped at Oracle enrichment, revision 5,
+  `FAILED`; Council and Governor did not run. Their explicit no-trade inputs
+  remain staged. No operator approval, orders, broker calls, or portfolio
+  changes were made. The independently captured Navigator chart remains usable.
+- Preserved failed evidence and documented the remaining narrative prompt/
+  diagnostics work in the live runbook. No synthetic commentary or approved
+  demo replaced the failed result. Portfolio context remains unconfigured.
+
+Acceptance: 506 backend tests, 144 UI tests, and 13 browser checks passed.
+Normal production build excludes demo assets; the 19-file canonical renderer
+drift check passes. The actual local reader verifies the new LIVE evidence.
+These are captured observations, not a continuous producer or streaming feed.
+
 ## 2026-09-15 — Live read-only product transition
 
 - Retired the demo specification as governing product scope. Preserved the old

@@ -242,7 +242,7 @@ def _capture_context(loaded: LoadedMission, files: dict[str, bytes]) -> None:
     if context.market_artifact is not None:
         market = _read_file(root, context.market_artifact.path)
         _verify_reference(context.market_artifact, market)
-        NavigatorMarket.from_bytes(market, expected_symbol=loaded.request.symbol)
+        NavigatorMarket.from_bytes(market, expected_symbol=loaded.request.symbol, run_mode=RunMode.LIVE)
         files[context.market_artifact.path] = market
     if context.portfolio_artifact is not None:
         portfolio = _read_file(root, context.portfolio_artifact.path)

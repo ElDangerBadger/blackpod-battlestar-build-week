@@ -60,6 +60,8 @@ _MARKET_FIELDS = {
     "points",
     "summary",
 }
+_MARKET_OPTIONAL_FIELDS = {"disclaimer", "data"}
+_MARKET_DATA_FIELDS = {"stale", "age_seconds", "source", "provider"}
 _POINT_FIELDS = {"t", "o", "h", "l", "c", "v", "ma", "atr"}
 _SUMMARY_FIELDS = {
     "last_price",
@@ -222,11 +224,39 @@ class NavigatorMarket:
 
     @classmethod
     def from_mapping(
-        cls, value: Mapping[str, Any], *, expected_symbol: str | None = None
+        cls,
+        value: Mapping[str, Any],
+        *,
+        expected_symbol: str | None = None,
+        run_mode: RunMode | None = None,
     ) -> "NavigatorMarket":
         if not isinstance(value, Mapping):
             raise ContractValidationError("Navigator market response must be an object")
-        _require_fields(value, required=_MARKET_FIELDS, name="Navigator market response")
+        _require_fields(
+            value,
+            required=_MARKET_FIELDS,
+            optional=_MARKET_OPTIONAL_FIELDS,
+            name="Navigator market response",
+        )
+        # Navigator V3 adds provider/cache provenance. Preserve older recorded
+        # responses without inventing metadata, but never accept synthetic bars
+        # as a LIVE capture when the upstream explicitly identifies them.
+        if "disclaimer" in value:
+            _text(value["disclaimer"], "Navigator market disclaimer", max_length=4096)
+        if "data" in value:
+            data = value["data"]
+            if not isinstance(data, Mapping):
+                raise ContractValidationError("Navigator market data must be an object")
+            _require_fields(data, required=_MARKET_DATA_FIELDS, name="Navigator market data")
+            if not isinstance(data["stale"], bool):
+                raise ContractValidationError("Navigator market data.stale must be a boolean")
+            _finite_number(data["age_seconds"], "Navigator market data.age_seconds", nonnegative=True)
+            if data["source"] not in ("memory", "disk", "provider"):
+                raise ContractValidationError("Navigator market data.source is unsupported")
+            if data["provider"] not in ("yfinance", "synthetic"):
+                raise ContractValidationError("Navigator market data.provider is unsupported")
+            if run_mode is RunMode.LIVE and data["provider"] == "synthetic":
+                raise ContractValidationError("LIVE Navigator market capture may not use synthetic data")
 
         symbol = _text(value["symbol"], "Navigator market symbol", max_length=64)
         if expected_symbol is not None and symbol != expected_symbol:
@@ -318,13 +348,18 @@ class NavigatorMarket:
 
     @classmethod
     def from_bytes(
-        cls, source: bytes, *, expected_symbol: str | None = None
+        cls,
+        source: bytes,
+        *,
+        expected_symbol: str | None = None,
+        run_mode: RunMode | None = None,
     ) -> "NavigatorMarket":
         return cls.from_mapping(
             parse_strict_json_object_bytes(
                 source, document_name="Navigator market response"
             ),
             expected_symbol=expected_symbol,
+            run_mode=run_mode,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -903,7 +938,11 @@ def capture_cabin_context(
     if market_bytes is not None:
         if not isinstance(market_bytes, bytes):
             raise ContractValidationError("market source must be bytes")
-        NavigatorMarket.from_bytes(market_bytes, expected_symbol=loaded.request.symbol)
+        NavigatorMarket.from_bytes(
+            market_bytes,
+            expected_symbol=loaded.request.symbol,
+            run_mode=loaded.request.run_mode,
+        )
         try:
             parsed_market_transport = CaptureTransport(market_transport)
         except (TypeError, ValueError) as exc:

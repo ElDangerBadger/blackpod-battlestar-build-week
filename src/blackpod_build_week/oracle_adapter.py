@@ -857,7 +857,7 @@ def _oracle_worker(sender: Any, request: OracleTransportRequest) -> None:
         elif request.run_mode is RunMode.LIVE:
             if request.replay_quotes is not None or request.generated_at is not None:
                 raise RuntimeError("LIVE worker may not receive replay input")
-            yf_module = None
+            yf_module = _live_yfinance(request.mission_root)
             generated_at = None
         else:  # pragma: no cover - RunMode prevents this in the parent
             raise RuntimeError("unsupported Oracle run mode")
@@ -892,6 +892,41 @@ def _oracle_worker(sender: Any, request: OracleTransportRequest) -> None:
         )
     finally:
         sender.close()
+
+
+def _live_yfinance(mission_root: Path) -> Any:
+    """Keep the real provider's mutable caches out of source/evidence trees.
+
+    yfinance normally writes timezone, cookie, and ISIN databases to the user's
+    cache directory. Configure its public cache hook before any ticker fetch;
+    these runtime files are deliberately outside the immutable Oracle outputs.
+    """
+
+    root = Path(mission_root)
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        raise OracleAdapterValidationError("provider cache requires a safe mission root")
+    root = root.resolve(strict=True)
+    cache = root
+    for part in ("runtime", "provider-cache"):
+        cache = cache / part
+        if cache.is_symlink():
+            raise OracleAdapterValidationError("provider cache may not contain symbolic links")
+        cache.mkdir(mode=0o700, exist_ok=True)
+        if (
+            cache.is_symlink()
+            or not cache.is_dir()
+            or not _is_relative_to(cache.resolve(strict=True), root)
+        ):
+            raise OracleAdapterValidationError("provider cache must remain inside the mission")
+    for item in cache.rglob("*"):
+        if item.is_symlink() or not (item.is_dir() or item.is_file()):
+            raise OracleAdapterValidationError("provider cache contains an unsafe entry")
+    provider = importlib.import_module("yfinance")
+    configure_cache = getattr(provider, "set_tz_cache_location", None)
+    if not callable(configure_cache):
+        raise OracleAdapterValidationError("yfinance cannot configure a contained provider cache")
+    configure_cache(str(cache))
+    return provider
 
 
 def _require_exact_fields(

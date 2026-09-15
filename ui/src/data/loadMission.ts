@@ -272,7 +272,7 @@ export async function loadCabinPresentationSupplements(
         "Navigator market",
       ).then(async (loaded) => {
         await verifyReference(loaded, cabinContext.market_artifact!, "Navigator market");
-        return parseNavigatorMarket(loaded.document, cabinContext.symbol);
+        return parseNavigatorMarket(loaded.document, cabinContext.symbol, cabinContext.run_mode);
       }),
     cabinContext.portfolio_artifact === null
       ? Promise.resolve(null)
