@@ -274,8 +274,8 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
     },
     warnings: summary.important_warnings,
     revisions: {
-      buildWeek: manifest.build_week_revision,
-      battlestar: manifest.battlestar_revision,
+      buildWeek: manifest.build_week_revision ?? "Not recorded",
+      battlestar: manifest.battlestar_revision ?? "Not recorded",
       modeldock: manifest.modeldock_revision_or_service_identity,
     },
     eventCount: summary.event_count,
@@ -292,6 +292,9 @@ function unixSecondsToIso(value: number): string | null {
 }
 
 function modeldockAvailability(mode: string, status: string, mocked: boolean | null, provider: string | null): string {
+  if (status === "NOT_RECORDED") return "NO INFERENCE RECORDED";
+  if (status === "RUNNING") return "INFERENCE RUNNING AT MISSION TIME";
+  if (status === "FAILED") return "INFERENCE FAILED AT MISSION TIME";
   if (status !== "SUCCEEDED") return "INFERENCE NOT VERIFIED";
   if (mode === "LIVE" && mocked === false && provider === "mlx") return "LOCAL INFERENCE VERIFIED AT MISSION TIME";
   if (mode === "REPLAYED") return "FROZEN INFERENCE PROVENANCE";

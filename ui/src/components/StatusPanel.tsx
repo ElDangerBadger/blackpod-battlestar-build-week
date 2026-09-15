@@ -45,7 +45,7 @@ export function StatusPanel(props: StatusPanelProps) {
         className="status-count"
         label="Timeframe"
         value={props.timeframe ?? "N/A"}
-        detail={`${props.snapshotCount} snapshots`}
+        detail={`${props.snapshotCount} ${props.snapshotCount === 1 ? "snapshot" : "snapshots"}`}
       />
       <StatusCell
         className="status-mission"
@@ -88,7 +88,7 @@ function StatusCell({ className, label, value, detail, title }: { className: str
 }
 
 function formatClock(timestamp: string): string {
-  const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2})?Z$/);
+  const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/);
   return match ? `${match[1]} UTC` : timestamp;
 }
 

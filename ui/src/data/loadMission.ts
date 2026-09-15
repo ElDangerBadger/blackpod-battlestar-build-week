@@ -1,7 +1,7 @@
 import type {
   ArtifactReference,
   CaptainsLogV1,
-  DemoManifestV1,
+  MissionManifest,
   JsonObject,
   MissionSnapshotV1,
   MissionSummaryV2,
@@ -17,6 +17,7 @@ import {
   isMissionRelativePath,
   parseCaptainsLog,
   parseDemoManifest,
+  parsePresentationManifest,
   parseMissionSnapshot,
   parseMissionSummary,
   validateMissionBundleContracts,
@@ -78,7 +79,7 @@ export interface MissionBundle {
   baseUrl: string;
   summary: MissionSummaryV2;
   captainsLog: CaptainsLogV1;
-  manifest: DemoManifestV1;
+  manifest: MissionManifest;
   snapshot: MissionSnapshotV1;
   artifactIndex: ReadonlyMap<string, ArtifactReference>;
   evidence: ReadonlyMap<MissionEvidenceName, MissionEvidence>;
@@ -96,6 +97,11 @@ export interface CabinPresentationSupplements {
 
 export interface LoadMissionBundleOptions {
   fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+  /** Legacy replay fixtures retain their original explicit manifest contract. */
+  manifestKind?: "demo" | "live";
+  /** Live publications are addressed by the digest of their manifest bytes. */
+  expectedManifestSha256?: string;
   /** When true, a referenced but unavailable detail artifact rejects loading. */
   strictEvidence?: boolean;
 }
@@ -237,12 +243,13 @@ export async function loadCabinPresentationSupplements(
   baseUrl: string,
   correlation: CabinMissionCorrelation,
   fetchImpl: typeof fetch = globalThis.fetch,
+  expectedContext?: ArtifactReference,
 ): Promise<CabinPresentationSupplements> {
   if (typeof fetchImpl !== "function") {
     throw new PresentationContractError("fetch is unavailable in this browser");
   }
   const normalizedBase = normalizeBaseUrl(baseUrl);
-  const contextLoaded = await fetchOptionalJson(
+  const contextLoaded = await (expectedContext ? fetchJson : fetchOptionalJson)(
     fetchImpl,
     missionRelativeUrl(normalizedBase, "presentation/cabin_context.json"),
     "cabin context",
@@ -250,8 +257,12 @@ export async function loadCabinPresentationSupplements(
   if (contextLoaded === null) {
     return { cabinContext: null, navigatorMarket: null, portfolio: null };
   }
+  if (expectedContext) await verifyReference(contextLoaded, expectedContext, "cabin context");
 
   const cabinContext = parseCabinContext(contextLoaded.document, correlation);
+  if (expectedContext && expectedContext.observed_at !== cabinContext.captured_at) {
+    throw new PresentationContractError("cabin context capture time conflicts with its publication reference");
+  }
   const [navigatorMarket, portfolio] = await Promise.all([
     cabinContext.market_artifact === null
       ? Promise.resolve(null)
@@ -338,17 +349,28 @@ export async function loadMissionBundle(
   options: LoadMissionBundleOptions = {},
 ): Promise<MissionBundle> {
   const normalizedBase = normalizeBaseUrl(baseUrl);
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
+  const transport = options.fetchImpl ?? globalThis.fetch;
+  if (typeof transport !== "function") {
     throw new PresentationContractError("fetch is unavailable in this browser");
+  }
+  const fetchImpl: typeof fetch = options.signal
+    ? (input, init) => transport(input, { ...init, signal: options.signal })
+    : transport;
+
+  const isLive = options.manifestKind === "live";
+  if (isLive && !/^[0-9a-f]{64}$/.test(options.expectedManifestSha256 ?? "")) {
+    throw new PresentationContractError("live publication requires its manifest SHA-256");
   }
 
   const manifestLoaded = await fetchJson(
     fetchImpl,
-    missionRelativeUrl(normalizedBase, "presentation/demo_manifest.json"),
-    "demo manifest",
+    missionRelativeUrl(normalizedBase, isLive ? "presentation/manifest.json" : "presentation/demo_manifest.json"),
+    "presentation manifest",
   );
-  const manifest = parseDemoManifest(manifestLoaded.document);
+  if (options.expectedManifestSha256 && await sha256(manifestLoaded.bytes) !== options.expectedManifestSha256) {
+    throw new PresentationContractError("manifest SHA-256 does not match its publication ID");
+  }
+  const manifest = isLive ? parsePresentationManifest(manifestLoaded.document) : parseDemoManifest(manifestLoaded.document);
 
   const [summaryLoaded, snapshotLoaded] = await Promise.all([
     fetchJson(fetchImpl, missionRelativeUrl(normalizedBase, manifest.mission_summary.path), "mission summary"),
@@ -364,7 +386,7 @@ export async function loadMissionBundle(
   } catch (error) {
     const fallbackMarkdown = await loadCaptainsLogMarkdownFallback(normalizedBase, fetchImpl);
     throw new MissionBundleLoadError(
-      `${sanitizedLoadMessage(error)}; canonical Captain's Log JSON is required by the demo manifest`,
+      `${sanitizedLoadMessage(error)}; canonical Captain's Log JSON is required by the presentation manifest`,
       fallbackMarkdown,
     );
   }
@@ -379,12 +401,27 @@ export async function loadMissionBundle(
   const snapshot = parseMissionSnapshot(snapshotLoaded.document);
   validateMissionBundleContracts({ summary, captainsLog, manifest, snapshot });
 
-  const supplements = await loadCabinPresentationSupplements(normalizedBase, {
-    mission_id: summary.mission_id,
-    request_id: summary.request_id,
-    symbol: summary.symbol,
-    run_mode: summary.run_mode,
-  }, fetchImpl);
+  if (isLive) {
+    // Prove the summary and log derive from the immutable source revision,
+    // rather than merely trusting a mutable mission_snapshot.json alias.
+    const immutable = await fetchJson(fetchImpl,
+      missionRelativeUrl(normalizedBase, summary.generated_from_snapshot.path), "immutable snapshot");
+    await Promise.all([
+      verifyReference(immutable, summary.generated_from_snapshot, "summary source snapshot"),
+      verifyReference(immutable, captainsLog.generated_from_snapshot, "log source snapshot"),
+      verifyReference(immutable, manifest.final_snapshot, "immutable final snapshot"),
+    ]);
+  }
+
+  const expectedContext = "cabin_context" in manifest ? manifest.cabin_context : undefined;
+  const supplements = isLive && !expectedContext
+    ? { cabinContext: null, navigatorMarket: null, portfolio: null }
+    : await loadCabinPresentationSupplements(normalizedBase, {
+      mission_id: summary.mission_id,
+      request_id: summary.request_id,
+      symbol: summary.symbol,
+      run_mode: summary.run_mode,
+    }, fetchImpl, expectedContext);
 
   const artifactIndex = new Map(snapshot.artifacts.map((reference) => [reference.name, reference]));
   const evidenceValues = await Promise.all(

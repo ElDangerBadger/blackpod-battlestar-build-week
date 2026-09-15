@@ -1,7 +1,41 @@
 # Build Week Changelog
 
-This document records submission-scope changes. It is not the upstream
-Battlestar or ModelDock changelog; both sibling repositories remain read-only.
+This document retains Build Week history and records subsequent Cabin product
+changes. It is not the upstream Battlestar or ModelDock changelog; both sibling
+repositories remain read-only. The [product specification](PRODUCT_SPEC.md)
+now governs scope.
+
+## 2026-09-15 — Live read-only product transition
+
+- Retired the demo specification as governing product scope. Preserved the old
+  README as [Build Week history](BUILD_WEEK_HISTORY.md) and marked both demo
+  runbooks historical; added a current product specification and live runbook.
+- Made LIVE the ordinary presentation path, with no normal Demo/Live selector.
+  Kept explicit deterministic replay review and legacy query compatibility.
+- Separated normal build/startup from judge and approved-demo preparation.
+  Retained legacy packaging for historical/replay workflows only.
+- Added a loopback read-only reader for one explicitly configured canonical
+  LIVE mission, publishing verified revision bytes in memory without source
+  writes, mission execution, automatic source discovery, or provider calls.
+- Removed approved-demo gating from live presentation. Valid incomplete,
+  running, held, vetoed, failed, and approved evidence belongs in the product.
+- Added periodic source refresh and honest distinction between reader
+  availability, last check, and original evidence time, with no replay fallback.
+- Preserved calibrated Cabin presentation, SVG overview, Navigator V3, existing
+  mission contracts, and the SHADOW-only boundary.
+- Recorded add-symbol workflows and eventual trading as roadmap work, not
+  implemented authority. A fresh real mission producer, live market acquisition,
+  and present ModelDock readiness are not implied by the reader or fixture tests.
+
+Acceptance: 497 backend tests, 133 UI tests, and 13 browser checks passed;
+normal production build excludes demo data and the 19-file upstream renderer
+check passes. Historical AAPL evidence from `artifacts/final-verification`,
+mission `mission-live-064ef6b3f2d8a73dc4ec2b36`, was verified through the actual
+reader/browser without source changes. It remains dated 2026-07-19,
+initialized-only/INCOMPLETE, with no captured chart or inference—not a fresh
+mission run. Backward-compatible v1 records retain original bytes and hashes.
+Removed the decorative no-data chart line and covered the artwork's printed
+Governor “All Clear” placeholder with the actual recorded disposition.
 
 ## 2026-09-15 — Cabin regression coverage and renderer maintenance
 
@@ -125,9 +159,10 @@ existing large lazy-renderer bundle warning remains non-blocking.
   atomic current-snapshot publication, and SHA-256 chaining.
 - Added the original Harbormaster initialization command and focused tests.
 
-## Feature-freeze statement
+## Historical submission feature-freeze statement
 
-Demo readiness changes package and explain existing capabilities. They do not
-add analytical rules, Council policy, Governor policy, operator authority,
+This statement describes the original submission, not the live-product
+specification. Demo readiness changes package and explain existing
+capabilities. They do not add analytical rules, Council policy, Governor policy, operator authority,
 Navigator execution policy, ModelDock authority, broker integration, or a new
 service subsystem.

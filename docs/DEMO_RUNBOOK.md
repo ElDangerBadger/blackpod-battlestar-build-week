@@ -1,5 +1,14 @@
 # Build Week Demo Runbook
 
+> Historical runbook — superseded on 2026-09-15 by
+> [Live Product Runbook](LIVE_PRODUCT_RUNBOOK.md) and
+> [Product Specification](PRODUCT_SPEC.md). Retained for deterministic replay
+> and submission provenance, not normal product startup. The live product is
+> read-only, defaults to LIVE, and does not depend on judge/approved-demo
+> packaging. For explicit UI replay review, use `make cabin-dev-replay` and
+> `?mode=replay`; the former Demo/Live switch is retired. Commands below describe
+> the historical workflow and can generate mission artifacts.
+
 This runbook is the operator-facing path for a deterministic Build Week
 rehearsal. It uses the committed demo packs and the canonical Harbormaster CLI.
 It does not start ModelDock, access a broker, or modify either sibling

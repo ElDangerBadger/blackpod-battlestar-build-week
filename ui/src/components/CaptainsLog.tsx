@@ -40,6 +40,6 @@ export function CaptainsLog({ entries, revealedStages, focused, onFocus }: Capta
 }
 
 function formatMissionTime(timestamp: string): string {
-  const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2})?Z$/);
+  const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/);
   return match?.[1] ?? timestamp;
 }

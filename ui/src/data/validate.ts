@@ -8,6 +8,7 @@ import {
   NAVIGATOR_ALLOWED_OPERATIONS,
   NAVIGATOR_PROHIBITED_OPERATIONS,
   PRESENTATION_STAGE_ORDER,
+  PRESENTATION_MANIFEST_SCHEMA,
   type ApprovalScope,
   type ArtifactReference,
   type CaptainsLogEntry,
@@ -20,6 +21,8 @@ import {
   type MissionOutcome,
   type MissionSnapshotV1,
   type MissionSummaryV2,
+  type MissionManifest,
+  type PresentationManifestV1,
   type ModelDockCallContract,
   type ModelDockDemoMode,
   type OperatorAction,
@@ -60,7 +63,7 @@ const MODELDOCK_MODES = ["REPLAYED", "LIVE", "DISABLED", "FAILED"] as const;
 export interface PrimaryMissionContracts {
   summary: MissionSummaryV2;
   captainsLog: CaptainsLogV1;
-  manifest: DemoManifestV1;
+  manifest: MissionManifest;
   snapshot: MissionSnapshotV1;
 }
 
@@ -176,20 +179,22 @@ function relativePath(value: unknown, label: string): string {
 
 export function parseArtifactReference(value: unknown, label = "artifact reference"): ArtifactReference {
   const item = objectValue(value, label);
-  exactKeys(item, ["name", "path", "sha256", "producer", "byte_size", "schema_version", "observed_at"], label);
+  const legacy = Object.keys(item).length === 3 && ["name", "path", "sha256"].every((key) => Object.hasOwn(item, key));
+  exactKeys(item, legacy ? ["name", "path", "sha256"]
+    : ["name", "path", "sha256", "producer", "byte_size", "schema_version", "observed_at"], label);
   const digest = stringValue(item.sha256, `${label}.sha256`);
   if (!SHA256.test(digest)) {
     throw new PresentationContractError(`${label}.sha256 must be lowercase SHA-256`);
   }
-  const byteSize = item.byte_size === null ? null : nonnegativeInteger(item.byte_size, `${label}.byte_size`);
+  const byteSize = legacy || item.byte_size === null ? null : nonnegativeInteger(item.byte_size, `${label}.byte_size`);
   return {
     name: stringValue(item.name, `${label}.name`),
     path: relativePath(item.path, `${label}.path`),
     sha256: digest,
-    producer: nullableString(item.producer, `${label}.producer`),
+    producer: legacy ? null : nullableString(item.producer, `${label}.producer`),
     byte_size: byteSize,
-    schema_version: nullableString(item.schema_version, `${label}.schema_version`),
-    observed_at: item.observed_at === null ? null : timestamp(item.observed_at, `${label}.observed_at`),
+    schema_version: legacy ? null : nullableString(item.schema_version, `${label}.schema_version`),
+    observed_at: legacy || item.observed_at === null ? null : timestamp(item.observed_at, `${label}.observed_at`),
   };
 }
 
@@ -243,22 +248,37 @@ function parseModelDockCall(value: unknown, label: string): ModelDockCallContrac
 
 function parseSnapshotStage(value: unknown, label: string): SnapshotStageContract {
   const item = objectValue(value, label);
-  exactKeys(item, ["status", "native_state", "inputs", "outputs", "error", "modeldock_calls"], label);
-  if (!Array.isArray(item.modeldock_calls)) {
+  // Canonical v1 accepts exactly the original pair, Stage 1 I/O, or current
+  // fields. Missing parts of one variant are not silently repaired.
+  const legacy = Object.keys(item).length === 2 && Object.hasOwn(item, "status") && Object.hasOwn(item, "native_state");
+  exactKeys(item, legacy ? ["status", "native_state"]
+    : ["status", "native_state", "inputs", "outputs", "error", ...(Object.hasOwn(item, "modeldock_calls") ? ["modeldock_calls"] : [])], label);
+  const calls = Object.hasOwn(item, "modeldock_calls") ? item.modeldock_calls : [];
+  if (!Array.isArray(calls)) {
     throw new PresentationContractError(`${label}.modeldock_calls must be an array`);
   }
   return {
     status: enumValue(item.status, STAGE_STATUSES, `${label}.status`),
     native_state: nullableString(item.native_state, `${label}.native_state`),
-    inputs: uniqueStrings(stringArray(item.inputs, `${label}.inputs`), `${label}.inputs`),
-    outputs: uniqueStrings(stringArray(item.outputs, `${label}.outputs`), `${label}.outputs`),
-    error: parseStageError(item.error, `${label}.error`),
-    modeldock_calls: item.modeldock_calls.map((call, index) => parseModelDockCall(call, `${label}.modeldock_calls[${index}]`)),
+    inputs: legacy ? [] : uniqueStrings(stringArray(item.inputs, `${label}.inputs`), `${label}.inputs`),
+    outputs: legacy ? [] : uniqueStrings(stringArray(item.outputs, `${label}.outputs`), `${label}.outputs`),
+    error: legacy ? null : parseStageError(item.error, `${label}.error`),
+    modeldock_calls: calls.map((call, index) => parseModelDockCall(call, `${label}.modeldock_calls[${index}]`)),
   };
 }
 
 function parseSnapshotOperator(value: unknown): SnapshotOperatorContract {
   const item = objectValue(value, "mission snapshot operator");
+  const legacyFields = ["route", "action", "result", "operator_id", "acted_at"];
+  if (Object.keys(item).length === legacyFields.length && legacyFields.every((key) => Object.hasOwn(item, key))) {
+    if (legacyFields.some((key) => key !== "route" && item[key] !== null)) {
+      throw new PresentationContractError("legacy operator action fields must remain null");
+    }
+    return {
+      route: enumOrNull(item.route, OPERATOR_ROUTES, "operator.route"), action_status: "NOT_STARTED",
+      action: null, result: null, action_id: null, operator_id: null, acted_at: null, error: null,
+    };
+  }
   exactKeys(item, ["route", "action_status", "action", "result", "action_id", "operator_id", "acted_at", "error"], "mission snapshot operator");
   return {
     route: enumOrNull(item.route, OPERATOR_ROUTES, "operator.route"),
@@ -303,7 +323,7 @@ export function parseMissionSnapshot(value: unknown): MissionSnapshotV1 {
   exactKeys(item, [
     "schema_version", "snapshot_id", "mission_id", "request_id", "revision", "previous_snapshot_sha256",
     "run_mode", "started_at", "observed_at", "mission_outcome", "current_phase", "terminal", "stages",
-    "artifacts", "components", "operator", "navigator", "approval_scope",
+    "artifacts", ...["components", "operator", "navigator", "approval_scope"].filter((key) => Object.hasOwn(item, key)),
   ], "mission snapshot");
   if (item.schema_version !== MISSION_SNAPSHOT_SCHEMA) {
     throw new PresentationContractError(`unsupported mission snapshot schema: ${String(item.schema_version)}`);
@@ -337,10 +357,18 @@ export function parseMissionSnapshot(value: unknown): MissionSnapshotV1 {
     terminal: booleanValue(item.terminal, "terminal"),
     stages,
     artifacts,
-    components: parseJsonObjectRecord(item.components, "components"),
-    operator: parseSnapshotOperator(item.operator),
-    navigator: parseSnapshotNavigator(item.navigator),
-    approval_scope: enumOrNull(item.approval_scope, ["NAVIGATOR_SHADOW_HANDOFF"] as const, "approval_scope") as ApprovalScope | null,
+    components: Object.hasOwn(item, "components") ? parseJsonObjectRecord(item.components, "components") : {},
+    operator: Object.hasOwn(item, "operator") ? parseSnapshotOperator(item.operator) : {
+      route: null, action_status: "NOT_STARTED", action: null, result: null, action_id: null,
+      operator_id: null, acted_at: null, error: null,
+    },
+    navigator: Object.hasOwn(item, "navigator") ? parseSnapshotNavigator(item.navigator) : {
+      mode: null, handoff_status: null, intake_status: null, plan_status: null, handoff_id: null,
+      intake_receipt_id: null, plan_id: null, expires_at: null, idempotency_key: null,
+      allowed_operations: [], prohibited_operations: [],
+    },
+    approval_scope: Object.hasOwn(item, "approval_scope")
+      ? enumOrNull(item.approval_scope, ["NAVIGATOR_SHADOW_HANDOFF"] as const, "approval_scope") as ApprovalScope | null : null,
   };
 }
 
@@ -543,6 +571,57 @@ export function parseDemoManifest(value: unknown): DemoManifestV1 {
   };
 }
 
+/** Live publications do not impose a demo scenario or an approved-only gate. */
+export function parsePresentationManifest(value: unknown): PresentationManifestV1 {
+  const item = objectValue(value, "presentation manifest");
+  exactKeys(item, [
+    "schema_version", "mission_id", "symbol", "run_mode", "build_week_revision",
+    "battlestar_revision", "modeldock_mode", "modeldock_revision_or_service_identity", "modeldock_provider",
+    "modeldock_model", "modeldock_trace_id", "final_outcome", "snapshot_count", "captains_log",
+    "mission_summary", "final_snapshot", "generated_at", "shadow_only_declaration", "allowed_operations",
+    "prohibited_operations",
+    ...(Object.hasOwn(item, "cabin_context") ? ["cabin_context"] : []),
+  ], "presentation manifest");
+  if (item.schema_version !== PRESENTATION_MANIFEST_SCHEMA) {
+    throw new PresentationContractError("unsupported presentation manifest schema");
+  }
+  const allowed = uniqueStrings(stringArray(item.allowed_operations, "allowed_operations"), "allowed_operations");
+  const prohibited = uniqueStrings(stringArray(item.prohibited_operations, "prohibited_operations"), "prohibited_operations");
+  assertOperations(allowed, NAVIGATOR_ALLOWED_OPERATIONS, "allowed_operations");
+  assertOperations(prohibited, NAVIGATOR_PROHIBITED_OPERATIONS, "prohibited_operations");
+  if (item.shadow_only_declaration !== "NAVIGATOR_SHADOW_ONLY_NO_EXECUTION") {
+    throw new PresentationContractError("presentation manifest is missing the SHADOW-only declaration");
+  }
+  const cabinContext = Object.hasOwn(item, "cabin_context") ? parseArtifactReference(item.cabin_context, "cabin_context") : undefined;
+  if (cabinContext && (cabinContext.name !== "cabin_context" || cabinContext.path !== "presentation/cabin_context.json"
+    || cabinContext.schema_version !== "blackpod.cabin_context.v1")) {
+    throw new PresentationContractError("presentation manifest references noncanonical cabin context");
+  }
+  return {
+    schema_version: PRESENTATION_MANIFEST_SCHEMA,
+    mission_id: stringValue(item.mission_id, "mission_id"),
+    symbol: stringValue(item.symbol, "symbol"),
+    run_mode: enumValue(item.run_mode, RUN_MODES, "run_mode"),
+    build_week_revision: nullableString(item.build_week_revision, "build_week_revision"),
+    battlestar_revision: nullableString(item.battlestar_revision, "battlestar_revision"),
+    modeldock_mode: enumValue(item.modeldock_mode, [...MODELDOCK_MODES, "NOT_RECORDED", "RUNNING"] as const, "modeldock_mode"),
+    modeldock_revision_or_service_identity: nullableString(item.modeldock_revision_or_service_identity, "modeldock_revision_or_service_identity"),
+    modeldock_provider: nullableString(item.modeldock_provider, "modeldock_provider"),
+    modeldock_model: nullableString(item.modeldock_model, "modeldock_model"),
+    modeldock_trace_id: nullableString(item.modeldock_trace_id, "modeldock_trace_id"),
+    final_outcome: enumValue(item.final_outcome, MISSION_OUTCOMES, "final_outcome"),
+    snapshot_count: positiveInteger(item.snapshot_count, "snapshot_count"),
+    captains_log: parseArtifactReference(item.captains_log, "captains_log"),
+    mission_summary: parseArtifactReference(item.mission_summary, "mission_summary"),
+    final_snapshot: parseArtifactReference(item.final_snapshot, "final_snapshot"),
+    generated_at: timestamp(item.generated_at, "generated_at"),
+    shadow_only_declaration: "NAVIGATOR_SHADOW_ONLY_NO_EXECUTION",
+    allowed_operations: allowed,
+    prohibited_operations: prohibited,
+    ...(cabinContext ? { cabin_context: cabinContext } : {}),
+  };
+}
+
 export function validateMissionBundleContracts(contracts: PrimaryMissionContracts): PrimaryMissionContracts {
   const { summary, captainsLog, manifest, snapshot } = contracts;
   const identities = [summary, captainsLog, manifest, snapshot];
@@ -572,12 +651,96 @@ export function validateMissionBundleContracts(contracts: PrimaryMissionContract
   if (summary.approval_scope !== snapshot.approval_scope) {
     throw new PresentationContractError("mission summary conflicts with canonical approval scope");
   }
-  assertOperations(snapshot.navigator.allowed_operations, manifest.allowed_operations, "snapshot allowed_operations");
-  assertOperations(snapshot.navigator.prohibited_operations, manifest.prohibited_operations, "snapshot prohibited_operations");
-  if (manifest.captains_log.path !== "presentation/captains_log.json" || manifest.mission_summary.path !== "presentation/mission_summary.json" || manifest.final_snapshot.path !== "mission_snapshot.json") {
-    throw new PresentationContractError("demo manifest references noncanonical primary paths");
+  if (snapshot.navigator.mode === null) {
+    // An unstarted canonical Navigator has an empty envelope, not a SHADOW
+    // handoff. The publication still declares the product's SHADOW-only limit.
+    if (snapshot.navigator.allowed_operations.length || snapshot.navigator.prohibited_operations.length
+      || Object.entries(snapshot.navigator).some(([key, value]) => !["allowed_operations", "prohibited_operations"].includes(key) && value !== null)) {
+      throw new PresentationContractError("empty Navigator state may not contain SHADOW progress or operations");
+    }
+  } else {
+    assertOperations(snapshot.navigator.allowed_operations, manifest.allowed_operations, "snapshot allowed_operations");
+    assertOperations(snapshot.navigator.prohibited_operations, manifest.prohibited_operations, "snapshot prohibited_operations");
   }
+  if (manifest.captains_log.path !== "presentation/captains_log.json" || manifest.mission_summary.path !== "presentation/mission_summary.json" || manifest.final_snapshot.path !== "mission_snapshot.json") {
+    throw new PresentationContractError("presentation manifest references noncanonical primary paths");
+  }
+  if (manifest.schema_version === PRESENTATION_MANIFEST_SCHEMA) validateLivePublicationContracts(contracts);
   return contracts;
+}
+
+function validateLivePublicationContracts({ summary, captainsLog, manifest, snapshot }: PrimaryMissionContracts): void {
+  if (summary.run_mode !== "LIVE" || manifest.modeldock_mode === "REPLAYED") {
+    throw new PresentationContractError("live publication may not contain REPLAY evidence");
+  }
+  for (const [reference, name, schema] of [
+    [manifest.captains_log, "captains_log", CAPTAINS_LOG_SCHEMA],
+    [manifest.mission_summary, "mission_summary", MISSION_SUMMARY_SCHEMA],
+    [manifest.final_snapshot, "mission_snapshot", MISSION_SNAPSHOT_SCHEMA],
+  ] as const) {
+    if (reference.name !== name || reference.schema_version !== schema || reference.observed_at !== snapshot.observed_at) {
+      throw new PresentationContractError("presentation manifest primary reference conflicts with canonical metadata");
+    }
+  }
+  const immutablePath = `snapshots/mission_snapshot-r${String(snapshot.revision).padStart(4, "0")}.json`;
+  for (const reference of [summary.generated_from_snapshot, captainsLog.generated_from_snapshot]) {
+    if (reference.path !== immutablePath || reference.sha256 !== manifest.final_snapshot.sha256
+      || reference.schema_version !== MISSION_SNAPSHOT_SCHEMA
+      || reference.observed_at !== snapshot.observed_at) {
+      throw new PresentationContractError("generated_from_snapshot must reference the latest immutable snapshot");
+    }
+  }
+  for (const stage of CANONICAL_STAGE_NAMES) {
+    if (summary.stages[stage].technical_status !== snapshot.stages[stage].status
+      || summary.stages[stage].native_state !== snapshot.stages[stage].native_state) {
+      throw new PresentationContractError("mission summary stage conflicts with canonical snapshot");
+    }
+    for (const call of snapshot.stages[stage].modeldock_calls) {
+      if (call.mission_id !== snapshot.mission_id || call.request_id !== snapshot.request_id || call.run_mode !== "LIVE") {
+        throw new PresentationContractError("ModelDock call conflicts with LIVE mission correlation");
+      }
+      if (call.status === "SUCCEEDED" && (call.mocked !== false || call.provider !== "mlx")) {
+        throw new PresentationContractError("successful LIVE ModelDock inference requires nonmocked mlx provenance");
+      }
+    }
+  }
+  for (const key of ["route", "action_status", "action", "result"] as const) {
+    if (summary.operator[key] !== snapshot.operator[key]) {
+      throw new PresentationContractError("mission summary operator conflicts with canonical snapshot");
+    }
+  }
+  for (const key of ["mode", "handoff_status", "intake_status", "plan_status"] as const) {
+    if (summary.navigator[key] !== snapshot.navigator[key]) {
+      throw new PresentationContractError("mission summary Navigator conflicts with canonical snapshot");
+    }
+  }
+  if (summary.navigator.technical_status !== snapshot.stages.navigator.status
+    || summary.navigator.native_state !== snapshot.stages.navigator.native_state
+    || summary.governor_disposition !== snapshot.stages.governor.native_state) {
+    throw new PresentationContractError("mission summary disposition conflicts with canonical snapshot");
+  }
+  const lastCall = snapshot.stages.oracle.modeldock_calls.at(-1) ?? null;
+  if (lastCall?.status === "SUCCEEDED") {
+    const component = snapshot.components.modeldock;
+    if (!lastCall.model || !lastCall.trace_id || !component
+      || component.run_mode !== "LIVE" || component.transport !== "LIVE_HTTP"
+      || component.expected_provider !== "mlx" || component.replay_fixture_id !== null
+      || component.endpoint !== lastCall.endpoint) {
+      throw new PresentationContractError("successful ModelDock inference requires consistent LIVE_HTTP provenance");
+    }
+  }
+  const expectedMode = lastCall?.status === "SUCCEEDED" ? "LIVE" : lastCall?.status ?? "NOT_RECORDED";
+  if (manifest.modeldock_mode !== expectedMode || summary.modeldock.status !== (lastCall?.status ?? "NOT_RECORDED")) {
+    throw new PresentationContractError("ModelDock presentation state conflicts with recorded inference");
+  }
+  for (const [summaryKey, manifestKey] of [
+    ["provider", "modeldock_provider"], ["model", "modeldock_model"], ["trace_id", "modeldock_trace_id"],
+  ] as const) {
+    const expected = lastCall?.[summaryKey] ?? null;
+    if (summary.modeldock[summaryKey] !== expected || manifest[manifestKey] !== expected) {
+      throw new PresentationContractError("ModelDock identity conflicts with recorded inference");
+    }
+  }
 }
 
 export function asJsonObject(value: unknown, label = "artifact"): JsonObject {
@@ -603,4 +766,3 @@ export function getBoolean(value: JsonValue | undefined): boolean | undefined {
 export function getStringArray(value: JsonValue | undefined): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? [...value] as string[] : undefined;
 }
-

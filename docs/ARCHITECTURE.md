@@ -1,23 +1,57 @@
 # Architecture
 
-BlackPod Battlestar Build Week is a filesystem-backed mission orchestrator. It
-connects existing Battlestar components and a strictly bounded local ModelDock
-narrative seam without duplicating their domain logic.
+BlackPod Battlestar's Captain's Cabin is a live, read-only presentation of
+canonical mission evidence. The repository retains its existing filesystem-backed
+mission orchestration and bounded ModelDock narrative seam, but the product's
+normal startup is a separate artifact reader, not an orchestration command.
+The [product specification](PRODUCT_SPEC.md) governs current scope;
+Build Week/demo packaging is historical review infrastructure.
 
 ## Repository boundaries
 
 | Boundary | Responsibility | Write policy |
 | --- | --- | --- |
-| Build Week | contracts, orchestration, state transitions, artifact capture, validation, presentation | writable |
+| This repository | existing contracts/workflows plus read-only publication and Cabin presentation | implementation writable; reader never writes mission state |
 | Battlestar sibling | Oracle, Council evidence chain, Governor, operator, Navigator native interfaces | read-only |
-| ModelDock sibling/service | local MLX `text.generate` appliance | repository read-only; service called only in explicit LIVE mode |
-| Mission root | canonical requests, snapshots, captured component artifacts, presentation projections | contained beneath configured artifact root |
+| ModelDock sibling/service | local MLX `text.generate` appliance | repository read-only; only separately authorized orchestration calls the service, never the reader |
+| Mission root | canonical requests, snapshots, captured component artifacts, presentation projections | producer-owned; read-only to the Cabin reader |
 
 No stage reads arbitrary sibling presentation output or an unqualified
 "latest" artifact. Inputs are selected explicitly, copied beneath the mission
 root when required, hashed, and correlated to the mission and request.
 
-## Canonical flow
+## Live presentation flow
+
+```text
+explicit artifact root + one LIVE mission ID
+                    |
+                    v
+canonical snapshots + captured evidence (read-only)
+                    |
+                    v
+loopback reader: validate and publish immutable bytes in memory
+                    |
+          /live/current.json (polled every five seconds)
+                    |
+                    v
+browser integrity checks -> existing presentation models
+                    |
+                    v
+Captain's Cabin -> SVG Mission Chart -> expanded Navigator V3
+```
+
+The reader accepts all legitimate mission outcomes. It does not require the
+legacy approved-demo packager, select a new mission automatically, or call the
+producer. The additive publication manifest is a transport wrapper; canonical
+mission schemas and domain decisions remain unchanged. Source failures are
+availability failures, not fabricated mission outcomes. Last verified evidence
+may remain visible with explicit degraded/offline labeling and its original
+timestamps.
+
+## Existing canonical producer flow
+
+This flow is invoked only through separately authorized mission commands. It is
+not a side effect of launching or refreshing the Cabin.
 
 ```text
 Mission request
@@ -75,9 +109,9 @@ workflows. `mission-run` starts a mission; `mission-resume` validates stored
 state and continues from the first eligible incomplete operation. Completed
 identical work is an explicit no-op.
 
-The demo command layer selects committed scenario inputs and delegates to this
-same orchestration path. Demo-pack validation verifies contracts and hashes;
-it is not a second mission engine.
+The historical demo command layer selects committed scenario inputs and
+delegates to this same orchestration path. Demo-pack validation remains a
+regression/review tool, not a second mission engine or live display gate.
 
 ### Persistence
 
@@ -101,10 +135,12 @@ it is not a second mission engine.
     └── demo_manifest.json
 ```
 
-Revision snapshots and stage artifacts are immutable. The current snapshot and
-presentation projections use atomic replacement. Every revision carries the
-SHA-256 of its predecessor, producing a complete tamper-evident chain.
-Containment checks reject paths outside the mission root.
+Revision snapshots and stage artifacts are immutable. The producer replaces
+the current snapshot and presentation projections atomically. Every revision
+carries the SHA-256 of its predecessor, producing a complete tamper-evident
+chain. Containment checks reject paths outside the mission root. The reader
+does not create this layout, update projections on disk, or write a demo
+manifest into the selected source.
 
 ### Presentation
 
@@ -112,9 +148,29 @@ Containment checks reject paths outside the mission root.
 versioned UI-facing `mission_summary.json`, and a script-free
 `mission_brief.html` from validated snapshots and recorded artifacts. The HTML
 consumes the validated JSON projections and remains explicitly non-canonical.
-The demo layer adds `demo_manifest.json`, which hashes the JSON views and the
-final canonical snapshot. These files are deterministic views for judges and a
-future read-only UI; they are not sources of mission truth.
+The historical demo layer adds `demo_manifest.json`, which hashes the JSON
+views and final canonical snapshot. Live publication instead derives verified
+projections and a generic `presentation/manifest.json` in memory, independently
+of approved-demo packaging. Neither manifest grants mission authority.
+
+`cabin_reader.py` serves `blackpod.cabin_feed.v1` at `/live/current.json`, with
+`READY`, `NOT_CONFIGURED`, or `UNAVAILABLE` status. Verified bytes are addressed
+under `/live/revisions/<publication-id>/`; only the last three publications are
+retained, in memory. The reader binds `127.0.0.1`, supports read methods only,
+and serves the built UI without demo assets. A Vite development proxy uses the
+same local `/live` interface.
+
+The browser validates the generic manifest, correlated presentation contracts,
+immutable snapshot, and referenced evidence before displaying a revision. It
+does not mix one revision's projections with another revision's source bytes.
+Reader `checked_at` and original snapshot `observed_at` remain distinct;
+optional market/portfolio captures and ModelDock inference provenance keep
+their own recorded times. Polling does not imply live market acquisition or
+present ModelDock service health.
+
+The Cabin's normal route is LIVE. Explicit `?mode=replay` is retained for
+developer/historical review, with the old `?mode=demo` as a compatibility alias.
+There is no normal Demo/Live switch or automatic fallback.
 
 ## State and outcome authority
 
@@ -135,14 +191,20 @@ Governor `PROCEED` alone is never approval.
 
 ## Transport policy
 
-LIVE and REPLAY are explicit and never substituted for one another. REPLAY
-uses committed deterministic inputs while exercising the same Build Week
-validation, capture, and transition logic. LIVE uses current native interfaces
-and requires real dependencies to succeed. ModelDock LIVE traffic is limited
-to an explicitly configured loopback endpoint and rejects mocked responses.
+Producer LIVE and REPLAY modes are explicit and never substituted for one
+another. REPLAY uses deterministic inputs while exercising the same validation,
+capture, and transition logic. Producer LIVE uses native interfaces and
+requires its real dependencies to succeed. Its ModelDock traffic is limited to
+an explicitly configured loopback endpoint and rejects mocked responses.
+
+The read-only live reader requires a canonical LIVE source but makes no provider
+calls. Failure to read that source never starts a mission, invokes ModelDock,
+selects a replay fixture, or relabels historical evidence as freshly acquired.
 
 ## Further reading
 
-- [Demo Runbook](DEMO_RUNBOOK.md)
+- [Product specification](PRODUCT_SPEC.md)
+- [Live product runbook](LIVE_PRODUCT_RUNBOOK.md)
+- [Archived Demo Runbook](DEMO_RUNBOOK.md)
 - [Safety Boundary](SAFETY_BOUNDARY.md)
 - [Build Week Changelog](BUILD_WEEK_CHANGELOG.md)

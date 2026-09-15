@@ -9,6 +9,13 @@ JUDGE_ROOT ?= $(DEMO_ROOT)/judge
 JUDGE_MISSION_ID := mission-buildweek-replay-001
 UI_DIR ?= ui
 NPM ?= npm
+CABIN_ARTIFACTS_ROOT ?=
+CABIN_MISSION_ID ?=
+CABIN_LIVE_PORT ?= 5174
+CABIN_READER := $(PYTHON) -m blackpod_build_week.cabin_reader
+CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
+	$(if $(strip $(CABIN_ARTIFACTS_ROOT)),--artifacts-root "$(CABIN_ARTIFACTS_ROOT)",) \
+	$(if $(strip $(CABIN_MISSION_ID)),--mission-id "$(CABIN_MISSION_ID)",)
 CABIN_SOURCE ?= $(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)
 CABIN_DEMO_SOURCE ?= $(CABIN_SOURCE)
 CABIN_DEMO_ROOT ?= $(UI_DIR)/public/demo/approved
@@ -81,10 +88,19 @@ CABIN_PORTFOLIO_ARGUMENT = $(if $(strip $(PORTFOLIO_JSON)),--portfolio-json "$(P
 	demo-incomplete demo-outcomes rehearse-approved cabin-prepare cabin-dev \
 	cabin-build cabin-test cabin-capture-demo cabin-capture-live cabin-prepare-demo \
 	cabin-prepare-live cabin-freeze-live-demo cabin-dev-demo cabin-dev-live \
-	cabin-build-demo cabin-build-live cabin-e2e navigator-check navigator-check-upstream
+	cabin-build-demo cabin-build-live cabin-e2e navigator-check navigator-check-upstream \
+	cabin-live cabin-reader cabin-build-replay cabin-dev-replay
 
 help:
-	@echo "BlackPod Battlestar Build Week demo targets"
+	@echo "BlackPod Battlestar — live read-only Captain's Cabin"
+	@echo "  make cabin-live            Build and serve on 127.0.0.1:5174 (no mission execution)"
+	@echo "    CABIN_ARTIFACTS_ROOT=/path/to/artifacts CABIN_MISSION_ID=mission-id"
+	@echo "  make cabin-reader          Start the read-only reader without rebuilding"
+	@echo "  make cabin-dev             Start Vite; proxies /live to the reader on port 5174"
+	@echo "  make cabin-build           Build product assets only; no replay data"
+	@echo "  make cabin-build-replay    Explicit historical regression build (includes fixtures)"
+	@echo "  make cabin-dev-replay      Prepare historical fixtures; open /?mode=replay"
+	@echo "Historical developer/operator targets below are NOT product startup:"
 	@echo
 	@echo "  make setup                 Create .venv and install the package"
 	@echo "  make test                  Run the complete offline test suite"
@@ -102,15 +118,12 @@ help:
 	@echo "  make cabin-prepare-live    Materialize a verified LIVE mission as Live"
 	@echo "  make cabin-freeze-live-demo  Materialize verified LIVE evidence as Demo"
 	@echo "  make cabin-capture-live    Capture read-only Navigator/portfolio context"
-	@echo "  make cabin-dev             Prepare and launch the Captain's Cabin"
-	@echo "  make cabin-dev-live        Prepare Live data and launch the cabin"
-	@echo "  make cabin-build           Prepare and build the Captain's Cabin"
 	@echo "  make cabin-test            Run the focused Captain's Cabin tests"
 	@echo "  make cabin-e2e             Build and browser-test the prepared Cabin data"
 	@echo "  make navigator-check       Check the reviewed renderer snapshot locally"
 	@echo "  make navigator-check-upstream  Also compare canonical Battlestar sources"
 	@echo
-	@echo "Set BATTLESTAR_PATH to the read-only Battlestar checkout first."
+	@echo "Historical orchestration targets require BATTLESTAR_PATH; the reader does not."
 	@echo "Override DEMO_ROOT for a fresh isolated rehearsal."
 
 setup:
@@ -294,23 +307,33 @@ cabin-freeze-live-demo: package-live-demo
 		--source "$(CABIN_LIVE_SOURCE)" \
 		--destination "$(CABIN_DEMO_ROOT)"
 
-cabin-dev: cabin-prepare
+cabin-dev:
+	$(NPM) --prefix "$(UI_DIR)" run dev
+
+cabin-live: cabin-build
+	$(CABIN_READER) $(CABIN_READER_ARGS)
+
+cabin-reader:
+	$(CABIN_READER) $(CABIN_READER_ARGS)
+
+cabin-dev-replay: cabin-prepare
 	$(NPM) --prefix "$(UI_DIR)" run dev
 
 cabin-dev-demo: cabin-prepare-demo
 	$(NPM) --prefix "$(UI_DIR)" run dev
 
-cabin-dev-live: cabin-prepare-live
-	$(NPM) --prefix "$(UI_DIR)" run dev
+cabin-dev-live: cabin-dev
 
-cabin-build: navigator-check cabin-prepare
+cabin-build: navigator-check
 	$(NPM) --prefix "$(UI_DIR)" run build
+
+cabin-build-replay: navigator-check cabin-prepare
+	$(NPM) --prefix "$(UI_DIR)" run build:replay
 
 cabin-build-demo: navigator-check cabin-prepare-demo
-	$(NPM) --prefix "$(UI_DIR)" run build
+	$(NPM) --prefix "$(UI_DIR)" run build:replay
 
-cabin-build-live: navigator-check cabin-prepare-live
-	$(NPM) --prefix "$(UI_DIR)" run build
+cabin-build-live: cabin-build
 
 cabin-test: navigator-check
 	$(NPM) --prefix "$(UI_DIR)" run test

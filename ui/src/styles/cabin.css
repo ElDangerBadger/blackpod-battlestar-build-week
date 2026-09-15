@@ -598,25 +598,6 @@ button.loose-paper:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.route-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 78%;
-  height: 0.7cqw;
-  margin: 14% auto 10%;
-  border-top: max(1px, 0.07cqw) dashed #6c4a2b;
-  transform: rotate(-13deg);
-}
-
-.route-line i {
-  width: 0.46cqw;
-  aspect-ratio: 1;
-  border: max(1px, 0.06cqw) solid #624125;
-  border-radius: 50%;
-  background: #ad8249;
-}
-
 .paper-order-copy > strong {
   display: block;
   margin-block-end: 0.75em;
@@ -843,6 +824,11 @@ button.loose-paper:focus-visible {
   height: 15.2%;
 }
 
+.systems-governor-record {
+  top: 36.2%;
+  height: 6.4%;
+}
+
 .systems-modeldock {
   top: 61.1%;
   height: 11.8%;
@@ -1017,6 +1003,27 @@ button.loose-paper:focus-visible {
   border-color: #b89247;
   background: #5a3c18;
   color: #f0d28e;
+}
+
+.presentation-mode-control button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.live-evidence-status {
+  flex-wrap: wrap;
+  gap: 0.2cqw 0.45cqw;
+  font-size: clamp(7px, 0.52cqw, 9px);
+}
+
+.live-evidence-status > strong {
+  color: #eed087;
+}
+
+.cabin-load-failure pre {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .presentation-mode-control button:focus-visible,

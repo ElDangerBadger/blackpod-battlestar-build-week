@@ -1,5 +1,15 @@
 # Stage 4 LIVE Demo Runbook
 
+> Historical runbook — superseded on 2026-09-15 by
+> [Live Product Runbook](LIVE_PRODUCT_RUNBOOK.md) and
+> [Product Specification](PRODUCT_SPEC.md). The current Cabin follows existing
+> verified LIVE mission revisions through a read-only reader; it does not
+> require approved-demo packaging or a Demo/Live switch. Commands below describe
+> the old workflow, not current startup. **`make live-mission` writes mission
+> state and records `APPROVE_HANDOFF`; do not run it merely to launch or repair
+> the Cabin.** Creating missions, approvals, and new captures remains separately
+> authorized producer work.
+
 Stage 4 adds an operator-facing path around the existing mission workflows. It
 does not add a second mission engine. The Make targets below call
 `blackpod_build_week.harbormaster mission-run`, the strict LIVE demo packager,

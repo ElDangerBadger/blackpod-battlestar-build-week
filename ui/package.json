@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:replay": "tsc -b && vite build --mode replay",
     "test": "vitest run",
-    "test:e2e": "npm run build && playwright test",
+    "test:e2e": "npm run build:replay && playwright test",
     "test:watch": "vitest",
     "preview": "vite preview"
   },

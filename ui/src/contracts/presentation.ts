@@ -1,5 +1,5 @@
 /**
- * Read-only TypeScript projections of the canonical Build Week presentation
+ * Read-only TypeScript projections of the canonical mission presentation
  * contracts. These types describe data; they do not derive mission outcomes.
  */
 
@@ -10,6 +10,7 @@ export type JsonObject = { [key: string]: JsonValue };
 export const MISSION_SUMMARY_SCHEMA = "blackpod.mission_summary.v2" as const;
 export const CAPTAINS_LOG_SCHEMA = "blackpod.captains_log.v1" as const;
 export const DEMO_MANIFEST_SCHEMA = "blackpod.demo_manifest.v1" as const;
+export const PRESENTATION_MANIFEST_SCHEMA = "blackpod.presentation_manifest.v1" as const;
 export const MISSION_SNAPSHOT_SCHEMA = "blackpod.mission_snapshot.v1" as const;
 
 export const PRESENTATION_STAGE_ORDER = [
@@ -74,6 +75,7 @@ export type OperatorResult = "APPROVED_FOR_HANDOFF" | "REJECTED";
 export type NavigatorMode = "SHADOW";
 export type ApprovalScope = "NAVIGATOR_SHADOW_HANDOFF";
 export type ModelDockDemoMode = "REPLAYED" | "LIVE" | "DISABLED" | "FAILED";
+export type ModelDockPresentationMode = ModelDockDemoMode | "NOT_RECORDED" | "RUNNING";
 
 export interface ArtifactReference {
   name: string;
@@ -195,6 +197,19 @@ export interface DemoManifestV1 {
   allowed_operations: string[];
   prohibited_operations: string[];
 }
+
+/** Product publication envelope; missing historical revisions remain unknown. */
+export interface PresentationManifestV1 extends Omit<DemoManifestV1,
+  "schema_version" | "demo_scenario" | "build_week_revision" | "battlestar_revision" | "modeldock_mode"> {
+  schema_version: typeof PRESENTATION_MANIFEST_SCHEMA;
+  build_week_revision: string | null;
+  battlestar_revision: string | null;
+  modeldock_mode: ModelDockPresentationMode;
+  /** Optional wrapper is itself bound to the publication digest. */
+  cabin_context?: ArtifactReference;
+}
+
+export type MissionManifest = DemoManifestV1 | PresentationManifestV1;
 
 export interface StageErrorContract {
   code: string;

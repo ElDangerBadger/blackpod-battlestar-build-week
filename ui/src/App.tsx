@@ -19,7 +19,8 @@ import { ReplayControls } from "./components/ReplayControls";
 import { StatusPanel } from "./components/StatusPanel";
 import { SystemsPanel } from "./components/SystemsPanel";
 import type { NavigatorMarket } from "./contracts/cabinContext";
-import { loadMissionBundle, MissionBundleLoadError, type MissionBundle } from "./data/loadMission";
+import { loadMissionBundle, MissionBundleLoadError } from "./data/loadMission";
+import { evidenceFreshness, useLiveMission, type LiveMissionState } from "./data/useLiveMission";
 import { createMissionViewModel, type MissionViewModel } from "./data/viewModel";
 import { useReplayTheater } from "./replay/useReplayTheater";
 import { CabinScene } from "./scene/CabinScene";
@@ -27,15 +28,49 @@ import { useModalFocus } from "./scene/useModalFocus";
 
 export type PresentationMode = "DEMO" | "LIVE";
 
-const PRESENTATION_BASE_URLS: Record<PresentationMode, string> = {
-  DEMO: `${import.meta.env.BASE_URL}demo/approved/`,
-  LIVE: `${import.meta.env.BASE_URL}demo/live/`,
-};
+const REPLAY_BASE_URL = `${import.meta.env.BASE_URL}demo/approved/`;
 
 type NoticeState = "sentry" | "admiral" | "config" | "logbook" | null;
 
 export default function App() {
   const [presentationMode, setPresentationMode] = useState<PresentationMode>(() => modeFromSearch(window.location.search));
+  const chooseMode = (mode: PresentationMode) => {
+    const url = new URL(window.location.href);
+    if (mode === "LIVE") url.searchParams.delete("mode");
+    else url.searchParams.set("mode", "replay");
+    window.history.replaceState(null, "", url);
+    setPresentationMode(mode);
+  };
+  useEffect(() => {
+    const followHistory = () => setPresentationMode(modeFromSearch(window.location.search));
+    window.addEventListener("popstate", followHistory);
+    return () => window.removeEventListener("popstate", followHistory);
+  }, []);
+  return presentationMode === "LIVE" ? <LiveCabin /> : <ReplayCabin onSelectMode={chooseMode} />;
+}
+
+function LiveCabin() {
+  const live = useLiveMission();
+  if (!live.mission) {
+    return (
+      <main className="cabin-loading cabin-load-failure" aria-live="polite">
+        <p className="eyebrow">BlackPod Battlestar · live read-only</p>
+        <h1>{live.status === "LOADING" ? "Connecting to mission evidence…"
+          : live.status === "NOT_CONFIGURED" ? "No live mission configured."
+          : "Live mission evidence unavailable."}</h1>
+        <p>{live.message}</p>
+        <p>Start the local reader with an explicit artifacts root and mission ID:</p>
+        <pre><code>make cabin-live CABIN_ARTIFACTS_ROOT=/path/to/artifacts CABIN_MISSION_ID=your-mission-id</code></pre>
+        <p>No replay data is substituted. This Cabin follows recorded LIVE mission artifacts; it does not run missions or stream prices.</p>
+        <p>Read-only · SHADOW only · no approvals, symbol changes, or order execution.</p>
+        <div className="load-mode-actions"><button type="button" disabled={live.refreshing} onClick={live.refresh}>Refresh evidence</button></div>
+      </main>
+    );
+  }
+  return <MissionCabin key={live.mission.status.missionId} mission={live.mission} presentationMode="LIVE" live={live} />;
+}
+
+function ReplayCabin({ onSelectMode }: { onSelectMode: (mode: PresentationMode) => void }) {
   const [mission, setMission] = useState<MissionViewModel | null>(null);
   const [loadError, setLoadError] = useState<{ message: string; fallbackMarkdown: string | null } | null>(null);
 
@@ -43,10 +78,8 @@ export default function App() {
     let active = true;
     setMission(null);
     setLoadError(null);
-    const baseUrl = PRESENTATION_BASE_URLS[presentationMode];
-    loadMissionBundle(baseUrl)
+    loadMissionBundle(REPLAY_BASE_URL)
       .then((bundle) => {
-        assertPresentationMode(bundle, presentationMode);
         if (active) setMission(createMissionViewModel(bundle));
       })
       .catch((error: unknown) => {
@@ -58,29 +91,23 @@ export default function App() {
         });
     });
     return () => { active = false; };
-  }, [presentationMode]);
+  }, []);
 
-  const chooseMode = (mode: PresentationMode) => {
-    if (mode === presentationMode) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("mode", mode.toLowerCase());
-    window.history.replaceState(null, "", url);
-    setPresentationMode(mode);
-  };
-
-  if (loadError) return <LoadFailure mode={presentationMode} message={loadError.message} fallbackMarkdown={loadError.fallbackMarkdown} onSelectMode={chooseMode} />;
-  if (!mission) return <LoadingCabin mode={presentationMode} />;
-  return <MissionCabin mission={mission} presentationMode={presentationMode} onSelectMode={chooseMode} />;
+  if (loadError) return <LoadFailure mode="DEMO" message={loadError.message} fallbackMarkdown={loadError.fallbackMarkdown} onSelectMode={onSelectMode} />;
+  if (!mission) return <LoadingCabin mode="DEMO" />;
+  return <MissionCabin mission={mission} presentationMode="DEMO" onSelectMode={onSelectMode} />;
 }
 
 function MissionCabin({
   mission,
   presentationMode,
   onSelectMode,
+  live,
 }: {
   mission: MissionViewModel;
   presentationMode: PresentationMode;
-  onSelectMode: (mode: PresentationMode) => void;
+  onSelectMode?: (mode: PresentationMode) => void;
+  live?: LiveMissionState & { refresh: () => void };
 }) {
   const books = useMemo(() => buildBookDefinitions(mission), [mission]);
   const [selectedBookId, setSelectedBookId] = useState<StageBookId | null>(null);
@@ -124,7 +151,7 @@ function MissionCabin({
     const trigger = event.target.closest<HTMLElement>("button, a[href]");
     if (trigger && event.currentTarget.contains(trigger)) modalTriggerRef.current = trigger;
   };
-  const activeMilestoneBook = milestoneBookId(theater.currentStage);
+  const activeMilestoneBook = milestoneBookId(presentationMode === "LIVE" ? mission.status.currentPhase : theater.currentStage);
   const announcement = currentEntry
     ? `${currentEntry.stage}: ${currentEntry.status}. ${currentEntry.summary}`
     : "Mission replay reset. No stage has been revealed.";
@@ -162,10 +189,11 @@ function MissionCabin({
   const missionRevealed = theater.revealed.has("MISSION");
 
   return (
-    <main data-replay-stage={theater.currentStage ?? "RESET"} onClickCapture={rememberModalTrigger}>
+    <main data-replay-stage={presentationMode === "DEMO" ? theater.currentStage ?? "RESET" : undefined}
+      data-current-phase={presentationMode === "LIVE" ? mission.status.currentPhase : undefined} onClickCapture={rememberModalTrigger}>
       <CabinScene
         modalOpen={modalOpen}
-        missionBriefHref={`${PRESENTATION_BASE_URLS[presentationMode]}presentation/mission_brief.html`}
+        missionBriefHref={`${mission.baseUrl}presentation/mission_brief.html`}
         status={<StatusPanel
           presentationMode={presentationMode}
           symbol={mission.status.symbol}
@@ -182,8 +210,8 @@ function MissionCabin({
           snapshotCount={mission.status.snapshotCount}
           modeldockMode={modeldockRevealed ? mission.modeldock.mode : "AWAITING REVEAL"}
           modeldockStatus={modeldockRevealed ? mission.modeldock.status : "PENDING"}
-          activeMilestone={currentEntry?.stage ?? null}
-          activeStatus={currentEntry?.status ?? null}
+          activeMilestone={presentationMode === "LIVE" ? mission.status.currentPhase : currentEntry?.stage ?? null}
+          activeStatus={presentationMode === "LIVE" ? mission.status.outcome : currentEntry?.status ?? null}
         />}
         books={books.map((book) => ({
           id: book.id,
@@ -243,8 +271,8 @@ function MissionCabin({
           prohibitedOperations={mission.safety.prohibitedOperations}
         />}
         navigation={<BottomNavigation active={activeDestination} onNavigate={navigate} />}
-        backgroundControls={<>
-          <PresentationModeControl mode={presentationMode} runMode={mission.status.runMode} onSelect={onSelectMode} />
+        backgroundControls={live ? <LiveEvidenceControls live={live} mission={mission} /> : <>
+          <PresentationModeControl mode={presentationMode} runMode={mission.status.runMode} onSelect={onSelectMode!} />
           <ReplayControls theater={theater} announcement={announcement} />
         </>}
         foreground={<>
@@ -266,6 +294,24 @@ function MissionCabin({
   );
 }
 
+function LiveEvidenceControls({ live, mission }: { live: LiveMissionState & { refresh: () => void }; mission: MissionViewModel }) {
+  const freshness = evidenceFreshness(mission.status.observedAt);
+  const status = live.status === "READY" ? freshness : "LAST VERIFIED · READER UNAVAILABLE";
+  return <>
+    <aside className="presentation-mode-control" aria-label="Live mission reader">
+      <strong>LIVE</strong><span>Read-only · {live.status === "READY" ? "reader connected" : "reader unavailable"}</span>
+      <button type="button" disabled={live.refreshing} onClick={live.refresh}>Refresh</button>
+    </aside>
+    <aside className="replay-theater live-evidence-status" aria-label="Mission evidence freshness" aria-live="polite">
+      <strong>{status}</strong>
+      <span title={`Reader checked: ${live.checkedAt ?? "not yet"}. Browser last verified: ${live.verifiedAt ?? "not yet"}. ${live.message}`}>
+        Mission recorded <time dateTime={mission.status.observedAt}>{mission.status.observedAt}</time>
+      </span>
+      <span>Chart: {mission.market.capturedAt ? `captured ${mission.market.capturedAt.slice(0, 10)}` : "not configured"} · not streaming</span>
+    </aside>
+  </>;
+}
+
 function PresentationModeControl({
   mode,
   runMode,
@@ -278,7 +324,7 @@ function PresentationModeControl({
   return (
     <aside className="presentation-mode-control" aria-label="Presentation data mode">
       <strong>{mode}</strong>
-      <span>{mode === "DEMO" ? `${runMode} frozen mission` : `${runMode} current mission`}</span>
+      <span>{runMode} archived review</span>
       <div role="group" aria-label="Select presentation mode">
         <button type="button" aria-pressed={mode === "DEMO"} onClick={() => onSelect("DEMO")}>Demo</button>
         <button type="button" aria-pressed={mode === "LIVE"} onClick={() => onSelect("LIVE")}>Live</button>
@@ -371,8 +417,10 @@ function CabinNotice({ notice, mission, onClose }: { notice: Exclude<NoticeState
   }
   return (
     <Notice title={notice === "admiral" ? "Admiral" : "Configuration"} onClose={onClose}>
-      <p>Not included in this Build Week presentation.</p>
+      <p>{notice === "admiral" ? "Fleet aggregation is not configured. This view follows one explicitly selected mission."
+        : "Configure the local mission reader with CABIN_ARTIFACTS_ROOT and CABIN_MISSION_ID, then restart it. Source selection is not editable here."}</p>
       <p>The Captain’s Cabin does not expose settings, approval actions, trading controls, or backend mutation.</p>
+      <p>Symbol onboarding and trading integration are future work, not enabled capabilities.</p>
     </Notice>
   );
 }
@@ -457,22 +505,6 @@ function LoadFailure({
 }
 
 function modeFromSearch(search: string): PresentationMode {
-  return new URLSearchParams(search).get("mode")?.toLowerCase() === "live" ? "LIVE" : "DEMO";
-}
-
-function assertPresentationMode(bundle: MissionBundle, mode: PresentationMode): void {
-  if (mode !== "LIVE") return;
-  const call = bundle.snapshot.stages.oracle.modeldock_calls.at(-1);
-  if (bundle.summary.run_mode !== "LIVE" || bundle.manifest.run_mode !== "LIVE") {
-    throw new Error("LIVE mode requires a canonical LIVE mission pack");
-  }
-  if (
-    bundle.manifest.modeldock_mode !== "LIVE"
-    || call?.status !== "SUCCEEDED"
-    || call.run_mode !== "LIVE"
-    || call.provider !== "mlx"
-    || call.mocked !== false
-  ) {
-    throw new Error("LIVE mode requires a successful non-mocked local MLX inference record");
-  }
+  const mode = new URLSearchParams(search).get("mode")?.toLowerCase();
+  return mode === "replay" || mode === "demo" ? "DEMO" : "LIVE";
 }

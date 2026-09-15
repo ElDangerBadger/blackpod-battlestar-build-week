@@ -11,8 +11,14 @@ vi.mock("./data/loadMission", async (importOriginal) => {
   };
 });
 
+vi.mock("./data/liveMission", () => ({
+  loadLiveMissionFeed: vi.fn(),
+  loadLiveMissionBundle: vi.fn(),
+}));
+
 import App from "./App";
 import { loadMissionBundle } from "./data/loadMission";
+import { loadLiveMissionBundle, loadLiveMissionFeed } from "./data/liveMission";
 
 const mockedLoadMissionBundle = vi.mocked(loadMissionBundle);
 
@@ -78,9 +84,11 @@ function liveMission() {
 
 describe("Captain's Cabin", () => {
   beforeEach(() => {
-    window.history.replaceState(null, "", "/");
+    window.history.replaceState(null, "", "/?mode=replay");
     mockedLoadMissionBundle.mockReset();
     mockedLoadMissionBundle.mockImplementation(async () => createMissionBundleFixture());
+    vi.mocked(loadLiveMissionFeed).mockReset();
+    vi.mocked(loadLiveMissionBundle).mockReset();
   });
 
   it("shows the canonical approval chain and SHADOW-only boundary", async () => {
@@ -95,9 +103,12 @@ describe("Captain's Cabin", () => {
     expect(screen.getByText(/Not configured — no illustrative holdings shown/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Mission Brief", hidden: true })).toHaveAttribute(
       "href",
-      "/demo/approved/presentation/mission_brief.html",
+      "./demo/approved/presentation/mission_brief.html",
     );
     expect(screen.getByText("Rotate device")).toBeInTheDocument();
+    expect(screen.getByText("Navigator chart not configured.")).toBeInTheDocument();
+    expect(screen.getByText("Recorded Governor disposition")).toBeInTheDocument();
+    expect(document.querySelector(".route-line")).toBeNull();
     expect(mockedLoadMissionBundle).toHaveBeenCalledWith("/demo/approved/");
     expect(screen.getAllByText("DEMO").length).toBeGreaterThan(0);
   });
@@ -129,28 +140,47 @@ describe("Captain's Cabin", () => {
     expect(screen.getByText(/Navigator SHADOW handoff only/i)).toBeInTheDocument();
   });
 
-  it("selects the prepared LIVE pack explicitly and never substitutes the demo pack after failure", async () => {
-    window.history.replaceState(null, "", "/?mode=live");
-    mockedLoadMissionBundle.mockRejectedValueOnce(new Error("live pack unavailable"));
+  it("defaults to the live reader and never substitutes a demo after failure", async () => {
+    window.history.replaceState(null, "", "/");
+    vi.mocked(loadLiveMissionFeed).mockRejectedValueOnce(new Error("reader unavailable"));
 
     render(<App />);
 
-    expect(await screen.findByText(/LIVE mission pack: live pack unavailable/)).toBeInTheDocument();
-    expect(screen.getByText(/No alternate mode was substituted/)).toBeInTheDocument();
-    expect(mockedLoadMissionBundle).toHaveBeenCalledTimes(1);
-    expect(mockedLoadMissionBundle).toHaveBeenCalledWith("/demo/live/");
+    expect(await screen.findByText("Live mission evidence unavailable.")).toBeInTheDocument();
+    expect(screen.getByText(/No replay data is substituted/)).toBeInTheDocument();
+    expect(mockedLoadMissionBundle).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Demo" })).not.toBeInTheDocument();
   });
 
-  it("loads an explicitly selected, non-mocked canonical LIVE mission", async () => {
-    mockedLoadMissionBundle.mockImplementation(async (baseUrl) => baseUrl === "/demo/live/" ? liveMission() : createMissionBundleFixture());
+  it("loads verified LIVE evidence by default without replay or mutation controls", async () => {
+    window.history.replaceState(null, "", "/");
+    const bundle = liveMission();
+    bundle.baseUrl = `/live/revisions/${"a".repeat(64)}/`;
+    vi.mocked(loadLiveMissionFeed).mockResolvedValue({ schema_version: "blackpod.cabin_feed.v1", status: "READY",
+      checked_at: new Date().toISOString(), observed_at: bundle.snapshot.observed_at, message: "Verified mission",
+      mission_id: bundle.summary.mission_id, publication_id: "a".repeat(64), base_url: `revisions/${"a".repeat(64)}/` });
+    vi.mocked(loadLiveMissionBundle).mockResolvedValue(bundle);
     render(<App />);
     await screen.findByText("APPROVED · COMPLETE");
 
-    fireEvent.click(screen.getByRole("button", { name: "Live" }));
-
-    expect(await screen.findByText("LIVE current mission")).toBeInTheDocument();
+    expect(screen.getByText("Read-only · reader connected")).toBeInTheDocument();
+    expect(screen.getByText("STALE EVIDENCE")).toBeInTheDocument();
     expect(screen.getByText("LOCAL INFERENCE VERIFIED AT MISSION TIME")).toBeInTheDocument();
-    expect(mockedLoadMissionBundle).toHaveBeenCalledWith("/demo/live/");
+    expect(screen.queryByRole("button", { name: "Restart" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Demo" })).not.toBeInTheDocument();
+    expect(mockedLoadMissionBundle).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Open Mission Brief", hidden: true })).toHaveAttribute("href", `${bundle.baseUrl}presentation/mission_brief.html`);
+  });
+
+  it("explains explicit source configuration instead of showing sample holdings", async () => {
+    window.history.replaceState(null, "", "/");
+    vi.mocked(loadLiveMissionFeed).mockResolvedValue({ schema_version: "blackpod.cabin_feed.v1", status: "NOT_CONFIGURED",
+      checked_at: new Date().toISOString(), message: "Select a mission source." });
+    render(<App />);
+    expect(await screen.findByText("No live mission configured.")).toBeInTheDocument();
+    expect(screen.getByText(/make cabin-live CABIN_ARTIFACTS_ROOT/)).toBeInTheDocument();
+    expect(loadLiveMissionBundle).not.toHaveBeenCalled();
+    expect(mockedLoadMissionBundle).not.toHaveBeenCalled();
   });
 
   it("renders the supplied Navigator market evidence in overview and expanded modes", async () => {

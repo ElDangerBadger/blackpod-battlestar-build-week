@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path, PurePosixPath
-from typing import Iterable
+from typing import Iterable, Mapping
 from urllib.parse import quote
 
 from .contracts import (
@@ -26,7 +26,7 @@ from .contracts import (
     OperatorActionStatus,
     StageStatus,
 )
-from .contracts.mission_request import load_strict_json_object
+from .contracts.mission_request import parse_strict_json_object_bytes
 from .hashing import canonical_json_bytes, sha256_bytes
 from .mission_store import LoadedMission, MissionStore
 
@@ -47,6 +47,15 @@ class MissionPresentationResult:
     captains_log_markdown_written: bool
     mission_summary_written: bool
     mission_brief_written: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MissionPresentationProjection:
+    """In-memory presentation of already validated canonical evidence."""
+
+    captain_log: CaptainsLog
+    mission_summary: MissionSummary
+    files: Mapping[str, bytes]
 
 
 _TERMINAL_STAGE_STATUSES = {StageStatus.SUCCEEDED, StageStatus.FAILED}
@@ -91,19 +100,11 @@ MISSION_BRIEF_PATH = "presentation/mission_brief.html"
 
 
 def _snapshot_reference(
-    loaded: LoadedMission, snapshot: MissionSnapshot
+    loaded: LoadedMission, snapshot: MissionSnapshot, source_bytes: Mapping[str, bytes]
 ) -> ArtifactReference:
-    path = loaded.paths.snapshots_dir / f"mission_snapshot-r{snapshot.revision:04d}.json"
-    try:
-        payload = path.read_bytes()
-    except OSError as exc:
-        raise MissionPresentationError(
-            f"could not read immutable presentation source r{snapshot.revision:04d}: {exc}"
-        ) from exc
-    if payload != canonical_json_bytes(snapshot.to_dict()):
-        raise MissionPresentationError(
-            f"immutable presentation source r{snapshot.revision:04d} changed after validation"
-        )
+    # Keep exact immutable bytes, including valid historical contracts whose
+    # omitted optional fields are normalized by today's parser.
+    payload = source_bytes[f"snapshots/mission_snapshot-r{snapshot.revision:04d}.json"]
     return ArtifactReference.from_mapping(
         {
             "name": f"mission_snapshot_r{snapshot.revision:04d}",
@@ -175,12 +176,13 @@ def _stage_sources(
     loaded: LoadedMission,
     snapshot: MissionSnapshot,
     stage_name: str,
+    source_bytes: Mapping[str, bytes],
 ) -> tuple[ArtifactReference, ...]:
     artifact_by_name = {artifact.name: artifact for artifact in snapshot.artifacts}
     names = _CAPTAINS_LOG_STAGE_SOURCES[stage_name]
     return _unique_sources(
         (
-            _snapshot_reference(loaded, snapshot),
+            _snapshot_reference(loaded, snapshot, source_bytes),
             *(artifact_by_name[name] for name in names if name in artifact_by_name),
         )
     )
@@ -210,10 +212,12 @@ def _stage_summary(stage_name: str, snapshot: MissionSnapshot) -> str:
     return f"{display} technically succeeded with native state {native}."
 
 
-def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
+def _captains_log_mapping(
+    loaded: LoadedMission, source_bytes: Mapping[str, bytes]
+) -> dict[str, object]:
     history = loaded.snapshot_history
     current = loaded.snapshot
-    final_reference = _snapshot_reference(loaded, current)
+    final_reference = _snapshot_reference(loaded, current, source_bytes)
     artifact_by_name = {artifact.name: artifact for artifact in current.artifacts}
 
     harbormaster_event = _find_stage_event(history, "harbormaster")
@@ -239,7 +243,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
         )
         modeldock_sources = _unique_sources(
             (
-                _snapshot_reference(loaded, modeldock_event),
+                _snapshot_reference(loaded, modeldock_event, source_bytes),
                 *(
                     artifact_by_name[name]
                     for name in _CAPTAINS_LOG_MODELDOCK_SOURCES
@@ -250,7 +254,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
     else:
         modeldock_status = "NOT_RECORDED"
         modeldock_summary = "No ModelDock narrative call is recorded in the mission."
-        modeldock_sources = (_snapshot_reference(loaded, modeldock_event),)
+        modeldock_sources = (_snapshot_reference(loaded, modeldock_event, source_bytes),)
 
     operator = operator_event.operator
     if operator.action_status is OperatorActionStatus.SUCCEEDED:
@@ -275,7 +279,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
         operator_summary = "No operator route or action is recorded in the mission."
     operator_sources = _unique_sources(
         (
-            _snapshot_reference(loaded, operator_event),
+            _snapshot_reference(loaded, operator_event, source_bytes),
             *(
                 artifact_by_name[name]
                 for name in _CAPTAINS_LOG_OPERATOR_SOURCES
@@ -298,7 +302,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
             "source_artifacts": [
                 source.to_dict()
                 for source in _stage_sources(
-                    loaded, harbormaster_event, "harbormaster"
+                    loaded, harbormaster_event, "harbormaster", source_bytes
                 )
             ],
         },
@@ -309,7 +313,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
             "summary": _stage_summary("oracle", oracle_event),
             "source_artifacts": [
                 source.to_dict()
-                for source in _stage_sources(loaded, oracle_event, "oracle")
+                for source in _stage_sources(loaded, oracle_event, "oracle", source_bytes)
             ],
         },
         {
@@ -326,7 +330,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
             "summary": _stage_summary("council", council_event),
             "source_artifacts": [
                 source.to_dict()
-                for source in _stage_sources(loaded, council_event, "council")
+                for source in _stage_sources(loaded, council_event, "council", source_bytes)
             ],
         },
         {
@@ -336,7 +340,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
             "summary": _stage_summary("governor", governor_event),
             "source_artifacts": [
                 source.to_dict()
-                for source in _stage_sources(loaded, governor_event, "governor")
+                for source in _stage_sources(loaded, governor_event, "governor", source_bytes)
             ],
         },
         {
@@ -353,7 +357,7 @@ def _captains_log_mapping(loaded: LoadedMission) -> dict[str, object]:
             "summary": _stage_summary("navigator", navigator_event),
             "source_artifacts": [
                 source.to_dict()
-                for source in _stage_sources(loaded, navigator_event, "navigator")
+                for source in _stage_sources(loaded, navigator_event, "navigator", source_bytes)
             ],
         },
         {
@@ -396,7 +400,9 @@ def _safe_warning(value: object, artifact_name: str) -> str:
     return value
 
 
-def _important_warnings(loaded: LoadedMission) -> tuple[str, ...]:
+def _important_warnings(
+    loaded: LoadedMission, source_bytes: Mapping[str, bytes]
+) -> tuple[str, ...]:
     values: list[str] = []
     current = loaded.snapshot
     for stage_name, stage in current.stages.items():
@@ -410,11 +416,11 @@ def _important_warnings(loaded: LoadedMission) -> tuple[str, ...]:
         artifact = artifact_by_name.get(artifact_name)
         if artifact is None:
             continue
-        relative = PurePosixPath(artifact.path)
-        path = loaded.paths.mission_root.joinpath(*relative.parts)
         try:
-            payload = load_strict_json_object(path)
-        except (OSError, ValueError) as exc:
+            payload = parse_strict_json_object_bytes(
+                source_bytes[artifact.path], document_name=artifact_name
+            )
+        except (KeyError, ValueError) as exc:
             raise MissionPresentationError(
                 f"could not parse canonical warning artifact {artifact_name}: {exc}"
             ) from exc
@@ -460,7 +466,7 @@ def _presentation_display_state(
 
 
 def _mission_summary_mapping(
-    loaded: LoadedMission, captain_log: CaptainsLog
+    loaded: LoadedMission, captain_log: CaptainsLog, source_bytes: Mapping[str, bytes]
 ) -> dict[str, object]:
     current = loaded.snapshot
     call = (
@@ -482,7 +488,7 @@ def _mission_summary_mapping(
         "symbol": loaded.request.symbol,
         "run_mode": current.run_mode.value,
         "generated_at": current.observed_at,
-        "generated_from_snapshot": _snapshot_reference(loaded, current).to_dict(),
+        "generated_from_snapshot": _snapshot_reference(loaded, current, source_bytes).to_dict(),
         "current_phase": current.current_phase.value,
         "terminal": current.terminal,
         "stages": {
@@ -526,7 +532,7 @@ def _mission_summary_mapping(
             None if current.approval_scope is None else current.approval_scope.value
         ),
         "final_outcome": current.mission_outcome.value,
-        "important_warnings": list(_important_warnings(loaded)),
+        "important_warnings": list(_important_warnings(loaded, source_bytes)),
         "snapshot_count": len(loaded.snapshot_history),
         "canonical_snapshot_path": "mission_snapshot.json",
         "display_title": f"BlackPod Mission: {loaded.request.symbol}",
@@ -961,10 +967,14 @@ def render_mission_brief_html(
     return document.encode("utf-8")
 
 
-def render_mission_presentation(
-    store: MissionStore, loaded: LoadedMission
-) -> MissionPresentationResult:
-    """Validate, deterministically derive, and atomically publish presentation views."""
+def project_mission_presentation(
+    loaded: LoadedMission, source_bytes: Mapping[str, bytes]
+) -> MissionPresentationProjection:
+    """Pure shared projection; never read, write, or recompute mission evidence.
+
+    Both the durable writer and the read-only Cabin use this exact projection.
+    Source bytes must be a coherent capture from a fully validated LoadedMission.
+    """
 
     history = loaded.snapshot_history
     if (
@@ -977,38 +987,86 @@ def render_mission_presentation(
             "loaded mission does not contain a complete canonical snapshot history"
         )
 
-    captain_log = CaptainsLog.from_mapping(_captains_log_mapping(loaded))
+    previous_digest = None
+    for snapshot in history:
+        path = f"snapshots/mission_snapshot-r{snapshot.revision:04d}.json"
+        payload = source_bytes.get(path)
+        if payload is None or (
+            MissionSnapshot.from_mapping(parse_strict_json_object_bytes(payload)) != snapshot
+            or snapshot.previous_snapshot_sha256 != previous_digest
+        ):
+            raise MissionPresentationError(
+                f"immutable presentation source r{snapshot.revision:04d} changed after validation"
+            )
+        previous_digest = sha256_bytes(payload)
+    if previous_digest != loaded.current_snapshot_sha256:
+        raise MissionPresentationError("immutable presentation source digest changed after validation")
+    for artifact in loaded.snapshot.artifacts:
+        payload = source_bytes.get(artifact.path)
+        if payload is None or (
+            (artifact.byte_size is not None and len(payload) != artifact.byte_size)
+            or sha256_bytes(payload) != artifact.sha256
+        ):
+            raise MissionPresentationError("canonical presentation evidence changed after validation")
+
+    captain_log = CaptainsLog.from_mapping(_captains_log_mapping(loaded, source_bytes))
     mission_summary = MissionSummary.from_mapping(
-        _mission_summary_mapping(loaded, captain_log)
+        _mission_summary_mapping(loaded, captain_log, source_bytes)
     )
-    captain_log_bytes = canonical_json_bytes(captain_log.to_dict())
-    captain_markdown_bytes = render_captains_log_markdown(captain_log)
-    mission_summary_bytes = canonical_json_bytes(mission_summary.to_dict())
-    mission_brief_bytes = render_mission_brief_html(mission_summary, captain_log)
+    return MissionPresentationProjection(
+        captain_log=captain_log,
+        mission_summary=mission_summary,
+        files={
+            CAPTAINS_LOG_PATH: canonical_json_bytes(captain_log.to_dict()),
+            CAPTAINS_LOG_MARKDOWN_PATH: render_captains_log_markdown(captain_log),
+            MISSION_SUMMARY_PATH: canonical_json_bytes(mission_summary.to_dict()),
+            MISSION_BRIEF_PATH: render_mission_brief_html(mission_summary, captain_log),
+        },
+    )
+
+
+def render_mission_presentation(
+    store: MissionStore, loaded: LoadedMission
+) -> MissionPresentationResult:
+    """Validate, deterministically derive, and atomically publish presentation views."""
+
+    source_paths = {artifact.path for artifact in loaded.snapshot.artifacts}
+    source_paths.update(
+        f"snapshots/mission_snapshot-r{snapshot.revision:04d}.json"
+        for snapshot in loaded.snapshot_history
+    )
+    try:
+        source_bytes = {
+            path: loaded.paths.mission_root.joinpath(*PurePosixPath(path).parts).read_bytes()
+            for path in source_paths
+        }
+    except OSError as exc:
+        raise MissionPresentationError("could not read canonical presentation evidence") from exc
+    projection = project_mission_presentation(loaded, source_bytes)
 
     log_json_write = store.write_presentation_artifact(
         loaded.snapshot.mission_id,
         relative_path=CAPTAINS_LOG_PATH,
-        payload=captain_log_bytes,
+        payload=projection.files[CAPTAINS_LOG_PATH],
     )
     log_markdown_write = store.write_presentation_artifact(
         loaded.snapshot.mission_id,
         relative_path=CAPTAINS_LOG_MARKDOWN_PATH,
-        payload=captain_markdown_bytes,
+        payload=projection.files[CAPTAINS_LOG_MARKDOWN_PATH],
     )
     summary_write = store.write_presentation_artifact(
         loaded.snapshot.mission_id,
         relative_path=MISSION_SUMMARY_PATH,
-        payload=mission_summary_bytes,
+        payload=projection.files[MISSION_SUMMARY_PATH],
     )
     brief_write = store.write_presentation_artifact(
         loaded.snapshot.mission_id,
         relative_path=MISSION_BRIEF_PATH,
-        payload=mission_brief_bytes,
+        payload=projection.files[MISSION_BRIEF_PATH],
     )
     return MissionPresentationResult(
-        captain_log=captain_log,
-        mission_summary=mission_summary,
+        captain_log=projection.captain_log,
+        mission_summary=projection.mission_summary,
         captains_log_json_path=log_json_write.path,
         captains_log_markdown_path=log_markdown_write.path,
         mission_summary_path=summary_write.path,

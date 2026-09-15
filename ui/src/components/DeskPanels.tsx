@@ -73,7 +73,7 @@ export function MissionChart({
     <section className="chart-copy" aria-label="Mission evidence chart">
       <span className="paper-title">Mission chart</span>
       <p>{missionId}</p>
-      <div className="route-line" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+      <p>Navigator chart not configured.</p>
       <dl>
         <div><dt>Snapshots</dt><dd>{snapshotCount}</dd></div>
         <div><dt>Final revision</dt><dd>r{String(revision).padStart(4, "0")}</dd></div>

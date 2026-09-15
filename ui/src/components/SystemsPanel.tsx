@@ -39,6 +39,12 @@ export function SystemsPanel(props: SystemsPanelProps) {
         <p className="gate-proof"><strong>PROCEED is not approval.</strong><br />The operator gate is a separate canonical event.</p>
       </section>
 
+      <section className="systems-governor-record">
+        <h2>Recorded Governor disposition</h2>
+        <p>{props.governorDisposition}</p>
+        <p>No execution authority.</p>
+      </section>
+
       <section className="systems-portfolio">
         <h2>Read-only portfolio source</h2>
         {props.portfolio.status === "CAPTURED" ? (
@@ -52,7 +58,7 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
 
       <section className="systems-modeldock">
-        <h2>Data &amp; model health</h2>
+        <h2>Recorded model provenance</h2>
         <dl>
           <div><dt>Mode</dt><dd>{props.modeldockMode}</dd></div>
           <div><dt>Provider</dt><dd>{props.provider ?? "Not present"}</dd></div>
