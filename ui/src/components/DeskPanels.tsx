@@ -50,6 +50,7 @@ export function MissionChart({
   revision,
   shipData,
   triggerRef,
+  expanded = false,
   onOpenShip,
 }: {
   missionId: string;
@@ -57,11 +58,12 @@ export function MissionChart({
   revision: number;
   shipData: NavigatorShipData | null;
   triggerRef?: Ref<HTMLButtonElement>;
+  expanded?: boolean;
   onOpenShip: () => void;
 }) {
   if (shipData) {
     return (
-      <button ref={triggerRef} className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`}>
+      <button ref={triggerRef} className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`} aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? "navigator-focus" : undefined}>
         <span className="paper-title">Navigator reference chart · open</span>
         <NavigatorShipView data={shipData} variant="overview" />
       </button>

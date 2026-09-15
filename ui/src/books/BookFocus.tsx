@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { BookDefinition } from "./bookPages";
+import { useModalFocus } from "../scene/useModalFocus";
 
 type BookFocusProps = {
   book: BookDefinition;
@@ -11,6 +12,7 @@ type BookFocusProps = {
 export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
   const [pageIndex, setPageIndex] = useState(0);
   const pageStrip = useRef<HTMLDivElement>(null);
+  const modalFocus = useModalFocus();
 
   useEffect(() => {
     setPageIndex(0);
@@ -41,8 +43,8 @@ export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
   };
 
   return (
-    <div className="book-focus-layer" role="dialog" aria-modal="true" aria-labelledby="book-focus-title">
-      <button className="book-focus-scrim" type="button" aria-label="Return to cabin" onClick={onClose} />
+    <div {...modalFocus} className="book-focus-layer" role="dialog" aria-modal="true" aria-labelledby="book-focus-title">
+      <button className="book-focus-scrim" type="button" aria-hidden="true" tabIndex={-1} onClick={onClose} />
       <article className="book-focus" style={{ "--book-accent": book.accent } as React.CSSProperties}>
         <header className="book-focus-header">
           <div>
@@ -50,7 +52,7 @@ export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
             <h2 id="book-focus-title">{book.title}</h2>
             <p>{book.subtitle}</p>
           </div>
-          <button className="book-close" type="button" onClick={onClose} aria-label="Return to full cabin">
+          <button className="book-close" type="button" onClick={onClose} aria-label="Return to full cabin" autoFocus>
             Return to cabin <span aria-hidden="true">×</span>
           </button>
         </header>

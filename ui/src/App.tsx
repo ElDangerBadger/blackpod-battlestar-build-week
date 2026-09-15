@@ -1,10 +1,10 @@
 import {
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 import { BookFocus } from "./books/BookFocus";
@@ -23,6 +23,7 @@ import { loadMissionBundle, MissionBundleLoadError, type MissionBundle } from ".
 import { createMissionViewModel, type MissionViewModel } from "./data/viewModel";
 import { useReplayTheater } from "./replay/useReplayTheater";
 import { CabinScene } from "./scene/CabinScene";
+import { useModalFocus } from "./scene/useModalFocus";
 
 export type PresentationMode = "DEMO" | "LIVE";
 
@@ -87,32 +88,42 @@ function MissionCabin({
   const [activeDestination, setActiveDestination] = useState<CabinDestination>("bridge");
   const [shipFocused, setShipFocused] = useState(false);
   const shipTriggerRef = useRef<HTMLButtonElement>(null);
+  const modalTriggerRef = useRef<HTMLElement | null>(null);
+  const wasModalOpen = useRef(false);
   const reducedMotion = useReducedMotion();
   const theater = useReplayTheater();
   const currentEntry = theater.revealCount > 0 ? mission.captainsLog[theater.revealCount - 1] : undefined;
-
-  const closeShipFocus = useCallback(() => {
-    setShipFocused(false);
-    queueMicrotask(() => shipTriggerRef.current?.focus());
-  }, []);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setSelectedBookId(null);
       setNotice(null);
-      if (shipFocused) closeShipFocus();
+      setShipFocused(false);
       setActiveDestination("bridge");
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [closeShipFocus, shipFocused]);
+  }, []);
 
   const selectedBook = selectedBookId === null ? undefined : books.find((book) => book.id === selectedBookId);
   const shipData = useMemo(() => {
     if (!mission.market.navigatorMarket) return null;
     return mission.market.navigatorMarket;
   }, [mission.market.navigatorMarket]);
+  const modalOpen = Boolean(selectedBook || notice || (shipFocused && shipData));
+
+  useLayoutEffect(() => {
+    if (wasModalOpen.current && !modalOpen) modalTriggerRef.current?.focus();
+    wasModalOpen.current = modalOpen;
+  }, [modalOpen]);
+
+  const rememberModalTrigger = (event: ReactMouseEvent<HTMLElement>) => {
+    if (modalOpen || !(event.target instanceof Element)) return;
+    // Pointer activation does not focus buttons in every browser (notably Safari).
+    const trigger = event.target.closest<HTMLElement>("button, a[href]");
+    if (trigger && event.currentTarget.contains(trigger)) modalTriggerRef.current = trigger;
+  };
   const activeMilestoneBook = milestoneBookId(theater.currentStage);
   const announcement = currentEntry
     ? `${currentEntry.stage}: ${currentEntry.status}. ${currentEntry.summary}`
@@ -151,8 +162,9 @@ function MissionCabin({
   const missionRevealed = theater.revealed.has("MISSION");
 
   return (
-    <main data-replay-stage={theater.currentStage ?? "RESET"}>
+    <main data-replay-stage={theater.currentStage ?? "RESET"} onClickCapture={rememberModalTrigger}>
       <CabinScene
+        modalOpen={modalOpen}
         missionBriefHref={`${PRESENTATION_BASE_URLS[presentationMode]}presentation/mission_brief.html`}
         status={<StatusPanel
           presentationMode={presentationMode}
@@ -197,7 +209,11 @@ function MissionCabin({
           revision={mission.status.snapshotCount}
           shipData={shipData}
           triggerRef={shipTriggerRef}
-          onOpenShip={() => setShipFocused(true)}
+          expanded={shipFocused}
+          onOpenShip={() => {
+            modalTriggerRef.current = shipTriggerRef.current;
+            setShipFocused(true);
+          }}
         />}
         paperOrder={navigatorRevealed
           && mission.status.navigatorMode === "SHADOW"
@@ -227,9 +243,11 @@ function MissionCabin({
           prohibitedOperations={mission.safety.prohibitedOperations}
         />}
         navigation={<BottomNavigation active={activeDestination} onNavigate={navigate} />}
-        foreground={<>
+        backgroundControls={<>
           <PresentationModeControl mode={presentationMode} runMode={mission.status.runMode} onSelect={onSelectMode} />
           <ReplayControls theater={theater} announcement={announcement} />
+        </>}
+        foreground={<>
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
           {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus} /> : null}
           {shipFocused && shipData ? (
@@ -239,7 +257,7 @@ function MissionCabin({
               runMode={mission.status.runMode}
               capturedAt={mission.market.capturedAt}
               reducedMotion={reducedMotion}
-              onClose={closeShipFocus}
+              onClose={closeFocus}
             />
           ) : null}
         </>}
@@ -284,37 +302,16 @@ function NavigatorShipFocus({
   reducedMotion: boolean;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  const trapFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Tab") return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-    )).filter((element) => !element.hidden);
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (!first || !last) return;
-
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || !dialog.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const modalFocus = useModalFocus();
 
   return (
     <div
-      ref={dialogRef}
+      {...modalFocus}
+      id="navigator-focus"
       className="navigator-focus-layer"
       role="dialog"
       aria-modal="true"
       aria-labelledby="navigator-focus-title"
-      onKeyDown={trapFocus}
     >
       <button
         className="book-focus-scrim"

@@ -3,6 +3,39 @@
 This document records submission-scope changes. It is not the upstream
 Battlestar or ModelDock changelog; both sibling repositories remain read-only.
 
+## 2026-09-15 — Cabin regression coverage and renderer maintenance
+
+- Merged the Navigator V3 integration and the ledger-preview/background fixes
+  into local `main`; started `update/2026-09-15-cabin-hardening` from that baseline.
+- Removed Finder metadata from version control and ignored `.DS_Store` files.
+- Isolated the scene and replay/mode controls while dialogs are open, with
+  keyboard containment and reliable focus restoration for Navigator, books,
+  and notices.
+- Added production browser checks for root and nested asset loading, the SVG
+  overview, lazy V3 expansion, camera endpoints, replay, Live failures, and
+  WebGL fallback.
+- Added deterministic camera transition tests without altering the canonical
+  renderer's camera behavior.
+- Recorded source and destination fingerprints for the 19 imported renderer
+  files and added local/upstream drift checks plus a reviewed update workflow.
+  A shared renderer package remains future Battlestar work; Build Week still
+  carries the documented snapshot.
+
+Acceptance: 471 backend tests, 71 UI unit tests, and 10 production browser
+checks passed. The production build and the 19-file upstream renderer check
+also passed. Browser coverage used local Chrome with software WebGL and
+reduced motion; smooth camera transitions are covered by deterministic unit
+tests. No fresh LIVE mission was run, and nothing was pushed to GitHub. The
+existing large lazy-renderer bundle warning remains non-blocking.
+
+## Stage 6 — Navigator V3 and ledger preview
+
+- Ported the renderer from Battlestar revision `7807798` behind the existing
+  mission-artifact adapter; preserved lazy expansion, the SVG overview/fallback,
+  Demo/Live selection, deterministic replay, and the SHADOW boundary.
+- Made the desk-level chart transparent with colors readable over the ledger.
+- Fixed production cabin artwork resolution by letting Vite process its CSS URL.
+
 ## Stage 2, Phase 3 — Demo readiness
 
 - Added one replay/live preflight surface for environment and dependency

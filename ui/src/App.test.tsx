@@ -177,10 +177,20 @@ describe("Captain's Cabin", () => {
     render(<App />);
 
     const openShip = await screen.findByRole("button", { name: "Open Navigator ship view for AAPL" });
+    const liveButton = screen.getByRole("button", { name: "Live" });
+    const restartButton = screen.getByRole("button", { name: "Restart" });
+    expect(openShip).toHaveAttribute("aria-haspopup", "dialog");
+    expect(openShip).toHaveAttribute("aria-expanded", "false");
     openShip.focus();
     fireEvent.click(openShip);
     const dialog = screen.getByRole("dialog", { name: "Navigator Ship View" });
     expect(dialog).toBeInTheDocument();
+    expect(openShip).toHaveAttribute("aria-expanded", "true");
+    expect(openShip.closest("[inert]")).not.toBeNull();
+    expect(liveButton.closest("[inert]")).not.toBeNull();
+    expect(restartButton.closest("[inert]")).not.toBeNull();
+    expect(dialog.closest("[inert]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Live" })).not.toBeInTheDocument();
 
     const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
       'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -199,6 +209,34 @@ describe("Captain's Cabin", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigator Ship View" })).not.toBeInTheDocument());
     await waitFor(() => expect(openShip).toHaveFocus());
+    expect(openShip.closest("[inert]")).toBeNull();
+    expect(openShip).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Live" })).toBe(liveButton);
+  });
+
+  it.each([
+    { trigger: "Open Oracle book", dialog: "Oracle", close: "Return to full cabin" },
+    { trigger: "Focus mission warnings", dialog: "Mission warnings", close: "Return to bridge" },
+  ])("isolates the $dialog dialog and restores its trigger on close", async ({ trigger, dialog: name, close }) => {
+    render(<App />);
+    const opener = await screen.findByRole("button", { name: trigger });
+    // A pointer click may leave focus on another control in Safari.
+    screen.getByRole("button", { name: "Live" }).focus();
+    fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog", { name });
+    const closeButton = screen.getByRole("button", { name: close });
+    expect(closeButton).toHaveFocus();
+    expect(opener.closest("[inert]")).not.toBeNull();
+    expect(dialog.closest("[inert]")).toBeNull();
+
+    // jsdom has no native inert behavior; the focus guard also contains
+    // unexpected programmatic focus while the dialog is open.
+    opener.focus();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    fireEvent.click(closeButton);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+    expect(opener.closest("[inert]")).toBeNull();
   });
 
   it("never presents a SHADOW plan when canonical Navigator plan state is absent", async () => {

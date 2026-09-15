@@ -31,7 +31,9 @@ export type CabinSceneProps = {
   paperOrder?: ReactNode;
   systemsPanel?: ReactNode;
   navigation?: ReactNode;
+  backgroundControls?: ReactNode;
   foreground?: ReactNode;
+  modalOpen?: boolean;
   className?: string;
   ariaLabel?: string;
   missionBriefHref?: string;
@@ -78,7 +80,9 @@ export function CabinScene({
   paperOrder,
   systemsPanel,
   navigation,
+  backgroundControls,
   foreground,
+  modalOpen = false,
   className,
   ariaLabel = "BlackPod Battlestar Captain's Cabin mission presentation",
   missionBriefHref,
@@ -88,116 +92,119 @@ export function CabinScene({
   return (
     <div className={joinClassNames("cabin-viewport", className)}>
       <section className="cabin-scene" aria-label={ariaLabel}>
-        <span className="cabin-scene__description cabin-visually-hidden">
-          A read-only mission presentation arranged across five stage books, a Captain&apos;s Log,
-          and ship status panels.
-        </span>
+        <div className="cabin-content" inert={modalOpen} aria-hidden={modalOpen || undefined}>
+          <span className="cabin-scene__description cabin-visually-hidden">
+            A read-only mission presentation arranged across five stage books, a Captain&apos;s Log,
+            and ship status panels.
+          </span>
 
-        <ScenePanel
-          region={SCENE_REGIONS["top-status"]}
-          className="cabin-status"
-          label="Mission status"
-        >
-          {status}
-        </ScenePanel>
+          <ScenePanel
+            region={SCENE_REGIONS["top-status"]}
+            className="cabin-status"
+            label="Mission status"
+          >
+            {status}
+          </ScenePanel>
 
-        {STAGE_BOOK_IDS.map((bookId) => {
-          const slot = bookSlots.get(bookId);
-          if (!slot) {
-            return null;
-          }
+          {STAGE_BOOK_IDS.map((bookId) => {
+            const slot = bookSlots.get(bookId);
+            if (!slot) {
+              return null;
+            }
 
-          const summaryId = `cabin-${bookId}-summary`;
-          const revealed = slot.revealed ?? true;
-          const interactive = Boolean(slot.onSelect) && !slot.disabled;
+            const summaryId = `cabin-${bookId}-summary`;
+            const revealed = slot.revealed ?? true;
+            const interactive = Boolean(slot.onSelect) && !slot.disabled;
 
-          return (
-            <div key={bookId} className="cabin-book">
-              {interactive ? (
-                <button
-                  type="button"
-                  className="cabin-region cabin-book__hit-target"
-                  style={regionStyle(SCENE_REGIONS[`${bookId}-book`])}
-                  aria-label={`Open ${slot.label} book`}
-                  aria-describedby={summaryId}
-                  aria-pressed={slot.selected ?? false}
+            return (
+              <div key={bookId} className="cabin-book">
+                {interactive ? (
+                  <button
+                    type="button"
+                    className="cabin-region cabin-book__hit-target"
+                    style={regionStyle(SCENE_REGIONS[`${bookId}-book`])}
+                    aria-label={`Open ${slot.label} book`}
+                    aria-describedby={summaryId}
+                    aria-pressed={slot.selected ?? false}
+                    data-book={bookId}
+                    data-revealed={revealed}
+                    hidden={!revealed}
+                    onClick={() => slot.onSelect?.(bookId)}
+                  />
+                ) : null}
+
+                <article
+                  id={summaryId}
+                  aria-label={`${slot.label} summary`}
+                  className={joinClassNames(
+                    "cabin-region",
+                    "cabin-book__summary",
+                    "stage-copy",
+                    slot.selected && "is-selected",
+                    !revealed && "is-concealed",
+                  )}
+                  style={regionStyle(STAGE_CONTENT_REGIONS[bookId])}
                   data-book={bookId}
                   data-revealed={revealed}
-                  hidden={!revealed}
-                  onClick={() => slot.onSelect?.(bookId)}
-                />
-              ) : null}
+                >
+                  {slot.children}
+                </article>
+              </div>
+            );
+          })}
 
-              <article
-                id={summaryId}
-                aria-label={`${slot.label} summary`}
-                className={joinClassNames(
-                  "cabin-region",
-                  "cabin-book__summary",
-                  "stage-copy",
-                  slot.selected && "is-selected",
-                  !revealed && "is-concealed",
-                )}
-                style={regionStyle(STAGE_CONTENT_REGIONS[bookId])}
-                data-book={bookId}
-                data-revealed={revealed}
-              >
-                {slot.children}
-              </article>
-            </div>
-          );
-        })}
+          <ScenePanel
+            region={LOWER_CONTENT_REGIONS["sentry-alerts"]}
+            className="cabin-sentry stage-copy"
+            label="Mission alerts"
+          >
+            {sentryAlerts}
+          </ScenePanel>
+          <ScenePanel
+            region={LOWER_CONTENT_REGIONS["market-conditions"]}
+            className="cabin-market stage-copy"
+            label="Market conditions"
+          >
+            {marketConditions}
+          </ScenePanel>
+          <ScenePanel
+            region={LOWER_CONTENT_REGIONS["captains-log"]}
+            className="cabin-log captains-log-copy"
+            label="Captain's Log"
+          >
+            {captainsLog}
+          </ScenePanel>
+          <ScenePanel
+            region={LOWER_CONTENT_REGIONS["mission-chart"]}
+            className="cabin-chart stage-copy"
+            label="Mission chart and evidence"
+          >
+            {missionChart}
+          </ScenePanel>
+          <ScenePanel
+            region={LOWER_CONTENT_REGIONS["paper-order"]}
+            className="cabin-shadow-plan stage-copy"
+            label="Navigator SHADOW plan"
+          >
+            {paperOrder}
+          </ScenePanel>
+          <ScenePanel
+            region={SCENE_REGIONS["systems-panel"]}
+            className="cabin-systems"
+            label="Mission systems and safety boundary"
+          >
+            {systemsPanel}
+          </ScenePanel>
+          <ScenePanel
+            region={SCENE_REGIONS["bottom-navigation"]}
+            className="cabin-navigation"
+            label="Presentation navigation"
+          >
+            {navigation}
+          </ScenePanel>
 
-        <ScenePanel
-          region={LOWER_CONTENT_REGIONS["sentry-alerts"]}
-          className="cabin-sentry stage-copy"
-          label="Mission alerts"
-        >
-          {sentryAlerts}
-        </ScenePanel>
-        <ScenePanel
-          region={LOWER_CONTENT_REGIONS["market-conditions"]}
-          className="cabin-market stage-copy"
-          label="Market conditions"
-        >
-          {marketConditions}
-        </ScenePanel>
-        <ScenePanel
-          region={LOWER_CONTENT_REGIONS["captains-log"]}
-          className="cabin-log captains-log-copy"
-          label="Captain's Log"
-        >
-          {captainsLog}
-        </ScenePanel>
-        <ScenePanel
-          region={LOWER_CONTENT_REGIONS["mission-chart"]}
-          className="cabin-chart stage-copy"
-          label="Mission chart and evidence"
-        >
-          {missionChart}
-        </ScenePanel>
-        <ScenePanel
-          region={LOWER_CONTENT_REGIONS["paper-order"]}
-          className="cabin-shadow-plan stage-copy"
-          label="Navigator SHADOW plan"
-        >
-          {paperOrder}
-        </ScenePanel>
-        <ScenePanel
-          region={SCENE_REGIONS["systems-panel"]}
-          className="cabin-systems"
-          label="Mission systems and safety boundary"
-        >
-          {systemsPanel}
-        </ScenePanel>
-        <ScenePanel
-          region={SCENE_REGIONS["bottom-navigation"]}
-          className="cabin-navigation"
-          label="Presentation navigation"
-        >
-          {navigation}
-        </ScenePanel>
-
+          {backgroundControls ? <div className="cabin-foreground">{backgroundControls}</div> : null}
+        </div>
         {foreground ? <div className="cabin-foreground">{foreground}</div> : null}
       </section>
 

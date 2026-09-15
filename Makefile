@@ -81,7 +81,7 @@ CABIN_PORTFOLIO_ARGUMENT = $(if $(strip $(PORTFOLIO_JSON)),--portfolio-json "$(P
 	demo-incomplete demo-outcomes rehearse-approved cabin-prepare cabin-dev \
 	cabin-build cabin-test cabin-capture-demo cabin-capture-live cabin-prepare-demo \
 	cabin-prepare-live cabin-freeze-live-demo cabin-dev-demo cabin-dev-live \
-	cabin-build-demo cabin-build-live
+	cabin-build-demo cabin-build-live cabin-e2e navigator-check navigator-check-upstream
 
 help:
 	@echo "BlackPod Battlestar Build Week demo targets"
@@ -106,6 +106,9 @@ help:
 	@echo "  make cabin-dev-live        Prepare Live data and launch the cabin"
 	@echo "  make cabin-build           Prepare and build the Captain's Cabin"
 	@echo "  make cabin-test            Run the focused Captain's Cabin tests"
+	@echo "  make cabin-e2e             Build and browser-test the prepared Cabin data"
+	@echo "  make navigator-check       Check the reviewed renderer snapshot locally"
+	@echo "  make navigator-check-upstream  Also compare canonical Battlestar sources"
 	@echo
 	@echo "Set BATTLESTAR_PATH to the read-only Battlestar checkout first."
 	@echo "Override DEMO_ROOT for a fresh isolated rehearsal."
@@ -300,14 +303,23 @@ cabin-dev-demo: cabin-prepare-demo
 cabin-dev-live: cabin-prepare-live
 	$(NPM) --prefix "$(UI_DIR)" run dev
 
-cabin-build: cabin-prepare
+cabin-build: navigator-check cabin-prepare
 	$(NPM) --prefix "$(UI_DIR)" run build
 
-cabin-build-demo: cabin-prepare-demo
+cabin-build-demo: navigator-check cabin-prepare-demo
 	$(NPM) --prefix "$(UI_DIR)" run build
 
-cabin-build-live: cabin-prepare-live
+cabin-build-live: navigator-check cabin-prepare-live
 	$(NPM) --prefix "$(UI_DIR)" run build
 
-cabin-test:
+cabin-test: navigator-check
 	$(NPM) --prefix "$(UI_DIR)" run test
+
+cabin-e2e: navigator-check
+	$(NPM) --prefix "$(UI_DIR)" run test:e2e
+
+navigator-check:
+	$(PYTHON) scripts/check_navigator_renderer.py
+
+navigator-check-upstream: require-battlestar
+	$(PYTHON) scripts/check_navigator_renderer.py --battlestar-path "$(BATTLESTAR_PATH)"

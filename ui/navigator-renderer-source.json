@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "canonical_revision": "78077983f7945528058102e466dd60a99d02622e",
+  "source_root": "blackpod-navigator-3/frontend/src",
+  "renderer_root": "ui/src/components/navigator-ocean",
+  "consumer_files": [
+    "HowToRead.tsx",
+    "NavigatorOceanView.tsx",
+    "types.ts",
+    "useReducedMotion.ts"
+  ],
+  "files": [
+    {
+      "source": "scene/Scene2.tsx",
+      "destination": "NavigatorOceanScene.tsx",
+      "source_sha256": "df610032561e23978f02a2ebb1898de3663268f5496fc6746badb136858cdadc",
+      "destination_sha256": "0e80d0b1bc4046245e5fa4c261ad249525aeef7beaac0d815534599e318f2405",
+      "adaptation": "Prop-only scene composition; no store"
+    },
+    {
+      "source": "scene/CameraRig2.tsx",
+      "destination": "CameraRig.tsx",
+      "source_sha256": "3d85defa02647b509adde4eb8e9388bb7f15399c05734d9429b00b2accb9200f",
+      "destination_sha256": "a53edc9fada451694f476b3e5a9b8c55e0287057cf4cb682f8ce4014fc2492e8",
+      "adaptation": "Host-owned zoom callbacks; canvas-scoped input"
+    },
+    {
+      "source": "scene/Ocean2.tsx",
+      "destination": "Ocean.tsx",
+      "source_sha256": "8521107d5cb52251f5aceae3242f585f422bc03a2da5e8fbda76c90fc6510065",
+      "destination_sha256": "feb88f9f900f913ac8eb72a97dcc7a7e818a0ae04a0cc9bd598052815cb0dc38",
+      "adaptation": "Contract volatility prop; reduced-motion and chart flattening"
+    },
+    {
+      "source": "scene/Sky2.tsx",
+      "destination": "Sky.tsx",
+      "source_sha256": "7c6750025baac6aeddf09e6c2ed54a1acf3a720b14a0b397bde2a543f775685a",
+      "destination_sha256": "51c7e36a7f9699287defd87135c53ca230f3e3b0d8f393b226b5b080eff5943b",
+      "adaptation": "Contract-free visual component; reduced-motion support"
+    },
+    {
+      "source": "scene/skyGlsl.ts",
+      "destination": "skyGlsl.ts",
+      "source_sha256": "c378a3798b0685554bef28764736ee5e8a2a838be704d34bf3ff657568fc864b",
+      "destination_sha256": "3394e9d6ef1febff17e8ef126870faf8fe371dc57d98724833f77e24437ec316",
+      "adaptation": "Reused shader source"
+    },
+    {
+      "source": "scene/Ship.tsx",
+      "destination": "Ship.tsx",
+      "source_sha256": "7dab4651ede678ef3169e0496e1fc1a80faf40652965d69dd8c52b17fc2895cd",
+      "destination_sha256": "bc235e9e8e8e5c95867dc36eae8f27f0e60a4b011a19c0126314b06cafe4df2a",
+      "adaptation": "Reused model; visual props only"
+    },
+    {
+      "source": "scene/BowWake.tsx",
+      "destination": "BowWake.tsx",
+      "source_sha256": "eeb8e6dc077456cbc1b756a21cc76f7d4d0def12ff2a5be6849b93c14bd1c932",
+      "destination_sha256": "a9da8ffceecbe1a9080c6d4b621cb1c2298c1f25eae92e393e44d66b99bec719",
+      "adaptation": "Reused effect; reduced-motion support"
+    },
+    {
+      "source": "scene/Spray.tsx",
+      "destination": "Spray.tsx",
+      "source_sha256": "cd99c9fceccc2ef3476f909f5e12eda10bc72b14ea533b055dc155d6eb0e42ed",
+      "destination_sha256": "092836753a5d1761edb4e2c6b3bc16e2b9d2212fa89f6fb494e16b24c0a0bfe2",
+      "adaptation": "Fixed-seed particles replace Math.random()"
+    },
+    {
+      "source": "scene/Wake2.tsx",
+      "destination": "Wake.tsx",
+      "source_sha256": "fd7a4a609854e5ed0cffd6bb44683f25a3b32736602359ad7f6615aa8214947d",
+      "destination_sha256": "ff1a2c29b658c7cbb2e1be0e31514dd62b7cf5aae26a0442000064c71f11b893",
+      "adaptation": "Consumes validated projection props"
+    },
+    {
+      "source": "scene/MaBearing2.tsx",
+      "destination": "MaBearing.tsx",
+      "source_sha256": "df41813aa52b6d56f1527ef61e140d6a1da68cef367b2eaff3b286362c3ac73e",
+      "destination_sha256": "793924a56c495128f8262e769202a5499931e35a0734f4e7a6224e673c11bbde",
+      "adaptation": "Preserves missing-MA gaps"
+    },
+    {
+      "source": "scene/ChartView.tsx",
+      "destination": "ChartView.tsx",
+      "source_sha256": "f7e5003b4bb70281a5ad96635cdc72d91e3d38346150b836ab621669c59fe0ed",
+      "destination_sha256": "a281724e072814d95389cc5547e6608ff80a1226c87bae070b1efbbf96f48080",
+      "adaptation": "UTC labels; depth-safe full chart"
+    },
+    {
+      "source": "scene/ColorGrade.tsx",
+      "destination": "ColorGrade.tsx",
+      "source_sha256": "f53cfdee90b51659639490e1a2e46ad4e80206f4bb8bc7675cca874b280e2eac",
+      "destination_sha256": "aca2243d1a8f347710ef663e7b2c39b6c5af11cc7f9814177b50e49cd6acc202",
+      "adaptation": "Reused post-processing effect"
+    },
+    {
+      "source": "scene/ShipCallout.tsx",
+      "destination": "ShipCallout.tsx",
+      "source_sha256": "a1662143097a7521cf914eb0180c99fb7c165f9c57574d82000f0c7cbad861fe",
+      "destination_sha256": "93ad702a0ee186f543e683685e3c5659529e394f8d1d30a26f94860dbab39862",
+      "adaptation": "Summary supplied through props"
+    },
+    {
+      "source": "scene/ShipMarker.tsx",
+      "destination": "ShipMarker.tsx",
+      "source_sha256": "93484878fb295f507b5413292f0a10dd5281fa277182d1a7df7a1b3d05e7382b",
+      "destination_sha256": "d34fa652271faf428ab93170af8dcc893504f38b043c9b8d1a33eaf646d1e93e",
+      "adaptation": "Reused marker; reduced-motion support"
+    },
+    {
+      "source": "scene/SunDisc.tsx",
+      "destination": "SunDisc.tsx",
+      "source_sha256": "0e0322151e86d3f8a4fd8c05878b78cec4267d537e6c333d0a621d728ac958cd",
+      "destination_sha256": "dadedf120b4de7b395d3a6600bcef5dc61fff57cd5dc5af2ee6102fd4e8a2139",
+      "adaptation": "Reused billboard visual"
+    },
+    {
+      "source": "scene/projection.ts",
+      "destination": "projection.ts",
+      "source_sha256": "0c2368aa3ce5b50aaede66a9aa0ce5fb71f43946e564262c266c07fe015130bf",
+      "destination_sha256": "771e6a6f96c76b936ce66ec51da49f49d5decf488a232985c9a3ea795c9d6f58",
+      "adaptation": "V3 stretch plus Build Week's bounded deterministic sampling"
+    },
+    {
+      "source": "scene/oceanHeight.ts",
+      "destination": "oceanHeight.ts",
+      "source_sha256": "02e1b3750dbff4b3c6f8b4509f2f252949bd6a57b535d351a2abba37aabc60b5",
+      "destination_sha256": "97128a5ff1415a012965afd9484681f2fc34abb5f095f3837a1e640a32f12372",
+      "adaptation": "CPU/GPU surface parity; exact chart flattening"
+    },
+    {
+      "source": "scene/renderOrder.ts",
+      "destination": "renderOrder.ts",
+      "source_sha256": "4a74837ca525c8169371e2ef9f142c6b8491073d2489f43be71209341504a3b9",
+      "destination_sha256": "3980cb98cc15adb84ebd18943b29845aa1cbdc2b7e13659db190a687661157c4",
+      "adaptation": "Reused overlay order constants"
+    },
+    {
+      "source": "styles/app.css",
+      "destination": "navigator-ocean.css",
+      "source_sha256": "5632a3597b787bab8ce6ad7efda23969f62a499b52858c7be43f041aca023a60",
+      "destination_sha256": "03be173b30880e469a79dda2ae07a1d36850cc7ac1c5ee0b36d14002c7e96a37",
+      "adaptation": "Scoped under .navigator-ocean; no global reset/font import"
+    }
+  ]
+}

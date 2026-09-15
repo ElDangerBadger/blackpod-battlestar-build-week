@@ -29,6 +29,36 @@ make cabin-test
 make cabin-build
 ```
 
+For browser regression checks against a production build of the prepared Demo:
+
+```bash
+# Once, if Playwright's Chromium is not installed:
+npm --prefix ui exec -- playwright install chromium
+make cabin-e2e
+
+# Alternatively use an existing local Chrome installation:
+PLAYWRIGHT_CHANNEL=chrome make cabin-e2e
+```
+
+Prepare the default offline capture with `make cabin-prepare` first. Browser
+tests require that REPLAY/SHADOW pack with its Navigator capture and fail with
+setup instructions if it is absent. They do not produce or replace a LIVE
+mission. The suite builds the current UI and starts its own production preview
+on ports 4317 and 4318, checking both root and `/cabin/` asset loading.
+Reports, screenshots, and failure traces are written beneath
+`output/playwright/regressions/`.
+
+Coverage includes the transparent ledger preview, deferred Navigator V3 load,
+camera endpoints, modal keyboard/focus behavior, replay progression, explicit
+Live failure, and the WebGL/SVG fallback. Camera unit tests exercise smooth
+transitions and reversals separately from the reduced-motion browser smoke.
+
+`make cabin-test`, `make cabin-build`, and `make cabin-e2e` also verify the
+reviewed renderer fingerprints. Before accepting an upstream Navigator update,
+run `make navigator-check-upstream BATTLESTAR_PATH=/path/to/battlestar` and
+follow [Navigator source maintenance](NAVIGATOR_V3_INTEGRATION.md). The check
+reads the canonical checkout without changing it.
+
 Stage 4 also supports two explicit prepared data slots. Demo remains the
 default; Live must be selected and never falls back:
 
@@ -141,6 +171,10 @@ execution controls.
 - Book selection and page controls are keyboard operable.
 - Keyboard focus remains visibly distinguishable from stage color.
 - Escape closes a focused book.
+- Opening a book, notice, or expanded Navigator makes the background scene,
+  Demo/Live buttons, and replay controls inert and hidden from assistive
+  technology. Focus stays in the dialog and returns to its opening control
+  after dismissal, including pointer activation that did not focus that control.
 - Replay announcements use an `aria-live` region without rewriting timestamps.
 - Status text accompanies every color cue.
 - Reduced-motion preferences suppress nonessential transitions.

@@ -76,7 +76,14 @@ Detailed reviewer material:
 - [Safety Boundary](docs/SAFETY_BOUNDARY.md)
 - [Build Week Changelog](docs/BUILD_WEEK_CHANGELOG.md)
 - [Captain's Cabin](docs/CAPTAINS_CABIN.md)
+- [Navigator V3 source mapping and update checks](docs/NAVIGATOR_V3_INTEGRATION.md)
 - [Stage 4 LIVE Demo Runbook](docs/LIVE_DEMO_RUNBOOK.md)
+
+The Cabin includes the Battlestar Navigator V3 renderer, a transparent SVG
+Mission Chart overview, and an expanded ocean view. `make navigator-check`
+detects unreviewed changes to the renderer snapshot; `make cabin-e2e` builds
+and checks the prepared Demo in a real browser. Browser setup and report paths
+are described in [Captain's Cabin](docs/CAPTAINS_CABIN.md).
 
 ## Stage 4: explicit Demo and Live presentation packs
 

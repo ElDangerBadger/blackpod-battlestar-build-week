@@ -22,4 +22,6 @@ __pycache__/
 /ui/coverage/
 /ui/public/demo/
 /output/playwright/
+/ui/playwright-report/
+/ui/test-results/
 /.playwright-cli/
