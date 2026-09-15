@@ -28,6 +28,18 @@ reduced motion; smooth camera transitions are covered by deterministic unit
 tests. No fresh LIVE mission was run, and nothing was pushed to GitHub. The
 existing large lazy-renderer bundle warning remains non-blocking.
 
+### Ledger alignment follow-up
+
+- Recalibrated book and loose-paper ink areas against the artwork, including
+  page angles, the Captain's Log gutter, and SHADOW rope/seal clearance.
+- Fit the transparent Navigator overview to the portrait ledger area, inset
+  its summary from the binding, and kept the expanded renderer and supplied
+  observations unchanged.
+- Aligned right-hand provenance panels with their illustrated frames and
+  covered conflicting printed placeholders beneath the live text.
+- Verified the layout at 1280×960, 1448×1086, and 1846×1311. All 75 UI unit
+  tests, 10 production browser checks, and the production build passed.
+
 ## Stage 6 — Navigator V3 and ledger preview
 
 - Ported the renderer from Battlestar revision `7807798` behind the existing

@@ -289,8 +289,12 @@
 
 .navigator-ship--overview {
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0.25cqw;
-  font-size: clamp(7px, 3.1cqw, 12px);
+  gap: 0.35em;
+  font-size: inherit;
+}
+
+.navigator-ship--overview .navigator-ship__header strong {
+  font-size: 1.15em;
 }
 
 .navigator-ship--overview .navigator-ship__header p {
@@ -328,6 +332,7 @@
   paint-order: stroke;
   stroke: rgb(235 217 172 / 82%);
   stroke-width: 3px;
+  font-size: 18px;
 }
 
 .navigator-ship--overview .navigator-ship__level text {
@@ -351,6 +356,22 @@
 
 .navigator-ship--overview .navigator-ship__summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.navigator-ship--overview .navigator-ship__caption {
+  /* The illustrated page's binding slopes inward toward its lower edge. */
+  padding-inline-start: 2em;
+}
+
+.navigator-ship--overview .navigator-ship__summary div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  gap: 0.08em;
+}
+
+.navigator-ship--overview .navigator-ship__summary dd {
+  text-align: left;
 }
 
 .navigator-ship--overview .navigator-ship__summary div:nth-child(n + 5),

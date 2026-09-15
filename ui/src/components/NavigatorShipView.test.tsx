@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { NavigatorShipView, type NavigatorShipData } from "./NavigatorShipView";
@@ -64,6 +64,32 @@ describe("NavigatorShipView", () => {
     expect(screen.queryByRole("button", { name: "Zoom in" })).not.toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: "History position" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("navigator-sea")).not.toBeInTheDocument();
+  });
+
+  it("fits the ledger viewport without changing supplied facts or the expanded viewport", () => {
+    const { rerender } = render(<NavigatorShipView data={data} variant="overview" />);
+    const chartName = /price history with supplied 250-day moving average/;
+    const summaryFacts = () => {
+      const figure = screen.getByRole("figure", { name: "Navigator ship view for AAPL" });
+      return within(figure).getAllByRole("definition").map((definition) => definition.textContent);
+    };
+
+    expect(screen.getByRole("img", { name: chartName })).toHaveAttribute("viewBox", "0 0 600 540");
+    expect(screen.queryByTestId("navigator-sea")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Zoom in" })).not.toBeInTheDocument();
+    const overviewFacts = summaryFacts();
+    expect(overviewFacts).toEqual([
+      "$112.00", "$110.00", "1.82%", "above", "0.34%", "moderate", "$2.50 · 2.23%", "12",
+    ]);
+    expect(screen.getByTestId("current-price-ship")).toHaveAttribute("aria-label", "Ship at latest close $112.00");
+
+    rerender(<NavigatorShipView data={data} variant="interactive" />);
+
+    expect(screen.getByRole("img", { name: chartName })).toHaveAttribute("viewBox", "0 0 1000 430");
+    expect(screen.getByTestId("navigator-sea")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
+    expect(summaryFacts()).toEqual(overviewFacts);
+    expect(screen.getByTestId("current-price-ship")).toHaveAttribute("aria-label", "Ship at latest close $112.00");
   });
 
   it("provides semantic zoom, reset, wheel zoom, and history scrolling in interactive mode", () => {

@@ -464,6 +464,17 @@ button.loose-paper {
   cursor: pointer;
 }
 
+.sentry-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.market-copy {
+  font-size: 0.88em;
+  line-height: 1.2;
+}
+
 button.loose-paper:focus-visible {
   outline: max(2px, 0.14cqw) solid #6e471f;
   outline-offset: 0.12cqw;
@@ -531,7 +542,18 @@ button.loose-paper:focus-visible {
 }
 
 .navigator-chart-overview > .paper-title {
-  margin-block-end: 0.25em;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5em;
+  margin-block-end: 0.45em;
+  font-size: 0.72em;
+  letter-spacing: 0.02em;
+}
+
+.chart-open-cue {
+  flex: none;
+  white-space: nowrap;
 }
 
 .chart-copy > p {
@@ -558,6 +580,22 @@ button.loose-paper:focus-visible {
 .paper-order-copy dd {
   margin: 0;
   text-align: right;
+}
+
+.paper-order-copy dl > div {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.45em;
+}
+
+.paper-order-copy dt {
+  white-space: nowrap;
+}
+
+.paper-order-copy dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .route-line {
@@ -738,9 +776,19 @@ button.loose-paper:focus-visible {
 
 .systems-copy > section {
   position: absolute;
-  left: 5%;
-  width: 90%;
+  left: 4.5%;
+  width: 90.5%;
   overflow: hidden;
+}
+
+/* Cover only the printed placeholder interiors, keeping the brass frames and
+   leather surrounding them. Otherwise real mission values double-print. */
+.systems-copy > section:not(.systems-warnings) {
+  left: 1.3%;
+  width: 94.5%;
+  padding: 0.2cqw 0.65cqw;
+  background: rgb(28 21 13 / 97%);
+  border-radius: 0.14cqw;
 }
 
 .systems-copy h2 {
@@ -777,36 +825,38 @@ button.loose-paper:focus-visible {
   overflow: hidden;
   color: #9faa54;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .systems-warnings {
-  top: 2.5%;
-  height: 16%;
+  top: 3.2%;
+  height: 14%;
 }
 
 .systems-governance {
-  top: 18%;
-  height: 21.5%;
+  top: 20.6%;
+  height: 13.2%;
 }
 
 .systems-portfolio {
-  top: 40.5%;
-  height: 13%;
+  top: 44.2%;
+  height: 15.2%;
 }
 
 .systems-modeldock {
-  top: 54.5%;
-  height: 21%;
+  top: 61.1%;
+  height: 11.8%;
+  line-height: 1.05;
 }
 
 .systems-authority {
-  top: 76.5%;
-  height: 8.5%;
+  top: 74.5%;
+  height: 8%;
 }
 
 .systems-safety {
-  top: 85.5%;
-  height: 13.5%;
+  top: 82.8%;
+  height: 11%;
   color: #d2b56f;
   font-size: 0.88em;
 }
@@ -830,17 +880,20 @@ button.loose-paper:focus-visible {
   color: #a5ad58;
   font-size: 0.82em;
   line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .systems-modeldock dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 0.65em;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0.04em;
 }
 
 .systems-modeldock dl > div {
-  grid-template-columns: 42% minmax(0, 1fr);
-  margin-block-end: 0.15em;
+  grid-template-columns: 30% minmax(0, 1fr);
+  margin: 0;
 }
 
 .cabin-navigation {

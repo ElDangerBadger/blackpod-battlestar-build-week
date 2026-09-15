@@ -73,6 +73,9 @@ const LEVELS: readonly Readonly<{ key: LevelKey; label: string; className: strin
 ];
 
 const PLOT = { left: 56, top: 36, width: 888, height: 342 } as const;
+// The ledger is portrait-shaped. Project the same observations into its ink
+// area instead of letterboxing the expanded SVG's wide viewport onto the page.
+const OVERVIEW_PLOT = { left: 28, top: 30, width: 544, height: 466 } as const;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 
@@ -145,6 +148,7 @@ function shipPath(x: number, y: number): string {
  * mission outcomes, or trading instructions.
  */
 export function NavigatorShipView({ data, variant, className = "" }: NavigatorShipViewProps) {
+  const plot = variant === "overview" ? OVERVIEW_PLOT : PLOT;
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [windowStart, setWindowStart] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -175,13 +179,13 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
     const span = rawMaximum - rawMinimum || Math.max(Math.abs(rawMaximum) * 0.04, 1);
     const minimum = rawMinimum - span * 0.08;
     const maximum = rawMaximum + span * 0.08;
-    const x = (index: number) => PLOT.left + (visiblePoints.length <= 1 ? PLOT.width : index * PLOT.width / (visiblePoints.length - 1));
-    const y = (value: number) => PLOT.top + (maximum - value) / (maximum - minimum) * PLOT.height;
+    const x = (index: number) => plot.left + (visiblePoints.length <= 1 ? plot.width : index * plot.width / (visiblePoints.length - 1));
+    const y = (value: number) => plot.top + (maximum - value) / (maximum - minimum) * plot.height;
     const closePath = linePath(visiblePoints, (point) => point.c, x, y);
     const maPath = linePath(visiblePoints, (point) => point.ma, x, y);
 
     return { minimum, maximum, x, y, closePath, maPath };
-  }, [data.levels, visiblePoints]);
+  }, [data.levels, visiblePoints, plot]);
 
   const zoomTo = (requested: number) => {
     const nextZoom = clamp(requested, MIN_ZOOM, MAX_ZOOM);
@@ -280,7 +284,7 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
         <svg
           ref={svgRef}
           className="navigator-ship__plot"
-          viewBox="0 0 1000 430"
+          viewBox={variant === "overview" ? "0 0 600 540" : "0 0 1000 430"}
           role="img"
           aria-label={`${data.symbol} price history with supplied ${data.ma_period}-day moving average`}
           onWheel={handleWheel}
@@ -291,7 +295,7 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
         >
           <defs>
             <clipPath id={clipId}>
-              <rect x={PLOT.left} y={PLOT.top} width={PLOT.width} height={PLOT.height} rx="5" />
+              <rect x={plot.left} y={plot.top} width={plot.width} height={plot.height} rx="5" />
             </clipPath>
             <linearGradient id={`${clipId}-sea`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor="#315460" />
@@ -302,10 +306,10 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
           {variant === "interactive" ? (
             <rect
               className="navigator-ship__sea"
-              x={PLOT.left}
-              y={PLOT.top}
-              width={PLOT.width}
-              height={PLOT.height}
+              x={plot.left}
+              y={plot.top}
+              width={plot.width}
+              height={plot.height}
               rx="5"
               fill={`url(#${clipId}-sea)`}
               data-testid="navigator-sea"
@@ -313,10 +317,10 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
           ) : null}
           <g className="navigator-ship__grid" clipPath={`url(#${clipId})`} aria-hidden="true">
             {[0, 1, 2, 3, 4].map((index) => (
-              <line key={`h-${index}`} x1={PLOT.left} x2={PLOT.left + PLOT.width} y1={PLOT.top + index * PLOT.height / 4} y2={PLOT.top + index * PLOT.height / 4} />
+              <line key={`h-${index}`} x1={plot.left} x2={plot.left + plot.width} y1={plot.top + index * plot.height / 4} y2={plot.top + index * plot.height / 4} />
             ))}
             {[0, 1, 2, 3, 4].map((index) => (
-              <line key={`v-${index}`} y1={PLOT.top} y2={PLOT.top + PLOT.height} x1={PLOT.left + index * PLOT.width / 4} x2={PLOT.left + index * PLOT.width / 4} />
+              <line key={`v-${index}`} y1={plot.top} y2={plot.top + plot.height} x1={plot.left + index * plot.width / 4} x2={plot.left + index * plot.width / 4} />
             ))}
           </g>
 
@@ -327,8 +331,8 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
               const y = geometry.y(value);
               return (
                 <g className={`navigator-ship__level navigator-ship__level--${levelClass}`} key={key} data-testid={`level-${key}`}>
-                  <line x1={PLOT.left} x2={PLOT.left + PLOT.width} y1={y} y2={y} />
-                  <text x={PLOT.left + 8} y={y - 5}>{label} {formatPrice(value, data.currency)}</text>
+                  <line x1={plot.left} x2={plot.left + plot.width} y1={y} y2={y} />
+                  <text x={plot.left + 8} y={y - 5}>{label} {formatPrice(value, data.currency)}</text>
                 </g>
               );
             })}
@@ -344,12 +348,12 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
           </g>
 
           <g className="navigator-ship__axis" aria-hidden="true">
-            <text x={PLOT.left} y={PLOT.top - 9}>{formatPrice(geometry.maximum, data.currency)}</text>
-            <text x={PLOT.left} y={PLOT.top + PLOT.height + 22}>{shortTimestamp(visiblePoints[0]?.t)}</text>
-            <text x={PLOT.left + PLOT.width} y={PLOT.top + PLOT.height + 22} textAnchor="end">{shortTimestamp(visiblePoints.at(-1)?.t)}</text>
+            <text x={plot.left} y={plot.top - 9}>{formatPrice(geometry.maximum, data.currency)}</text>
+            <text x={plot.left} y={plot.top + plot.height + 22}>{shortTimestamp(visiblePoints[0]?.t)}</text>
+            <text x={plot.left + plot.width} y={plot.top + plot.height + 22} textAnchor="end">{shortTimestamp(visiblePoints.at(-1)?.t)}</text>
           </g>
           {!visiblePoints.length ? (
-            <text className="navigator-ship__empty" x="500" y="220" textAnchor="middle">No price observations present in mission artifact</text>
+            <text className="navigator-ship__empty" x={plot.left + plot.width / 2} y={plot.top + plot.height / 2} textAnchor="middle">No price observations present in mission artifact</text>
           ) : null}
         </svg>
       </div>

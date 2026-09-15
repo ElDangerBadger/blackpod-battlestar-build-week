@@ -32,9 +32,9 @@ export function SystemsPanel(props: SystemsPanelProps) {
       <section className="systems-governance">
         <h2>Risk &amp; governance</h2>
         <dl>
-          <div><dt>Governor</dt><dd>{props.governorDisposition}</dd></div>
-          <div><dt>Operator</dt><dd>{props.operatorResult ?? "Not present"}</dd></div>
-          <div><dt>Scope</dt><dd>{props.approvalScope ?? "Not present"}</dd></div>
+          <div><dt>Governor</dt><dd title={props.governorDisposition}>{props.governorDisposition}</dd></div>
+          <div><dt>Operator</dt><dd title={props.operatorResult ?? undefined}>{props.operatorResult ?? "Not present"}</dd></div>
+          <div><dt>Scope</dt><dd title={props.approvalScope ?? undefined}>{props.approvalScope ?? "Not present"}</dd></div>
         </dl>
         <p className="gate-proof"><strong>PROCEED is not approval.</strong><br />The operator gate is a separate canonical event.</p>
       </section>

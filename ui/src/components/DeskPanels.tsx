@@ -64,7 +64,7 @@ export function MissionChart({
   if (shipData) {
     return (
       <button ref={triggerRef} className="chart-copy navigator-chart-overview" type="button" onClick={onOpenShip} aria-label={`Open Navigator ship view for ${shipData.symbol}`} aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? "navigator-focus" : undefined}>
-        <span className="paper-title">Navigator reference chart · open</span>
+        <span className="paper-title"><span>Navigator reference chart</span><span className="chart-open-cue">Open ↗</span></span>
         <NavigatorShipView data={shipData} variant="overview" />
       </button>
     );
