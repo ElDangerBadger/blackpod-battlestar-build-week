@@ -63,6 +63,7 @@ describe("NavigatorShipView", () => {
 
     expect(screen.queryByRole("button", { name: "Zoom in" })).not.toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: "History position" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("navigator-sea")).not.toBeInTheDocument();
   });
 
   it("provides semantic zoom, reset, wheel zoom, and history scrolling in interactive mode", () => {
@@ -71,6 +72,7 @@ describe("NavigatorShipView", () => {
     const zoomIn = screen.getByRole("button", { name: "Zoom in" });
     const reset = screen.getByRole("button", { name: "Reset chart view" });
     const chart = screen.getByRole("img", { name: /price history with supplied 250-day moving average/ });
+    expect(screen.getByTestId("navigator-sea")).toHaveAttribute("fill", expect.stringContaining("-sea"));
     expect(screen.getByText("12 of 12 bars")).toBeInTheDocument();
 
     fireEvent.click(zoomIn);

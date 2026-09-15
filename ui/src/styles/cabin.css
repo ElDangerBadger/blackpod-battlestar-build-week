@@ -60,7 +60,7 @@ select {
   aspect-ratio: 4 / 3;
   flex: none;
   overflow: hidden;
-  background-image: var(--cabin-background, url("/captains-cabin-template.png"));
+  background-image: url("/captains-cabin-template.png");
   background-repeat: no-repeat;
   background-position: center;
   background-size: 100% 100%;

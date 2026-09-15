@@ -299,7 +299,18 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
               <stop offset="1" stopColor="#102c38" />
             </linearGradient>
           </defs>
-          <rect className="navigator-ship__sea" x={PLOT.left} y={PLOT.top} width={PLOT.width} height={PLOT.height} rx="5" fill={`url(#${clipId}-sea)`} />
+          {variant === "interactive" ? (
+            <rect
+              className="navigator-ship__sea"
+              x={PLOT.left}
+              y={PLOT.top}
+              width={PLOT.width}
+              height={PLOT.height}
+              rx="5"
+              fill={`url(#${clipId}-sea)`}
+              data-testid="navigator-sea"
+            />
+          ) : null}
           <g className="navigator-ship__grid" clipPath={`url(#${clipId})`} aria-hidden="true">
             {[0, 1, 2, 3, 4].map((index) => (
               <line key={`h-${index}`} x1={PLOT.left} x2={PLOT.left + PLOT.width} y1={PLOT.top + index * PLOT.height / 4} y2={PLOT.top + index * PLOT.height / 4} />

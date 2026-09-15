@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import "../styles/cabin.css";
 import {
@@ -84,13 +84,10 @@ export function CabinScene({
   missionBriefHref,
 }: CabinSceneProps) {
   const bookSlots = new Map(books.map((book) => [book.id, book]));
-  const sceneStyle = {
-    "--cabin-background": `url("${import.meta.env.BASE_URL}captains-cabin-template.png")`,
-  } as CSSProperties;
 
   return (
     <div className={joinClassNames("cabin-viewport", className)}>
-      <section className="cabin-scene" aria-label={ariaLabel} style={sceneStyle}>
+      <section className="cabin-scene" aria-label={ariaLabel}>
         <span className="cabin-scene__description cabin-visually-hidden">
           A read-only mission presentation arranged across five stage books, a Captain&apos;s Log,
           and ship status panels.

@@ -299,6 +299,54 @@
 
 .navigator-ship--overview .navigator-ship__plot-wrap {
   min-height: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.navigator-ship--overview .navigator-ship__grid line {
+  stroke: rgb(74 46 19 / 22%);
+}
+
+.navigator-ship--overview .navigator-ship__wake-shadow {
+  stroke: rgb(235 217 172 / 76%);
+  stroke-width: 6;
+}
+
+.navigator-ship--overview .navigator-ship__wake {
+  stroke: #285b62;
+  stroke-width: 2.4;
+}
+
+.navigator-ship--overview .navigator-ship__ma {
+  stroke: #986f0c;
+}
+
+.navigator-ship--overview .navigator-ship__axis text,
+.navigator-ship--overview .navigator-ship__empty {
+  fill: #56391e;
+  paint-order: stroke;
+  stroke: rgb(235 217 172 / 82%);
+  stroke-width: 3px;
+}
+
+.navigator-ship--overview .navigator-ship__level text {
+  stroke: rgb(235 217 172 / 82%);
+}
+
+.navigator-ship--overview .navigator-ship__level--entry { color: #846812; }
+.navigator-ship--overview .navigator-ship__level--stop { color: #913b2c; }
+.navigator-ship--overview .navigator-ship__level--target { color: #2d673c; }
+.navigator-ship--overview .navigator-ship__level--support { color: #2b6940; }
+.navigator-ship--overview .navigator-ship__level--resistance { color: #8d3a2d; }
+
+.navigator-ship--overview .navigator-ship__vessel circle {
+  fill: rgb(154 113 26 / 18%);
+  stroke: #886313;
+}
+
+.navigator-ship--overview .navigator-ship__vessel path {
+  fill: #a17719;
 }
 
 .navigator-ship--overview .navigator-ship__summary {
