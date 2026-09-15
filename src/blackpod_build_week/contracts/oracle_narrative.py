@@ -1686,7 +1686,12 @@ def _reject_prohibited_authority(texts: Sequence[str]) -> None:
 
 
 def build_oracle_narrative_prompt(request: OracleNarrativeRequest) -> str:
-    """Build a fact-selection prompt without delegating source linkage."""
+    """Build a fact-selection prompt without delegating source linkage.
+
+    REPLAY retains its recorded prompt bytes. LIVE uses a worked example that
+    passes the same strict validator as the eventual model response; the
+    example is guidance only, never a fallback narrative.
+    """
 
     if not isinstance(request, OracleNarrativeRequest):
         raise ContractValidationError("prompt input must be an OracleNarrativeRequest")
@@ -1702,6 +1707,16 @@ def build_oracle_narrative_prompt(request: OracleNarrativeRequest) -> str:
         "confidence_explanation": "Confidence is bounded by the source-linked facts.",
         "prohibited_actions_acknowledged": True,
     }
+    if request.run_mode is RunMode.LIVE:
+        expected_shape["selected_fact_ids"] = [
+            fact.fact_id for fact in catalog.facts[:3]
+        ]
+        expected_shape["summary"] = (
+            "Validated Oracle facts reflect source-linked observations."
+        )
+        # Fail before transport if future prompt/contract changes make this
+        # example invalid. Never teach the model an impossible output shape.
+        OracleNarrativeSelection.from_mapping(expected_shape).expand(catalog, request)
     connective_vocabulary = ",".join(sorted(_GENERIC_NARRATIVE_WORDS))
     instructions = (
         "You are a local narrative renderer over a deterministic catalog of "
@@ -1739,7 +1754,14 @@ def build_oracle_narrative_prompt(request: OracleNarrativeRequest) -> str:
         "Return every field in the expected shape exactly once. uncertainties "
         "must always be a JSON array; use [] when none apply. Unknown fields are "
         "forbidden. prohibited_actions_acknowledged must be true.\n"
-        "Expected output shape:\n"
+        + (
+            "The example below is already valid for this catalog. You may copy "
+            "it exactly, or choose other supplied IDs and source-bound prose "
+            "that obey every rule. Return the selection object itself, not a "
+            "description of it.\n"
+            if request.run_mode is RunMode.LIVE else ""
+        )
+        + "Expected output shape:\n"
         + json.dumps(
             expected_shape,
             sort_keys=True,

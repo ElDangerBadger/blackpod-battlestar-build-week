@@ -5,6 +5,35 @@ changes. It is not the upstream Battlestar or ModelDock changelog; both sibling
 repositories remain read-only. The [product specification](PRODUCT_SPEC.md)
 now governs scope.
 
+## 2026-09-15 — Verified LIVE pipeline through Governor, no trading
+
+- Replaced the invalid LIVE prompt placeholder with a worked example using
+  actual catalog IDs. The example must pass the existing strict narrative
+  validator before transport; it is never a fallback response. Historical
+  REPLAY prompt bytes and recorded fixtures remain unchanged.
+- Added allowlisted validation rule/field diagnostics to sanitized failures.
+  Rejected generated content, untrusted field names, secrets, and local paths
+  remain redacted; error codes, schemas, and fail-closed behavior are preserved.
+- Ran a new real mission `mission-live-aapl-20260915-002` under
+  `artifacts/no-trade-live-20260915`. Oracle, pinned local Gemma commentary,
+  Council, and Governor all succeeded technically. The recorded narrative
+  contains five source-linked facts and non-mocked inference provenance.
+- Confirmed the explicit no-trade mandate produces Council/Governor `BLOCKED`,
+  a terminal `HELD` mission at revision 9, and Governor next step `NONE`.
+  Operator route is `CLOSED_BLOCKED`, action `NOT_STARTED`; no approval,
+  operational Navigator handoff, order, broker call, or portfolio mutation ran.
+- Pointed the read-only Cabin at this new source. The earlier failed mission
+  remains preserved for diagnosis rather than being rewritten or relabeled.
+- Reattached the verified earlier AAPL chart bytes with their original
+  22:36:41 UTC capture timestamp and explicit local-source identity after the
+  fresh supplemental fetch was canceled at approval. No fresh chart fetch is
+  claimed; the new Oracle acquisition and model inference are independent.
+
+Acceptance: all 513 backend tests and 144 UI tests passed, including deterministic replay,
+strict source linkage, sanitized failure provenance, and loopback reader
+checks. Battlestar and ModelDock were not modified. This is a real captured
+pipeline run, not a continuous producer or streaming quote service.
+
 ## 2026-09-15 — Initial LIVE data capture and compatibility
 
 - Acquired a real canonical Oracle market snapshot and 751 AAPL daily bars

@@ -743,8 +743,21 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             result.snapshot.stages["oracle"].error.message,
-            "ModelDock narrative failed its versioned contract validation",
+            "ModelDock narrative failed its versioned contract validation "
+            "(rule=unknown_fact_id; field=selected_fact_ids).",
         )
+        provenance = json.loads(
+            (result.paths.mission_root / "oracle/modeldock/provenance.json").read_text()
+        )
+        self.assertEqual(
+            provenance["error"]["message"], result.snapshot.stages["oracle"].error.message
+        )
+        self.assertNotIn("oracle.measurements.unknown_fact", provenance["error"]["message"])
+        response = json.loads(
+            (result.paths.mission_root / "oracle/modeldock/response.json").read_text()
+        )
+        self.assertNotIn("content", response)
+        self.assertEqual(response["content_byte_size"], len(malformed["content"].encode("utf-8")))
 
     def test_identical_repeat_is_no_op_without_rewriting(self) -> None:
         first = self.execute()

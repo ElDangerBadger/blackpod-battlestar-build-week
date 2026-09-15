@@ -592,6 +592,29 @@ class OracleNarrativeResponseContractTests(unittest.TestCase):
 
 
 class OracleNarrativePromptTests(unittest.TestCase):
+    def test_live_worked_example_validates_against_its_actual_catalog(self) -> None:
+        for posture in ("EXPANDING_BREADTH", "MIXED", "CONTRACTING_BREADTH"):
+            with self.subTest(posture=posture):
+                value = valid_request()
+                value["run_mode"] = "LIVE"
+                value["assessment"]["breadth_posture"] = posture
+                request = OracleNarrativeRequest.from_mapping(value)
+                prompt = request.build_prompt()
+                example_json = prompt.split("Expected output shape:\n", 1)[1].split(
+                    "\nCanonical allowed-fact catalog:\n", 1
+                )[0]
+                selection = OracleNarrativeSelection.from_json_bytes(
+                    example_json.encode("utf-8")
+                )
+                catalog = OracleFactCatalog.from_request(request)
+                expanded = selection.expand(catalog, request)
+                self.assertEqual(len(expanded.observed_facts), 3)
+                self.assertEqual(expanded.observed_facts[0].value, posture)
+                self.assertEqual(expanded.warnings, request.warnings)
+                self.assertTrue(expanded.prohibited_actions_acknowledged)
+                self.assertNotIn("qualitative catalog terms", prompt)
+                self.assertEqual(prompt, request.build_prompt())
+
     def test_prompt_is_deterministic_and_embeds_canonical_input_and_rules(self) -> None:
         request = OracleNarrativeRequest.from_mapping(valid_request())
 

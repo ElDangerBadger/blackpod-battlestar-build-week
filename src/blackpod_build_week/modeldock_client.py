@@ -25,6 +25,7 @@ from typing import Any, Protocol
 
 from .hashing import canonical_json_bytes, sha256_bytes
 from .modeldock_config import ModelDockConfig
+from .narrative_diagnostics import narrative_validation_message
 
 
 MODELDOCK_TEXT_GENERATE_PATH = "/text/generate"
@@ -892,7 +893,7 @@ class ModelDockClient:
             raise _ProtocolIssue(
                 "narrative_schema_invalid",
                 type(exc).__name__,
-                "ModelDock narrative failed its versioned contract validation",
+                narrative_validation_message(exc),
             ) from None
         return parsed_content, _model_revision(value)
 

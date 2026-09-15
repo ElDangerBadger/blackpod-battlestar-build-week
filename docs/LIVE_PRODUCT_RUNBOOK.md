@@ -80,42 +80,50 @@ Governor, or operator inputs to force approval or satisfy a display gate.
 
 ## 3. Interpret current state honestly
 
-### Current local source — initial read-only data run, 2026-09-15
+### Current local source — completed no-trade run, 2026-09-15
 
-Navigator's first Harbor row is AAPL. The user-authorized initial data run
-created a new LIVE mission, separate from the old July evidence:
+Navigator's first Harbor row is AAPL. The user-authorized LIVE pipeline test
+completed through Council and Governor, without operator approval or trading:
 
 ```bash
 make cabin-live \
-  CABIN_ARTIFACTS_ROOT=artifacts/initial-live-20260915 \
-  CABIN_MISSION_ID=mission-live-aapl-20260915-001
+  CABIN_ARTIFACTS_ROOT=artifacts/no-trade-live-20260915 \
+  CABIN_MISSION_ID=mission-live-aapl-20260915-002
 ```
 
 These artifacts are local and ignored by Git; this is not a shipped sample
 pack. Starting this command only views the existing run and never repeats it.
 
-- Oracle acquired its canonical market ETF fleet at **2026-09-15 22:36:39 UTC**
-  (15:36:39 PDT) and reached native `READY`. Fourteen symbols were usable;
+- Oracle acquired its canonical market ETF fleet at **2026-09-15 23:05:20 UTC**
+  (16:05:20 PDT) and reached native `READY`. Fourteen symbols were used;
   VXZ, IWF, IWD, IWM, MTUM, USMV, and QUAL were excluded. Missing prior Oracle
   measurements remain an explicit warning. This is broad market context,
   **not AAPL-specific Oracle analysis**.
-- Navigator captured **751 AAPL daily bars**, spanning 2023-09-18 through
-  2026-09-15, at **22:36:41 UTC**. The canonical Navigator API identified the
-  provider as `yfinance`, source as `provider`, and cache as not stale at
-  capture. Its original disclaimer and provider metadata are preserved.
-  The transparent overview and expanded V3 view consume this same capture.
+- ModelDock completed real local MLX inference with
+  `gemma-4-e4b-it-4bit`, revision `cc3b666c01c20395e0dcebd53854504c7d9821f9`,
+  at **23:06:31 UTC**. The accepted narrative selects five source-linked
+  Oracle facts, preserves warnings, and records `mocked: false`.
+  Trace: `fa1c4493-d307-4a13-aa7e-1b675703737a`.
+- Navigator uses the earlier verified **751-bar AAPL capture**, from
+  **22:36:41 UTC**, spanning 2023-09-18 through 2026-09-15. A fresh supplemental
+  chart request was canceled at approval, so no second provider fetch was
+  performed. The exact earlier bytes and original timestamp were attached as
+  `LOCAL_JSON`, with source identity
+  `navigator-capture-mission-live-aapl-20260915-001`. The preserved yfinance
+  provider/cache metadata describes that original capture, not a new fetch.
+  Both the transparent overview and expanded Navigator consume it.
 - The Council mandate explicitly denies trading authority: `ok: false`,
   `allowed_sides: []`, `max_trades: 0`, and `risk_posture: READ_ONLY`.
   The authorized stop target is `GOVERNOR`, before any operator approval.
-- **Actual result: `FAILED` at Oracle narrative enrichment, revision 5.**
-  ModelDock's real pinned `gemma-4-e4b-it-4bit` inference returned non-mocked
-  output, but it failed `MODELDOCK_NARRATIVE_SCHEMA_INVALID`. Sanitized response
-  metadata, hashes, and trace are retained; rejected generated content is not
-  stored. The earlier Oracle market result remains
-  native `READY`; its overall stage is failed because enrichment failed.
-  Council and Governor were requested but **did not run** because of that
-  validation gate. Neither operator approval nor operational Navigator ran.
-  The supplemental Navigator chart remains available independently.
+- **Actual result: `HELD`, revision 9, phase `GOVERNOR`, terminal.**
+  Oracle, ModelDock, Council, and Governor all completed technically.
+  Council's native state and Governor's disposition are `BLOCKED` because of
+  `mandate:READ_ONLY_DATA_RUN_NO_TRADING_AUTHORITY`. Governor's allowed next
+  step is `NONE`; this is the expected safety outcome, not a technical failure.
+- Operator routing is `CLOSED_BLOCKED`, with action `NOT_STARTED` and no
+  approval identity or action. Operational Navigator is `NOT_STARTED`, with
+  no SHADOW handoff or plan. The supplemental chart is separate from that
+  operational stage; no broker/order execution or portfolio mutation occurred.
 - Portfolio context remains `NOT_CONFIGURED`; no holdings were invented.
 
 The chart is a captured observation, not a streaming quote. The reader follows
@@ -123,19 +131,20 @@ mission revisions but does not refresh this market capture. Evidence-age
 warnings will appear naturally as the run ages. A scheduled producer, recurring
 captures, and a production market-data service remain separate future work.
 
-The next pipeline step is to add sanitized validator rule/field diagnostics
-and a valid, fact-grounded prompt example, then validate a compatible structured
-response before a separately identified rerun. Offline reconstruction verified
-the 22-fact catalog and a valid selection against the recorded request hash.
-The existing illustrative prompt summary contains vocabulary its validator
-rejects; that is a known prompt weakness, not proof of this response's exact
-failure. The rejected content was intentionally not retained, so the precise
-offending field cannot be recovered from this run. Do not overwrite this run's
-failed evidence, weaken narrative validation,
-or set the mandate to approve trading just to obtain a green display. To test
-Council/Governor independently of commentary later, choose a **new** mission
-with `--without-modeldock`, the explicit no-trade inputs, and an inclusive
-`--through GOVERNOR` stop. This is a producer operation, not Cabin startup.
+The initial `artifacts/initial-live-20260915` mission,
+`mission-live-aapl-20260915-001`, remains a preserved revision-5 failure at
+Oracle narrative enrichment. Its market capture and sanitized failure evidence
+were not rewritten. The exact rejected text was intentionally not retained.
+Before this new run, Build Week fixed LIVE prompt guidance to use a real,
+validated catalog example and added allowlisted validation rule/field
+diagnostics. Strict narrative/authority checks remain unchanged, as do the
+recorded REPLAY prompt bytes. No fallback narrative replaces model output.
+
+To perform another authorized producer run, select **new** mission/request IDs
+and explicit no-trade policy/context inputs, use `mission-run --with-modeldock
+--through GOVERNOR`, and supply the pinned local model configuration. This is
+a separate producer operation, not Cabin startup. Do not overwrite past runs,
+weaken validation, or change the mandate merely to obtain a green display.
 
 The earlier `artifacts/final-verification` source,
 `mission-live-064ef6b3f2d8a73dc4ec2b36`, remains July 19 initialized-only history.
