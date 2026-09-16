@@ -1,5 +1,3 @@
-import { Html } from "@react-three/drei";
-
 import type { NavigatorOceanMarketSummary } from "./types";
 
 export type ShipCalloutProps = Readonly<{
@@ -51,13 +49,11 @@ export function ShipCallout({
         : "Near MA";
 
   return (
-    <Html
-      position={[-5.5, 2.5, 1.5]}
-      // Keep this price annotation at CSS-pixel size as the camera moves.
-      // Perspective scaling made the supplied numbers unreadably small.
+    <div
+      className="bp-ship-callout"
+      aria-hidden="true"
       style={{ opacity, pointerEvents: "none" }}
     >
-      <div className="bp-ship-callout" aria-hidden="true">
         <div className="lbl">
           {symbol} · PRICE (SHIP){currency ? ` · ${currency}` : ""}
         </div>
@@ -66,8 +62,7 @@ export function ShipCallout({
           {PERCENT_TWO_DECIMALS.format(summary.pct_vs_ma)}%
         </div>
         <div className={`pos ${sentimentClass}`}>{positionLabel}</div>
-      </div>
-    </Html>
+    </div>
   );
 }
 

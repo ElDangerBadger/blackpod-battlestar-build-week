@@ -24,11 +24,13 @@ import ShipMarker from "./ShipMarker";
 import Sky from "./Sky";
 import SunDisc from "./SunDisc";
 import Wake from "./Wake";
+import { projectNavigatorOcean } from "./projection";
 import type { NavigatorOceanMarket, ProjectedNavigatorOcean } from "./types";
 
 export type NavigatorOceanSceneProps = Readonly<{
   data: NavigatorOceanMarket;
   projection: ProjectedNavigatorOcean;
+  oceanExaggeration?: number;
   zoomT: number;
   reducedMotion: boolean;
   onZoomChange: (value: number) => void;
@@ -59,6 +61,7 @@ function ContextLossMonitor({ onLost }: { onLost: () => void }) {
 export function NavigatorOceanScene({
   data,
   projection,
+  oceanExaggeration = 1,
   zoomT,
   reducedMotion,
   onZoomChange,
@@ -67,6 +70,15 @@ export function NavigatorOceanScene({
   const [viewT, setViewT] = useState(zoomT);
   const [lowFx, setLowFx] = useState(reducedMotion);
   const [sunMesh, setSunMesh] = useState<THREE.Mesh | null>(null);
+  // Restore V3's visual amplitude control in ship view; ease to the normal
+  // analytical scale so exaggerated geometry cannot crop the full chart.
+  const chartProgress = Math.max(0, Math.min(1, (viewT - 0.55) / 0.45));
+  const visualExaggeration = 1 + (oceanExaggeration - 1) * (1 - chartProgress);
+  const visualProjection = useMemo(
+    () => visualExaggeration === 1 ? projection
+      : projectNavigatorOcean(data, { oceanExaggeration: visualExaggeration }) ?? projection,
+    [data, projection, visualExaggeration],
+  );
   const sunPosition = useMemo(
     () => new THREE.Vector3(0.14, 0.085, -1).normalize().multiplyScalar(2000),
     [],
@@ -84,6 +96,7 @@ export function NavigatorOceanScene({
   const qualityReduced = lowFx || reducedMotion;
 
   return (
+    <>
     <Canvas
       aria-hidden="true"
       shadows={false}
@@ -136,25 +149,19 @@ export function NavigatorOceanScene({
 
         <Sky zoomT={viewT} reducedMotion={reducedMotion} />
         <Ocean volatility={data.summary.volatility} zoomT={viewT} reducedMotion={reducedMotion} />
-        <Wake projection={projection} viewT={viewT} />
+        <Wake projection={visualProjection} viewT={viewT} />
         <MaBearing
-          projection={projection}
+          projection={visualProjection}
           maPeriod={data.ma_period}
           zoomT={viewT}
           viewT={viewT}
         />
         <ChartView
-          projection={projection}
+          projection={visualProjection}
           zoomT={viewT}
           viewT={viewT}
           maPeriod={data.ma_period}
           timeframe={data.timeframe}
-        />
-        <ShipCallout
-          summary={data.summary}
-          symbol={data.symbol}
-          currency={data.currency}
-          zoomT={viewT}
         />
         <ShipMarker zoomT={viewT} reducedMotion={reducedMotion} />
         <Ship
@@ -219,5 +226,13 @@ export function NavigatorOceanScene({
         </EffectComposer>
       </Suspense>
     </Canvas>
+    {/* Screen-space readout stays clear of the ship regardless of orbit/pan. */}
+    <ShipCallout
+      summary={data.summary}
+      symbol={data.symbol}
+      currency={data.currency}
+      zoomT={viewT}
+    />
+    </>
   );
 }

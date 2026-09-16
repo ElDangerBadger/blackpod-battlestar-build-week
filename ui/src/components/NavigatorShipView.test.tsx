@@ -68,7 +68,7 @@ describe("NavigatorShipView", () => {
 
   it("fits the ledger viewport without changing supplied facts or the expanded viewport", () => {
     const { rerender } = render(<NavigatorShipView data={data} variant="overview" />);
-    const chartName = /price history with supplied 250-day moving average/;
+    const chartName = /price history with supplied 250-bar moving average/;
     const summaryFacts = () => {
       const figure = screen.getByRole("figure", { name: "Navigator ship view for AAPL" });
       return within(figure).getAllByRole("definition").map((definition) => definition.textContent);
@@ -97,7 +97,7 @@ describe("NavigatorShipView", () => {
 
     const zoomIn = screen.getByRole("button", { name: "Zoom in" });
     const reset = screen.getByRole("button", { name: "Reset chart view" });
-    const chart = screen.getByRole("img", { name: /price history with supplied 250-day moving average/ });
+    const chart = screen.getByRole("img", { name: /price history with supplied 250-bar moving average/ });
     expect(screen.getByTestId("navigator-sea")).toHaveAttribute("fill", expect.stringContaining("-sea"));
     expect(screen.getByText("12 of 12 bars")).toBeInTheDocument();
 

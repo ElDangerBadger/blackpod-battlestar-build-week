@@ -11,6 +11,7 @@ import type {
   NavigatorMarket,
   PortfolioSnapshotV1,
 } from "../contracts/cabinContext";
+import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import type {
   MissionBundle,
   MissionEvidence,
@@ -99,6 +100,8 @@ export interface MarketContextViewModel {
   capturedAt: string | null;
   regime: string | null;
   navigatorMarket: NavigatorMarket | null;
+  artifactReference?: ArtifactReference | null;
+  navigatorVariants?: readonly NavigatorMarketVariant[];
 }
 
 export interface PortfolioViewModel {
@@ -242,6 +245,7 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
       roleStatement: "Narrative only. Oracle remains authoritative for facts, measurements, diagnostics, and readiness.",
     },
     market: {
+      artifactReference: bundle.cabinContext?.market_artifact ?? null,
       status: bundle.navigatorMarket === null ? "NOT_CONFIGURED" : "CAPTURED",
       companyName: bundle.navigatorMarket?.name ?? null,
       category: bundle.navigatorMarket?.category ?? null,
@@ -255,6 +259,7 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
       // Fleet-level Oracle posture must not be relabeled as ticker evidence.
       regime: null,
       navigatorMarket: bundle.navigatorMarket,
+      navigatorVariants: bundle.navigatorVariants ?? [],
     },
     portfolio: {
       status: bundle.portfolio === null ? "NOT_CONFIGURED" : "CAPTURED",

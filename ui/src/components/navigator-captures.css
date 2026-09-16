@@ -1,0 +1,71 @@
+.navigator-capture-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.45rem;
+  min-height: 0;
+  min-width: 0;
+}
+
+.navigator-capture-view__renderer {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+}
+
+.navigator-capture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #74502a;
+  border-radius: 0.22rem;
+  background: #2b2116;
+  color: #dfca96;
+  font: 12px Georgia, "Times New Roman", serif;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.navigator-capture-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navigator-capture-controls :where(select, button) {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #8b6b37;
+  border-radius: 0.15rem;
+  background: #251c12;
+  color: #f4daa0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.navigator-capture-controls button:disabled {
+  color: #a99670;
+  cursor: default;
+}
+
+.navigator-capture-controls :where(select, button, summary):focus-visible {
+  outline: 2px solid #e2c675;
+  outline-offset: 2px;
+}
+
+.navigator-capture-controls p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.navigator-capture-controls details {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.navigator-capture-controls details span {
+  display: block;
+  margin-top: 0.2rem;
+}

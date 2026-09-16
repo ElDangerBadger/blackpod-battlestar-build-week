@@ -76,7 +76,7 @@ reviewed updates keep the canonical source explicit without changing Battlestar.
 
 | Battlestar Navigator V3 source | Build Week destination | Integration treatment |
 | --- | --- | --- |
-| `scene/Scene2.tsx` | `ui/src/components/navigator-ocean/NavigatorOceanScene.tsx` | Prop-only scene composition; no store |
+| `scene/Scene2.tsx` | `ui/src/components/navigator-ocean/NavigatorOceanScene.tsx` | Prop-only scene composition; no store; ship exaggeration eases to normal chart scale |
 | `scene/CameraRig2.tsx` | `ui/src/components/navigator-ocean/CameraRig.tsx` | Host-owned zoom callbacks; canvas-scoped input |
 | `scene/Ocean2.tsx` | `ui/src/components/navigator-ocean/Ocean.tsx` | Contract volatility prop; reduced-motion and chart flattening |
 | `scene/Sky2.tsx` | `ui/src/components/navigator-ocean/Sky.tsx` | Contract-free visual component; reduced-motion support |
@@ -86,9 +86,9 @@ reviewed updates keep the canonical source explicit without changing Battlestar.
 | `scene/Spray.tsx` | `ui/src/components/navigator-ocean/Spray.tsx` | Fixed-seed particles replace `Math.random()` |
 | `scene/Wake2.tsx` | `ui/src/components/navigator-ocean/Wake.tsx` | Consumes validated projection props |
 | `scene/MaBearing2.tsx` | `ui/src/components/navigator-ocean/MaBearing.tsx` | Preserves missing-MA gaps |
-| `scene/ChartView.tsx` | `ui/src/components/navigator-ocean/ChartView.tsx` | UTC labels; depth-safe full chart |
+| `scene/ChartView.tsx` | `ui/src/components/navigator-ocean/ChartView.tsx` | UTC labels; depth-safe full chart; gutter labels and bounded, series-aware hover |
 | `scene/ColorGrade.tsx` | `ui/src/components/navigator-ocean/ColorGrade.tsx` | Reused post-processing effect |
-| `scene/ShipCallout.tsx` | `ui/src/components/navigator-ocean/ShipCallout.tsx` | Summary supplied through props; screen-sized label without perspective shrinkage |
+| `scene/ShipCallout.tsx` | `ui/src/components/navigator-ocean/ShipCallout.tsx` | Supplied summary; transparent bottom-left screen-space label outside Canvas |
 | `scene/ShipMarker.tsx` | `ui/src/components/navigator-ocean/ShipMarker.tsx` | Reused marker; reduced-motion support |
 | `scene/SunDisc.tsx` | `ui/src/components/navigator-ocean/SunDisc.tsx` | Reused billboard visual |
 | `scene/projection.ts` | `ui/src/components/navigator-ocean/projection.ts` | V3 stretch plus Build Week's bounded deterministic sampling |
@@ -102,11 +102,48 @@ form the consumer adapter. The Captain's Cabin continues to own routing,
 presentation mode, replay state, the expanded dialog, the SVG overview, and
 all user-facing safety copy.
 
-The user-requested ship-price legibility adjustment keeps the original world
-anchor and chart-transition fade, but omits Drei's `distanceFactor` so camera
-distance cannot shrink its text. The Cabin label is 224 CSS pixels wide with a
+The user-requested ship-price placement now uses a transparent DOM overlay
+outside Canvas, anchored 12 CSS pixels from the scene's left edge and 64 pixels
+above its bottom. The ship stays unobscured; camera orbit/pan cannot move or
+shrink the readout. Text shadow provides contrast without a panel background.
+The original chart-transition fade is retained, as are the 224-pixel width,
 32-pixel price, 16-pixel percentage, and 14-pixel MA-position text. No price
 formatting, observations, camera behavior, or canonical source files changed.
+
+The chart-readability adaptation offsets price and date labels 10 CSS pixels
+outside their grid borders, without changing axis world coordinates or camera
+scale. The highlighted latest-close badge sits just inside the right border so
+it cannot overlap the price ticks in the outer gutter.
+The existing hover plane selects the nearest rendered supplied observation and
+highlights the closer price/MA series. The larger, viewport-bounded readout uses
+two decimal places, preserves absent MA values, and clears during dragging or
+pointer exit. Crosshair/markers render above the analytical lines. Hover does
+not interpolate, fetch, mutate, or persist market data. Drawing remains a future
+consumer presentation feature, not part of this adaptation.
+
+### History and ship-scale controls
+
+- Canonical `ui/Toolbar.tsx`'s Ocean Exag. range (0.2–2.5, step 0.05) maps to
+  local state and controls in `NavigatorOceanView.tsx`, passed into the existing
+  projection through `NavigatorOceanScene.tsx`. The original store is not
+  imported. This scales wake/MA separation, not source prices, volatility, or
+  the ship model. It eases back to 1× at full chart view to keep axes in frame.
+- `historyWindow.ts` is a consumer-only view helper: 1M/3M/6M/1Y/All presets
+  use UTC calendar lookbacks from the captured last bar, never the wall clock.
+  A history-start slider selects a trailing suffix, keeps at least two supplied
+  bars when possible, and always retains the latest close. No MA is recalculated
+  after slicing. Hourly range labels preserve hours/minutes in UTC; daily and
+  weekly labels remain date-only. SVG fallback MA labels use bars, not days.
+  Source history, selected history, and rendered counts remain
+  separate. Short windows use distinct time ticks rather than stacked labels.
+- Canonical timeframe (`1h`, `1d`, `1wk`) and MA (`20`, `50`, `100`, `200`, `250`)
+  setters call a standalone API through Zustand. That coupling remains excluded.
+  The original context still has one captured pair. The user-approved optional
+  `navigator_catalog` presentation supplement now supplies additional exact
+  canonical captures. `NavigatorOceanBoundary.tsx` owns local interval/MA
+  selection and forwards the selected dataset and timestamp to the existing
+  renderer (or SVG fallback). No source computation or provider call is imported.
+  See [captured dataset catalog](NAVIGATOR_CAPTURE_CATALOG.md).
 
 ## Coupling removed at the boundary
 

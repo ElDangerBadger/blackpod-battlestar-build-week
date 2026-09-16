@@ -49,6 +49,10 @@ from .hashing import canonical_json_bytes, sha256_bytes
 from .identifiers import validate_mission_id
 from .mission_presentation import project_mission_presentation
 from .mission_store import LoadedMission, MissionStore, MissionStoreError, UnsafePathError
+from .navigator_catalog import (
+    MAX_VARIANT_BYTES, NAVIGATOR_CATALOG_PATH, NAVIGATOR_CATALOG_SCHEMA_VERSION, NavigatorCatalog,
+    validate_variant,
+)
 
 
 FEED_SCHEMA_VERSION = "blackpod.cabin_feed.v1"
@@ -93,10 +97,13 @@ def _safe_path(root: Path, relative: str) -> Path:
     return target
 
 
-def _read_file(root: Path, relative: str) -> bytes:
+def _read_file(root: Path, relative: str, *, max_bytes: int | None = None) -> bytes:
     """Open beneath a directory descriptor, never following a symlink."""
 
     parts = _parts(relative)
+    limit = MAX_FILE_BYTES if max_bytes is None else min(MAX_FILE_BYTES, max_bytes)
+    if limit < 0:
+        raise CabinReaderError("source exceeds its remaining byte limit")
     descriptors: list[int] = []
     try:
         descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -109,10 +116,10 @@ def _read_file(root: Path, relative: str) -> bytes:
         file_descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
         descriptors.append(file_descriptor)
         before = os.fstat(file_descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE_BYTES:
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
             raise CabinReaderError("source is not a bounded regular file")
         chunks: list[bytes] = []
-        remaining = MAX_FILE_BYTES + 1
+        remaining = limit + 1
         while remaining:
             chunk = os.read(file_descriptor, min(1024 * 1024, remaining))
             if not chunk:
@@ -121,7 +128,7 @@ def _read_file(root: Path, relative: str) -> bytes:
             remaining -= len(chunk)
         after = os.fstat(file_descriptor)
         payload = b"".join(chunks)
-        if len(payload) > MAX_FILE_BYTES or (
+        if len(payload) > limit or (
             before.st_size, before.st_mtime_ns, before.st_ctime_ns
         ) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
             raise CabinReaderError("source changed during capture")
@@ -153,7 +160,8 @@ class ReadOnlyMissionStore(MissionStore):
         return super().load_mission(mission_id)
 
     def _read_validated_bytes(self, root: Path, relative_path: str) -> bytes:
-        payload = _read_file(root, relative_path)
+        remaining = MAX_PUBLICATION_BYTES - sum(self._validation_sizes.values()) + self._validation_sizes.get(relative_path, 0)
+        payload = _read_file(root, relative_path, max_bytes=remaining)
         self._validation_sizes[relative_path] = len(payload)
         if sum(self._validation_sizes.values()) > MAX_PUBLICATION_BYTES:
             raise CabinReaderError("source validation exceeds its memory limit")
@@ -224,12 +232,22 @@ def _validate_live(loaded: LoadedMission) -> None:
         raise CabinReaderError("successful LIVE inference requires non-mocked MLX provenance")
 
 
+def _capture_file(
+    root: Path, relative: str, files: dict[str, bytes], *, max_bytes: int | None = None,
+) -> bytes:
+    remaining = MAX_PUBLICATION_BYTES - sum(map(len, files.values())) + len(files.get(relative, b""))
+    limit = remaining if max_bytes is None else min(remaining, max_bytes)
+    payload = _read_file(root, relative, max_bytes=limit)
+    files[relative] = payload
+    return payload
+
+
 def _capture_context(loaded: LoadedMission, files: dict[str, bytes]) -> None:
     root = loaded.paths.mission_root
     target = _safe_path(root, CABIN_CONTEXT_PATH)
     if not target.exists():
         return
-    payload = _read_file(root, CABIN_CONTEXT_PATH)
+    payload = _capture_file(root, CABIN_CONTEXT_PATH, files)
     context = CabinContext.from_mapping(parse_strict_json_object_bytes(payload))
     if (
         context.mission_id != loaded.snapshot.mission_id
@@ -240,17 +258,40 @@ def _capture_context(loaded: LoadedMission, files: dict[str, bytes]) -> None:
         raise CabinReaderError("Cabin context correlation differs from the mission")
     files[CABIN_CONTEXT_PATH] = payload
     if context.market_artifact is not None:
-        market = _read_file(root, context.market_artifact.path)
+        market = _capture_file(root, context.market_artifact.path, files)
         _verify_reference(context.market_artifact, market)
         NavigatorMarket.from_bytes(market, expected_symbol=loaded.request.symbol, run_mode=RunMode.LIVE)
         files[context.market_artifact.path] = market
     if context.portfolio_artifact is not None:
-        portfolio = _read_file(root, context.portfolio_artifact.path)
+        portfolio = _capture_file(root, context.portfolio_artifact.path, files)
         _verify_reference(context.portfolio_artifact, portfolio)
         parsed = PortfolioSnapshot.from_bytes(portfolio)
         if parsed.mode.value != "LIVE" or parsed.source_identity != context.capture_provenance.portfolio_source_identity:
             raise CabinReaderError("LIVE portfolio mode or provenance is inconsistent")
         files[context.portfolio_artifact.path] = portfolio
+
+
+def _capture_catalog(loaded: LoadedMission, files: dict[str, bytes]) -> None:
+    root = loaded.paths.mission_root
+    if not _safe_path(root, NAVIGATOR_CATALOG_PATH).exists():
+        return
+    if CABIN_CONTEXT_PATH not in files:
+        raise CabinReaderError("Navigator catalog requires the original Cabin context")
+    context = CabinContext.from_mapping(parse_strict_json_object_bytes(files[CABIN_CONTEXT_PATH]))
+    if context.market_artifact is None:
+        raise CabinReaderError("Navigator catalog requires the original default market")
+    default = NavigatorMarket.from_bytes(files[context.market_artifact.path],
+                                         expected_symbol=loaded.request.symbol, run_mode=RunMode.LIVE)
+    catalog = NavigatorCatalog.from_mapping(parse_strict_json_object_bytes(
+        _capture_file(root, NAVIGATOR_CATALOG_PATH, files)
+    ))
+    catalog.validate_context(context, default)
+    for entry in catalog.entries:
+        remaining = MAX_PUBLICATION_BYTES - sum(map(len, files.values()))
+        if entry.artifact.byte_size is None or entry.artifact.byte_size > min(remaining, MAX_VARIANT_BYTES):
+            raise CabinReaderError("Navigator variants exceed the publication memory limit")
+        payload = _capture_file(root, entry.artifact.path, files, max_bytes=entry.artifact.byte_size)
+        validate_variant(entry, payload, symbol=loaded.request.symbol)
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,7 +306,7 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
     """Capture and recheck one canonical revision; no partial publication escapes."""
 
     root = store.mission_root_for(mission_id)
-    before = _read_file(root, "mission_snapshot.json")
+    before = _read_file(root, "mission_snapshot.json", max_bytes=MAX_PUBLICATION_BYTES)
     loaded = store.load_mission(mission_id)
     _validate_live(loaded)
     if sha256_bytes(before) != loaded.current_snapshot_sha256:
@@ -277,28 +318,26 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
     )
     source_paths.update({"mission_snapshot.json", "request/mission_request.json"})
     files: dict[str, bytes] = {}
-    total_bytes = 0
     for path in sorted(source_paths):
-        payload = _read_file(root, path)
-        total_bytes += len(payload)
-        if total_bytes > MAX_PUBLICATION_BYTES:
-            raise CabinReaderError("source exceeds the publication memory limit")
-        files[path] = payload
+        _capture_file(root, path, files)
     if MissionRequest.from_mapping(parse_strict_json_object_bytes(files["request/mission_request.json"])) != loaded.request:
         raise CabinReaderError("request bytes changed during validation")
     _capture_context(loaded, files)
+    _capture_catalog(loaded, files)
     if sum(map(len, files.values())) > MAX_PUBLICATION_BYTES:
         raise CabinReaderError("source exceeds the publication memory limit")
     projection = project_mission_presentation(loaded, files)
     # Re-read every captured source, not only the mutable current pointer. A
     # concurrently replaced artifact/context must never be mixed into a frame.
-    if any(_read_file(root, path) != payload for path, payload in files.items()):
+    if any(_read_file(root, path, max_bytes=len(payload)) != payload for path, payload in files.items()):
         raise CabinReaderError("source changed during capture")
     after = store.load_mission(mission_id)
     if after.current_snapshot_sha256 != sha256_bytes(before):
         raise CabinReaderError("source revision changed during capture")
     if (CABIN_CONTEXT_PATH in files) != _safe_path(root, CABIN_CONTEXT_PATH).exists():
         raise CabinReaderError("context appeared during capture")
+    if (NAVIGATOR_CATALOG_PATH in files) != _safe_path(root, NAVIGATOR_CATALOG_PATH).exists():
+        raise CabinReaderError("Navigator catalog appeared during capture")
     files.update(projection.files)
     snapshot = loaded.snapshot
     call = snapshot.stages["oracle"].modeldock_calls[-1] if snapshot.stages["oracle"].modeldock_calls else None
@@ -332,8 +371,16 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
             CABIN_CONTEXT_PATH, "cabin_context", CABIN_CONTEXT_SCHEMA_VERSION,
             context.captured_at, files[CABIN_CONTEXT_PATH],
         )
+    if NAVIGATOR_CATALOG_PATH in files:
+        catalog = NavigatorCatalog.from_mapping(parse_strict_json_object_bytes(files[NAVIGATOR_CATALOG_PATH]))
+        manifest["navigator_catalog"] = _reference(
+            NAVIGATOR_CATALOG_PATH, "navigator_catalog", NAVIGATOR_CATALOG_SCHEMA_VERSION,
+            catalog.captured_at, files[NAVIGATOR_CATALOG_PATH],
+        )
     manifest_bytes = canonical_json_bytes(manifest)
     files[MANIFEST_PATH] = manifest_bytes
+    if sum(map(len, files.values())) > MAX_PUBLICATION_BYTES:
+        raise CabinReaderError("projected publication exceeds its memory limit")
     return Publication(sha256_bytes(manifest_bytes), mission_id, snapshot.observed_at, MappingProxyType(files))
 
 

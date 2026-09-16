@@ -1,8 +1,10 @@
 import { Html, Line } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useMemo, useState } from "react";
+import { Vector3 } from "three";
 
 import { chartStretchX } from "./projection";
+import { WAKE_FOAM_ORDER } from "./renderOrder";
 import type {
   NavigatorOceanTimeframe,
   ProjectedNavigatorOcean,
@@ -52,7 +54,8 @@ export function ChartView({
   maPeriod,
   timeframe,
 }: ChartViewProps) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hover, setHover] = useState<{ index: number; series: "price" | "ma" } | null>(null);
+  const hoverIndex = hover?.index ?? null;
   const stretch = useMemo(
     () => Math.round(chartStretchX(viewT) * 4) / 4,
     [viewT],
@@ -109,12 +112,14 @@ export function ChartView({
 
   const halfWidth =
     Math.max(4, ...priceTicks.map((tick) => Math.abs(tick.x))) * 1.06;
-  const nearZ = stepZ * 0.5;
-  const farZ = -(zSpan + stepZ * 0.5);
+  // A sparse history must not enlarge the plot beyond the fixed camera frame.
+  const timePadding = Math.min(stepZ * 0.5, zSpan * 0.025);
+  const nearZ = timePadding;
+  const farZ = -(zSpan + timePadding);
 
   const timeTicks = useMemo(() => {
     const result: { z: number; label: string }[] = [];
-    const tickCount = 6;
+    const tickCount = Math.min(6, Math.max(1, total - 1));
     for (let tick = 0; tick <= tickCount; tick += 1) {
       const index = Math.round((tick / tickCount) * (total - 1));
       const point = sampled[index];
@@ -149,8 +154,17 @@ export function ChartView({
 
   function handlePointerMove(event: ThreeEvent<PointerEvent>) {
     event.stopPropagation();
+    if (event.buttons) {
+      setHover(null);
+      return;
+    }
     const ageIndex = Math.round(-event.point.z / stepZ);
-    setHoverIndex(clampInteger(total - 1 - ageIndex, 0, total - 1));
+    const index = clampInteger(total - 1 - ageIndex, 0, total - 1);
+    const priceX = wakePoints[index][0] * stretch;
+    const ma = maPoints[index];
+    const series = ma && Math.abs(event.point.x - ma[0] * stretch) < Math.abs(event.point.x - priceX)
+      ? "ma" : "price";
+    setHover({ index, series });
   }
 
   return (
@@ -248,15 +262,15 @@ export function ChartView({
             zIndexRange={[20, 0]}
             style={{ opacity, pointerEvents: "none" }}
           >
-            <div className="bp-axis-label" aria-hidden="true">{formatPrice(tick.price)}</div>
+            <div className="bp-axis-label bp-axis-label--right" aria-hidden="true">{formatPrice(tick.price)}</div>
           </Html>
           <Html
             position={[tick.x, 0.5, farZ]}
             center
             zIndexRange={[20, 0]}
-            style={{ opacity: opacity * 0.7, pointerEvents: "none" }}
+            style={{ opacity, pointerEvents: "none" }}
           >
-            <div className="bp-axis-label" aria-hidden="true">{formatPrice(tick.price)}</div>
+            <div className="bp-axis-label bp-axis-label--left" aria-hidden="true">{formatPrice(tick.price)}</div>
           </Html>
         </group>
       ))}
@@ -267,7 +281,7 @@ export function ChartView({
           position={[-halfWidth, 0.5, tick.z]}
           center
           zIndexRange={[20, 0]}
-          style={{ opacity: opacity * 0.85, pointerEvents: "none" }}
+          style={{ opacity, pointerEvents: "none" }}
         >
           <div className="bp-time-label" aria-hidden="true">{tick.label}</div>
         </Html>
@@ -293,7 +307,7 @@ export function ChartView({
       </Html>
 
       <Html
-        position={[0, 0.6, nearZ + stepZ * 2]}
+        position={[0, 0.6, nearZ]}
         center
         zIndexRange={[20, 0]}
         style={{ opacity, pointerEvents: "none" }}
@@ -308,7 +322,7 @@ export function ChartView({
           zIndexRange={[20, 0]}
           style={{ opacity: opacity * 0.9, pointerEvents: "none" }}
         >
-          <div className="bp-ma-begin" aria-hidden="true">MA({maPeriod}) begins →</div>
+            <div className="bp-ma-begin" aria-hidden="true">MA({maPeriod}) starts in view →</div>
         </Html>
       ) : null}
 
@@ -316,7 +330,8 @@ export function ChartView({
         position={[0, 0.2, (nearZ + farZ) / 2]}
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerMove={handlePointerMove}
-        onPointerOut={() => setHoverIndex(null)}
+        onPointerDown={() => setHover(null)}
+        onPointerOut={() => setHover(null)}
       >
         <planeGeometry args={[halfWidth * 2, Math.abs(nearZ - farZ)]} />
         <meshBasicMaterial
@@ -340,10 +355,13 @@ export function ChartView({
             opacity={0.5 * opacity}
             toneMapped={false}
             depthWrite={false}
+            depthTest={false}
+            renderOrder={WAKE_FOAM_ORDER + 1}
           />
           <mesh
             position={[hoverX, 0.34, hoverZ]}
             rotation={[-Math.PI / 2, 0, 0]}
+            renderOrder={WAKE_FOAM_ORDER + 2}
           >
             <circleGeometry args={[Math.max(stepZ * 0.9, 3), 24]} />
             <meshBasicMaterial
@@ -352,6 +370,7 @@ export function ChartView({
               opacity={0.95}
               toneMapped={false}
               depthWrite={false}
+              depthTest={false}
             />
           </mesh>
           {hoverMa !== null && hoverIndex !== null && maPoints[hoverIndex] ? (
@@ -362,6 +381,7 @@ export function ChartView({
                 hoverZ,
               ]}
               rotation={[-Math.PI / 2, 0, 0]}
+              renderOrder={WAKE_FOAM_ORDER + 2}
             >
               <circleGeometry args={[Math.max(stepZ * 0.7, 2.4), 20]} />
               <meshBasicMaterial
@@ -370,26 +390,41 @@ export function ChartView({
                 opacity={0.95}
                 toneMapped={false}
                 depthWrite={false}
+                depthTest={false}
               />
             </mesh>
           ) : null}
           <Html
-            position={[hoverX, 0.8, hoverZ]}
-            center
+            position={[
+              hover?.series === "ma" && hoverIndex !== null && maPoints[hoverIndex]
+                ? maPoints[hoverIndex]![0] * stretch : hoverX,
+              0.8,
+              hoverZ,
+            ]}
+            calculatePosition={(object, camera, size) => {
+              // Screen-pixel gutters keep the readout inside the canvas even
+              // at the first/last observation or after a camera pan.
+              const point = new Vector3().setFromMatrixPosition(object.matrixWorld).project(camera);
+              return [
+                Math.max(12, Math.min((point.x * 0.5 + 0.5) * size.width + 14, size.width - 212)),
+                Math.max(12, Math.min((-point.y * 0.5 + 0.5) * size.height - 160, size.height - 160)),
+              ];
+            }}
             zIndexRange={[30, 10]}
             style={{ pointerEvents: "none" }}
           >
-            <div className="bp-hover-tip" aria-hidden="true">
+            <div className="bp-hover-tip" data-series={hover?.series} aria-hidden="true">
               <div className="bp-hover-date">
                 {formatDate(hoveredPoint.t, timeframe, true)}
               </div>
-              <div className="bp-hover-row">
+              <div className="bp-hover-caption">Nearest captured observation</div>
+              <div className={`bp-hover-row${hover?.series === "price" ? " bp-hover-row--active" : ""}`}>
                 <span>Price</span>
-                <b>{formatPrice(hoveredPoint.c)}</b>
+                <b>{PRICE_TWO_DECIMALS.format(hoveredPoint.c)}</b>
               </div>
-              <div className="bp-hover-row">
+              <div className={`bp-hover-row${hover?.series === "ma" ? " bp-hover-row--active" : ""}`}>
                 <span>MA({maPeriod})</span>
-                <b>{hoverMa === null ? "—" : formatPrice(hoverMa)}</b>
+                <b>{hoverMa === null ? "—" : PRICE_TWO_DECIMALS.format(hoverMa)}</b>
               </div>
               {hoverPercent !== null ? (
                 <div className="bp-hover-row">
@@ -452,7 +487,7 @@ function formatDate(
   if (timeframe === "1h") {
     const hour = String(date.getUTCHours()).padStart(2, "0");
     return includeYear
-      ? `${month} ${day}, ${hour}:00 UTC`
+      ? `${month} ${day}, ${year} ${hour}:00 UTC`
       : `${month} ${day} ${hour}:00 UTC`;
   }
   return includeYear

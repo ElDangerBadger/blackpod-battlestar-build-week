@@ -89,6 +89,35 @@ adapter and presentation models. Modals isolate background controls, contain
 keyboard focus, close with Escape, and restore focus to their opening control.
 WebGL failure continues to use the canonical SVG fallback.
 
+Every opened ledger page leads with a plain-language reading of the supplied
+evidence: the result, what its fields mean, and the limits on interpretation.
+Technical process completion is distinct from readiness, action clearance, and
+operator approval. Exact recorded values remain available in a disclosure,
+with original artifact links preserved. These are deterministic presentation
+glosses, not new model-generated analysis, scores, or rewritten evidence.
+Unrecognized codes remain explicitly uninterpreted; missing evidence is not
+converted into a negative finding or an invented value.
+
+The Navigator Reference Tape opens a read-only module with its original captured
+close, supplied moving average, interval, volatility category, timestamps, and
+source details. It also links to the full Navigator. Alternate chart selections
+do not rewrite the tape. Mission warnings explain known data-coverage and
+permission limits, with exact warning text expandable underneath. Long content
+scrolls within the parchment panels; inactive ledger pages are excluded from
+keyboard focus.
+
+The expanded renderer can select a trailing visible-history window and adjust
+ship-view price/MA separation as local presentation state. The latest captured
+close remains the anchor; source MA values, summaries, and provenance are not
+recomputed or overwritten. Full chart view returns to normal visual scale.
+History duration is not bar interval. Alternate bar intervals and MA periods
+select exact captured canonical Navigator responses from an optional, hash-bound
+presentation catalog. The catalog is an additive transport supplement; existing
+mission, default market, and Cabin context contracts remain unchanged. The
+original capture remains the overview/default. Every alternate exposes its own
+capture time and provenance; unavailable pairs are disabled. Selection never
+fetches from a provider, computes indicators, or mutates mission artifacts.
+
 Normal product use has no Demo/Live switch or replay theater. Historical
 playback is explicitly requested through `?mode=replay` in a developer review
 environment; `?mode=demo` is a compatibility alias. Replay remains deterministic
@@ -128,6 +157,9 @@ ModelDock readiness.
 
 ## Roadmap — not enabled in this release
 
+- Chart drawing and annotations as presentation-only overlays, with separately
+  defined persistence and undo behavior; never modify supplied market evidence
+  or create trading instructions.
 - Add-symbol and universe-management workflows, with explicit source ownership,
   supported universe semantics, validation, and operator intent. A symbol input
   must not merely relabel fixed-fleet Oracle evidence.

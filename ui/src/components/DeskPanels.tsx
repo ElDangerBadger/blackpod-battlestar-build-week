@@ -25,11 +25,15 @@ function warningForDesk(warning: string): string {
   return warning.replaceAll("_", " ").replaceAll(",", ", ");
 }
 
-export function MarketConditions({ symbol, market }: { symbol: string; market: MarketContextViewModel }) {
+export function MarketConditions({ symbol, market, onFocus, expanded = false }: {
+  symbol: string; market: MarketContextViewModel; onFocus: () => void; expanded?: boolean;
+}) {
   const providerData = market.navigatorMarket?.data;
   return (
-    <section className="loose-paper market-copy" aria-label="Supplemental Navigator market reference">
-      <span className="paper-title">Navigator reference tape</span>
+    <button className="loose-paper market-copy" type="button" onClick={onFocus}
+      aria-label="Open Navigator reference tape" aria-haspopup="dialog" aria-expanded={expanded}
+      aria-controls={expanded ? "notice-dialog" : undefined}>
+      <span className="paper-title"><span>Navigator reference tape</span><span className="chart-open-cue">Open ↗</span></span>
       {market.navigatorMarket ? (
         <dl>
           <div><dt>Asset</dt><dd>{symbol} · {market.companyName}</dd></div>
@@ -42,7 +46,7 @@ export function MarketConditions({ symbol, market }: { symbol: string; market: M
       ) : <p>Security-specific market tape is not present in this mission artifact.</p>}
       <p className="market-source">Supplemental; not Oracle evidence. Market status: {market.marketStatus ?? "not recorded"}.</p>
       {providerData ? <p className="market-source">{providerData.provider} · {providerData.stale ? "STALE at capture" : "captured reference"} · {providerData.source}</p> : null}
-    </section>
+    </button>
   );
 }
 

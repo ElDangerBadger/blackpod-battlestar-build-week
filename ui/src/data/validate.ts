@@ -581,6 +581,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     "mission_summary", "final_snapshot", "generated_at", "shadow_only_declaration", "allowed_operations",
     "prohibited_operations",
     ...(Object.hasOwn(item, "cabin_context") ? ["cabin_context"] : []),
+    ...(Object.hasOwn(item, "navigator_catalog") ? ["navigator_catalog"] : []),
   ], "presentation manifest");
   if (item.schema_version !== PRESENTATION_MANIFEST_SCHEMA) {
     throw new PresentationContractError("unsupported presentation manifest schema");
@@ -596,6 +597,15 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
   if (cabinContext && (cabinContext.name !== "cabin_context" || cabinContext.path !== "presentation/cabin_context.json"
     || cabinContext.schema_version !== "blackpod.cabin_context.v1")) {
     throw new PresentationContractError("presentation manifest references noncanonical cabin context");
+  }
+  const navigatorCatalog = Object.hasOwn(item, "navigator_catalog")
+    ? parseArtifactReference(item.navigator_catalog, "navigator_catalog") : undefined;
+  if (navigatorCatalog && (item.run_mode !== "LIVE" || !cabinContext
+    || navigatorCatalog.name !== "navigator_catalog" || navigatorCatalog.path !== "presentation/navigator_catalog.json"
+    || navigatorCatalog.schema_version !== "blackpod.navigator_catalog.v1" || navigatorCatalog.producer !== "harbormaster"
+    || navigatorCatalog.byte_size === null || !Number.isSafeInteger(navigatorCatalog.byte_size)
+    || navigatorCatalog.observed_at === null)) {
+    throw new PresentationContractError("presentation manifest references an inconsistent LIVE Navigator catalog");
   }
   return {
     schema_version: PRESENTATION_MANIFEST_SCHEMA,
@@ -619,6 +629,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     allowed_operations: allowed,
     prohibited_operations: prohibited,
     ...(cabinContext ? { cabin_context: cabinContext } : {}),
+    ...(navigatorCatalog ? { navigator_catalog: navigatorCatalog } : {}),
   };
 }
 

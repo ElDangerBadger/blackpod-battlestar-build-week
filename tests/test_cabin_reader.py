@@ -252,13 +252,13 @@ class CabinReaderTests(unittest.TestCase):
     def test_source_change_during_capture_is_rejected(self):
         original_read = cabin_reader._read_file
         calls = 0
-        def changed_read(root, relative):
+        def changed_read(root, relative, **kwargs):
             nonlocal calls
             if relative == "request/mission_request.json":
                 calls += 1
                 if calls > 1:
                     return b"concurrent change"
-            return original_read(root, relative)
+            return original_read(root, relative, **kwargs)
         with mock.patch.object(cabin_reader, "_read_file", side_effect=changed_read):
             self.assertEqual(self.reader.current()["status"], "UNAVAILABLE")
 

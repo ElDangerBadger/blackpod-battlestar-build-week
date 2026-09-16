@@ -1,11 +1,20 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 
-const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]';
+const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, [tabindex]';
+
+function insideClosedDetails(element: HTMLElement): boolean {
+  for (let details = element.closest("details:not([open])"); details;
+    details = details.parentElement?.closest("details:not([open])") ?? null) {
+    if (!details.querySelector(":scope > summary")?.contains(element)) return true;
+  }
+  return false;
+}
 
 function focusableElements(dialog: HTMLElement): HTMLElement[] {
   return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => (
     element.tabIndex >= 0
     && !element.closest('[hidden], [inert], [aria-hidden="true"]')
+    && !insideClosedDetails(element)
     && getComputedStyle(element).display !== "none"
     && getComputedStyle(element).visibility !== "hidden"
   ));

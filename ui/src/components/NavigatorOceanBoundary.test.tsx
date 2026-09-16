@@ -6,6 +6,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NavigatorMarket } from "../contracts/cabinContext";
+import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import { NavigatorOceanBoundary } from "./NavigatorOceanBoundary";
 import type { NavigatorOceanViewProps } from "./navigator-ocean/NavigatorOceanView";
 
@@ -43,12 +44,81 @@ const baseProps = {
   reducedMotion: false,
 };
 
+function capturedVariant(timeframe: NavigatorMarket["timeframe"], maPeriod: NavigatorMarket["ma_period"]): NavigatorMarketVariant {
+  const data = market();
+  data.timeframe = timeframe;
+  data.ma_period = maPeriod;
+  data.summary.ma_period = maPeriod;
+  return {
+    market: data,
+    capturedAt: "2026-09-16T01:00:00Z",
+    sourceIdentity: "navigator-canonical-capture",
+    navigatorGitRevision: "a".repeat(40),
+    reference: {
+      name: "navigator_market_variant", path: `presentation/navigator_variants/${timeframe}-ma${maPeriod}.json`,
+      sha256: "b".repeat(64), producer: "navigator", byte_size: 100,
+      schema_version: "navigator.api.ohlc.v1", observed_at: "2026-09-16T01:00:00Z",
+    },
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("NavigatorOceanBoundary", () => {
+  it("selects only supplied captured datasets without fetching or mutating the original", async () => {
+    const original = market();
+    const variant = capturedVariant("1h", 20);
+    const before = JSON.stringify([original, variant]);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const LazyStub = vi.fn((props: NavigatorOceanViewProps) => <p>Selected {props.data.timeframe} MA{props.data.ma_period} {props.capturedAt}</p>);
+    render(<NavigatorOceanBoundary {...baseProps} data={original} variants={[variant]} capabilityProbe={() => true} loadView={async () => ({ default: LazyStub })} />);
+
+    expect(await screen.findByText("Selected 1d MA250 2026-07-18T18:06:01Z")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Weekly" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "MA20 bars" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Captured bar interval" }), { target: { value: "1h" } });
+    expect(await screen.findByText("Selected 1h MA20 2026-09-16T01:00:00Z")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Captured moving average" })).toHaveValue("20");
+    expect(screen.getByText(/navigator-canonical-capture · not streaming/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Original mission capture" }));
+    expect(await screen.findByText("Selected 1d MA250 2026-07-18T18:06:01Z")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(JSON.stringify([original, variant])).toBe(before);
+  });
+
+  it("preserves selection metadata and MA changes in the WebGL-free SVG fallback", () => {
+    const variant = capturedVariant("1d", 50);
+    render(<NavigatorOceanBoundary {...baseProps} data={market()} variants={[variant]} capabilityProbe={() => false} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Captured moving average" }), { target: { value: "50" } });
+    expect(screen.getByRole("img", { name: /supplied 50-bar moving average/ })).toBeInTheDocument();
+    expect(screen.getByText("Captured at: 2026-09-16T01:00:00Z")).toBeInTheDocument();
+    expect(screen.getByText(/Navigator revision: a{40}/)).toBeInTheDocument();
+  });
+
+  it.each(["1h", "1wk"] as const)("labels the supplied MA in bars for a %s fallback capture", (timeframe) => {
+    render(<NavigatorOceanBoundary {...baseProps} data={market()} variants={[capturedVariant(timeframe, 20)]} capabilityProbe={() => false} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Captured bar interval" }), { target: { value: timeframe } });
+    expect(screen.getByRole("img", { name: /supplied 20-bar moving average/ })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /day moving average/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Captured at: 2026-09-16T01:00:00Z")).toBeInTheDocument();
+  });
+
+  it("announces a removed selection instead of silently retaining another capture's identity", () => {
+    const original = market();
+    const variant = capturedVariant("1d", 20);
+    const probe = () => false;
+    const { rerender } = render(<NavigatorOceanBoundary {...baseProps} data={original} variants={[variant]} capabilityProbe={probe} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Captured moving average" }), { target: { value: "20" } });
+    rerender(<NavigatorOceanBoundary {...baseProps} data={original} variants={[]} capabilityProbe={probe} />);
+    expect(screen.getByText(/Selected capture is no longer available; showing the original/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Captured moving average" })).toHaveValue("250");
+    expect(screen.getByText("Captured at: 2026-07-18T18:06:01Z")).toBeInTheDocument();
+  });
+
   it("does not request the lazy module or network when WebGL is unavailable", () => {
     const loadView = vi.fn();
     const fetchSpy = vi.fn();
@@ -186,6 +256,8 @@ describe("NavigatorOceanBoundary", () => {
     expect(source).not.toMatch(/from\s+["']zustand["']/);
     expect(source).not.toMatch(/lib\/api|useMarket|\bfetch\s*\(/);
     expect(source).not.toMatch(/SUBMIT_ORDER|CANCEL_ORDER|MODIFY_PORTFOLIO|BROKER_CALL/);
-    expect(source).not.toMatch(/APPROVE_HANDOFF|ticker selector|timeframe selector|moving average selector/i);
+    // Captured interval/MA selection is now authorized; ticker management and
+    // mutation/store/API seams remain prohibited.
+    expect(source).not.toMatch(/APPROVE_HANDOFF|ticker selector/i);
   });
 });

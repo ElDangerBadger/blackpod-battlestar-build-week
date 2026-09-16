@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from email.message import Message
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from blackpod_build_week.cabin_context import (
     CABIN_CONTEXT_SCHEMA_VERSION,
@@ -408,6 +409,37 @@ class CabinContextTests(unittest.TestCase):
                 opener=opener,
             )
         self.assertEqual(len(opener.calls), 1)
+
+    def test_http_capture_requires_the_requested_timeframe_and_ma_period(self) -> None:
+        for timeframe, ma_period, expected_error in (
+            ("1h", 50, None),
+            ("1d", 50, "timeframe"),
+            ("1h", 250, "ma_period"),
+            ("1d", 250, "timeframe"),
+        ):
+            with self.subTest(timeframe=timeframe, ma_period=ma_period):
+                value = market_value()
+                value["timeframe"] = timeframe
+                value["ma_period"] = ma_period
+                value["summary"]["ma_period"] = ma_period
+                payload = (json.dumps(value) + "\n").encode()
+                response = MagicMock()
+                response.status = 200
+                response.headers.get_content_type.return_value = "application/json"
+                response.read.return_value = payload
+                opener = MagicMock()
+                opener.open.return_value.__enter__.return_value = response
+                url = "http://127.0.0.1:8787/api/ohlc?symbol=AAPL&timeframe=1h&ma=50"
+
+                if expected_error is None:
+                    self.assertEqual(
+                        fetch_navigator_market(url, expected_symbol="AAPL", opener=opener),
+                        payload,
+                    )
+                else:
+                    with self.assertRaisesRegex(CabinContextError, expected_error):
+                        fetch_navigator_market(url, expected_symbol="AAPL", opener=opener)
+                opener.open.assert_called_once()
 
 
 if __name__ == "__main__":

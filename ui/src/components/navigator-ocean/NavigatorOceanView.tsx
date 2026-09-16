@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { NavigatorMarketProvenance } from "../NavigatorMarketProvenance";
 import { HowToRead } from "./HowToRead";
+import { clampHistoryStart, historyStartIndex, sliceHistory, type HistoryPreset } from "./historyWindow";
 import { NavigatorOceanScene } from "./NavigatorOceanScene";
 import { projectNavigatorOcean } from "./projection";
 import type { NavigatorOceanMarket } from "./types";
@@ -36,6 +37,14 @@ function formatTimestamp(value: number | string | null): string {
   return value;
 }
 
+function formatHistoryTimestamp(value: number | null, timeframe: NavigatorOceanMarket["timeframe"]): string {
+  const timestamp = formatTimestamp(value);
+  if (value === null) return timestamp;
+  return timeframe === "1h"
+    ? `${timestamp.slice(0, 10)} ${timestamp.slice(11, 16)} UTC`
+    : timestamp.slice(0, 10);
+}
+
 /**
  * Lazy, prop-only 3D enhancement over canonical Navigator observations.
  * This module has no fetch/store/backend seam and creates no market facts.
@@ -49,7 +58,15 @@ export function NavigatorOceanView({
   onRuntimeUnavailable = () => undefined,
 }: NavigatorOceanViewProps) {
   const [zoomT, setZoomT] = useState(reducedMotion ? 0.68 : 0.08);
-  const projection = useMemo(() => projectNavigatorOcean(data), [data]);
+  const [oceanExaggeration, setOceanExaggeration] = useState(1);
+  const [history, setHistory] = useState<{ preset: HistoryPreset } | { timestamp: number }>({ preset: "all" });
+  const customStart = "timestamp" in history
+    ? data.points.findIndex((point) => point.t >= history.timestamp) : 0;
+  const startIndex = "preset" in history
+    ? historyStartIndex(data.points, history.preset)
+    : clampHistoryStart(data.points, customStart < 0 ? data.points.length - 1 : customStart);
+  const visibleData = useMemo(() => sliceHistory(data, startIndex), [data, startIndex]);
+  const projection = useMemo(() => projectNavigatorOcean(visibleData), [visibleData]);
   const first = data.points[0] ?? null;
   const latest = data.points.at(-1) ?? null;
 
@@ -76,10 +93,48 @@ export function NavigatorOceanView({
         </div>
       </header>
 
+      <section className="navigator-ocean__history" aria-label="Navigator presentation settings">
+        <div className="navigator-ocean__history-presets" role="group" aria-label="Visible history range">
+          <strong>History</strong>
+          {(["1M", "3M", "6M", "1Y", "all"] as const).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              aria-pressed={"preset" in history && history.preset === preset}
+              onClick={() => setHistory({ preset })}
+            >{preset === "all" ? "All history" : preset}</button>
+          ))}
+        </div>
+        <label className="navigator-ocean__history-start">
+          <span>From <output>{formatHistoryTimestamp(visibleData.points[0]?.t ?? null, data.timeframe)}</output></span>
+          <input
+            aria-label="History start"
+            aria-valuetext={formatHistoryTimestamp(visibleData.points[0]?.t ?? null, data.timeframe)}
+            type="range" min="0" max={Math.max(0, data.points.length - 2)} step="1"
+            value={startIndex} disabled={data.points.length < 3}
+            onChange={(event) => {
+              const index = clampHistoryStart(data.points, Number(event.currentTarget.value));
+              setHistory({ timestamp: data.points[index].t });
+            }}
+          />
+          <span>to {formatHistoryTimestamp(latest.t, data.timeframe)}</span>
+        </label>
+        <label className="navigator-ocean__exaggeration">
+          <span>Ship price / MA scale <output>{oceanExaggeration.toFixed(2)}×</output></span>
+          <input
+            aria-label="Ship price / MA exaggeration"
+            type="range" min="0.2" max="2.5" step="0.05" value={oceanExaggeration}
+            onChange={(event) => setOceanExaggeration(Number(event.currentTarget.value))}
+          />
+        </label>
+        <p>View only · latest captured close stays anchored · chart view uses normal scale.</p>
+      </section>
+
       <div className="navigator-ocean__scene-shell">
         <NavigatorOceanScene
-          data={data}
+          data={visibleData}
           projection={projection}
+          oceanExaggeration={oceanExaggeration}
           zoomT={zoomT}
           reducedMotion={reducedMotion}
           onZoomChange={setZoomT}
@@ -93,8 +148,9 @@ export function NavigatorOceanView({
           <div><dt>Supplied MA{data.ma_period}</dt><dd>{formatPrice(projection.maNow, data.currency)}</dd></div>
           <div><dt>Price vs MA</dt><dd>{projection.maNow === null ? "Unavailable — not inferred" : data.summary.position}</dd></div>
           <div><dt>Sea state</dt><dd>{data.summary.volatility}</dd></div>
-          <div><dt>History</dt><dd>{formatTimestamp(first?.t ?? null).slice(0, 10)} → {formatTimestamp(latest.t).slice(0, 10)}</dd></div>
-          <div><dt>Observations</dt><dd>{data.points.length} supplied · {projection.sampled.length} rendered</dd></div>
+          <div><dt>Source history</dt><dd>{formatHistoryTimestamp(first?.t ?? null, data.timeframe)} → {formatHistoryTimestamp(latest.t, data.timeframe)}</dd></div>
+          <div><dt>Visible history</dt><dd>{formatHistoryTimestamp(visibleData.points[0]?.t ?? null, data.timeframe)} → {formatHistoryTimestamp(latest.t, data.timeframe)}</dd></div>
+          <div><dt>Observations</dt><dd>{data.points.length} supplied · {visibleData.points.length} selected · {projection.sampled.length} rendered</dd></div>
         </dl>
 
         <div className="navigator-ocean__controls" aria-label="Presentation camera controls">
@@ -116,7 +172,7 @@ export function NavigatorOceanView({
         </div>
 
         <p className="navigator-ocean__interaction">
-          Scroll to zoom · drag to pan · shift/right-drag to rotate · double-click to reset
+          Hover chart for values · scroll to zoom · drag to pan · shift/right-drag to rotate · double-click to reset
         </p>
         <div className="navigator-ocean__ma-label" aria-hidden="true">MA{data.ma_period} bearing</div>
       </div>

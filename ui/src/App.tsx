@@ -13,12 +13,15 @@ import { BottomNavigation, type CabinDestination } from "./components/BottomNavi
 import { CaptainsLog } from "./components/CaptainsLog";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
+import { MissionWarnings } from "./components/MissionWarnings";
+import { NavigatorReferenceTape } from "./components/NavigatorReferenceTape";
 import { NavigatorOceanBoundary } from "./components/NavigatorOceanBoundary";
 import { useReducedMotion } from "./components/navigator-ocean/useReducedMotion";
 import { ReplayControls } from "./components/ReplayControls";
 import { StatusPanel } from "./components/StatusPanel";
 import { SystemsPanel } from "./components/SystemsPanel";
 import type { NavigatorMarket } from "./contracts/cabinContext";
+import type { NavigatorMarketVariant } from "./contracts/navigatorCatalog";
 import { loadMissionBundle, MissionBundleLoadError } from "./data/loadMission";
 import { evidenceFreshness, useLiveMission, type LiveMissionState } from "./data/useLiveMission";
 import { createMissionViewModel, type MissionViewModel } from "./data/viewModel";
@@ -30,7 +33,7 @@ export type PresentationMode = "DEMO" | "LIVE";
 
 const REPLAY_BASE_URL = `${import.meta.env.BASE_URL}demo/approved/`;
 
-type NoticeState = "sentry" | "admiral" | "config" | "logbook" | null;
+type NoticeState = "sentry" | "admiral" | "config" | "logbook" | "market" | null;
 
 export default function App() {
   const [presentationMode, setPresentationMode] = useState<PresentationMode>(() => modeFromSearch(window.location.search));
@@ -225,7 +228,12 @@ function MissionCabin({
           warnings={theater.revealed.has("ORACLE") ? mission.warnings : []}
           onFocus={() => navigate("sentry")}
         />}
-        marketConditions={<MarketConditions symbol={mission.status.symbol} market={mission.market} />}
+        marketConditions={<MarketConditions symbol={mission.status.symbol} market={mission.market}
+          expanded={notice === "market"} onFocus={() => {
+            setSelectedBookId(null);
+            setShipFocused(false);
+            setNotice("market");
+          }} />}
         captainsLog={<CaptainsLog
           entries={mission.captainsLog}
           revealedStages={theater.revealed}
@@ -277,10 +285,13 @@ function MissionCabin({
         </>}
         foreground={<>
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
-          {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus} /> : null}
+          {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus}
+            onOpenNavigator={() => { setNotice(null); setShipFocused(true); }} /> : null}
           {shipFocused && shipData ? (
             <NavigatorShipFocus
               data={shipData}
+              variants={mission.market.navigatorVariants}
+              sourceIdentity={mission.market.sourceIdentity}
               presentationMode={presentationMode}
               runMode={mission.status.runMode}
               capturedAt={mission.market.capturedAt}
@@ -335,6 +346,8 @@ function PresentationModeControl({
 
 function NavigatorShipFocus({
   data,
+  variants,
+  sourceIdentity,
   presentationMode,
   runMode,
   capturedAt,
@@ -342,6 +355,8 @@ function NavigatorShipFocus({
   onClose,
 }: {
   data: NavigatorMarket;
+  variants?: readonly NavigatorMarketVariant[];
+  sourceIdentity: string | null;
   presentationMode: PresentationMode;
   runMode: "LIVE" | "REPLAY";
   capturedAt: string | null;
@@ -376,6 +391,8 @@ function NavigatorShipFocus({
         </header>
         <NavigatorOceanBoundary
           data={data}
+          variants={variants}
+          sourceIdentity={sourceIdentity}
           presentationMode={presentationMode}
           runMode={runMode}
           capturedAt={capturedAt}
@@ -397,7 +414,14 @@ function DeskBookSummary({ book }: { book: BookDefinition }) {
   );
 }
 
-function CabinNotice({ notice, mission, onClose }: { notice: Exclude<NoticeState, null>; mission: MissionViewModel; onClose: () => void }) {
+function CabinNotice({ notice, mission, onClose, onOpenNavigator }: {
+  notice: Exclude<NoticeState, null>; mission: MissionViewModel; onClose: () => void; onOpenNavigator: () => void;
+}) {
+  if (notice === "market") {
+    return <Notice title="Navigator reference tape" onClose={onClose}>
+      <NavigatorReferenceTape mission={mission} onOpenNavigator={onOpenNavigator} />
+    </Notice>;
+  }
   if (notice === "logbook") {
     return (
       <Notice title="Captain’s Log" onClose={onClose}>
@@ -410,8 +434,7 @@ function CabinNotice({ notice, mission, onClose }: { notice: Exclude<NoticeState
   if (notice === "sentry") {
     return (
       <Notice title="Mission warnings" onClose={onClose}>
-        {mission.warnings.length ? <ul>{mission.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <p>No warnings are recorded.</p>}
-        <p>These warnings are copied from canonical mission evidence without reinterpretation.</p>
+        <MissionWarnings warnings={mission.warnings} />
       </Notice>
     );
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { BookDefinition } from "./bookPages";
 import { useModalFocus } from "../scene/useModalFocus";
+import "./ledger-readability.css";
 
 type BookFocusProps = {
   book: BookDefinition;
@@ -45,10 +46,10 @@ export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
   return (
     <div {...modalFocus} className="book-focus-layer" role="dialog" aria-modal="true" aria-labelledby="book-focus-title">
       <button className="book-focus-scrim" type="button" aria-hidden="true" tabIndex={-1} onClick={onClose} />
-      <article className="book-focus" style={{ "--book-accent": book.accent } as React.CSSProperties}>
+      <article className="book-focus readable-ledger" style={{ "--book-accent": book.accent } as React.CSSProperties}>
         <header className="book-focus-header">
           <div>
-            <p className="eyebrow">Mission record · {book.state}</p>
+            <p className="eyebrow">Mission record · {book.processState}</p>
             <h2 id="book-focus-title">{book.title}</h2>
             <p>{book.subtitle}</p>
           </div>
@@ -59,7 +60,7 @@ export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
 
         <div className="book-page-strip" ref={pageStrip} onScroll={syncPageFromScroll}>
           {book.pages.map((page, index) => (
-            <section className="book-page" key={page.id} aria-label={`${book.title}: ${page.title}`}>
+            <section className="book-page" key={page.id} aria-label={`${book.title}: ${page.title}`} aria-hidden={index !== pageIndex} inert={index !== pageIndex}>
               <div className="book-page-copy">
                 {page.eyebrow ? <p className="eyebrow">{page.eyebrow}</p> : null}
                 <h3>{page.title}</h3>
@@ -67,7 +68,7 @@ export function BookFocus({ book, artifactBaseUrl, onClose }: BookFocusProps) {
               </div>
               {page.evidencePaths?.length ? (
                 <footer className="evidence-links">
-                  <span>Canonical evidence</span>
+                  <span>Original evidence</span>
                   {page.evidencePaths.map((path) => (
                     <a key={path} href={`${artifactBaseUrl}${path}`} target="_blank" rel="noreferrer">
                       {path.split("/").at(-1)}

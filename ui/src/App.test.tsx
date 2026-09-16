@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMissionBundleFixture } from "./test/missionFixture";
@@ -247,6 +247,7 @@ describe("Captain's Cabin", () => {
   it.each([
     { trigger: "Open Oracle book", dialog: "Oracle", close: "Return to full cabin" },
     { trigger: "Focus mission warnings", dialog: "Mission warnings", close: "Return to bridge" },
+    { trigger: "Open Navigator reference tape", dialog: "Navigator reference tape", close: "Return to bridge" },
   ])("isolates the $dialog dialog and restores its trigger on close", async ({ trigger, dialog: name, close }) => {
     render(<App />);
     const opener = await screen.findByRole("button", { name: trigger });
@@ -267,6 +268,34 @@ describe("Captain's Cabin", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument());
     expect(opener).toHaveFocus();
     expect(opener.closest("[inert]")).toBeNull();
+  });
+
+  it("expands the reference tape and opens full Navigator without changing its captured facts", async () => {
+    mockedLoadMissionBundle.mockResolvedValue(missionWithNavigatorMarket());
+    render(<App />);
+    const opener = await screen.findByRole("button", { name: "Open Navigator reference tape" });
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(opener);
+    const tape = screen.getByRole("dialog", { name: "Navigator reference tape" });
+    expect(opener).toHaveAttribute("aria-expanded", "true");
+    expect(within(tape).getByText("$215.00")).toBeInTheDocument();
+    expect(within(tape).getByText("$202.20")).toBeInTheDocument();
+    expect(within(tape).getByText(/This is the mission's original captured price reference/)).toBeInTheDocument();
+    fireEvent.click(within(tape).getByRole("button", { name: "Open full Navigator" }));
+    expect(screen.queryByRole("dialog", { name: "Navigator reference tape" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Navigator Ship View" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+    expect(mockedLoadMissionBundle).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains missing market evidence in the expanded tape without offering a substitute chart", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open Navigator reference tape" }));
+    const tape = screen.getByRole("dialog", { name: "Navigator reference tape" });
+    expect(within(tape).getByText("No captured market reference is attached to this mission.")).toBeInTheDocument();
+    expect(within(tape).queryByRole("button", { name: "Open full Navigator" })).not.toBeInTheDocument();
   });
 
   it("never presents a SHADOW plan when canonical Navigator plan state is absent", async () => {

@@ -810,7 +810,12 @@ def fetch_navigator_market(
         raise CabinContextError("Navigator market endpoint is unavailable") from exc
     if len(source) > max_response_bytes:
         raise CabinContextError("Navigator market response exceeds the configured limit")
-    NavigatorMarket.from_bytes(source, expected_symbol=expected_symbol)
+    market = NavigatorMarket.from_bytes(source, expected_symbol=expected_symbol)
+    query = parse_qs(urlsplit(endpoint).query, strict_parsing=True)
+    if market.value["timeframe"] != query["timeframe"][0]:
+        raise CabinContextError("Navigator market response timeframe conflicts with the request")
+    if market.value["ma_period"] != int(query["ma"][0]):
+        raise CabinContextError("Navigator market response ma_period conflicts with the request")
     return source
 
 

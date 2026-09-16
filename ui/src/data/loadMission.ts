@@ -28,6 +28,8 @@ import {
   parsePortfolioSnapshot,
   type CabinMissionCorrelation,
 } from "./validateCabinContext";
+import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
+import { parseNavigatorCatalog } from "./validateNavigatorCatalog";
 
 /** Known evidence used by the five focused books. Paths are never guessed. */
 export const MISSION_EVIDENCE_NAMES = [
@@ -86,6 +88,7 @@ export interface MissionBundle {
   /** Optional, strictly validated Stage 4 presentation supplements. */
   cabinContext: CabinContextV1 | null;
   navigatorMarket: NavigatorMarket | null;
+  navigatorVariants?: readonly NavigatorMarketVariant[];
   portfolio: PortfolioSnapshotV1 | null;
 }
 
@@ -423,6 +426,35 @@ export async function loadMissionBundle(
       run_mode: summary.run_mode,
     }, fetchImpl, expectedContext);
 
+  const navigatorVariants: NavigatorMarketVariant[] = [];
+  const expectedCatalog = isLive && "navigator_catalog" in manifest ? manifest.navigator_catalog : undefined;
+  if (expectedCatalog) {
+    if (!supplements.cabinContext || !supplements.navigatorMarket) {
+      throw new PresentationContractError("Navigator catalog requires the original captured market context");
+    }
+    const loadedCatalog = await fetchJson(fetchImpl,
+      missionRelativeUrl(normalizedBase, expectedCatalog.path), "Navigator catalog");
+    await verifyReference(loadedCatalog, expectedCatalog, "Navigator catalog");
+    const catalog = parseNavigatorCatalog(loadedCatalog.document, {
+      mission_id: summary.mission_id, request_id: summary.request_id,
+      symbol: summary.symbol, run_mode: summary.run_mode,
+    }, supplements.navigatorMarket);
+    if (catalog.captured_at !== expectedCatalog.observed_at) {
+      throw new PresentationContractError("Navigator catalog capture time conflicts with its publication reference");
+    }
+    for (const entry of catalog.entries) {
+      const loaded = await fetchJson(fetchImpl,
+        missionRelativeUrl(normalizedBase, entry.artifact.path), "Navigator market variant");
+      await verifyReference(loaded, entry.artifact, "Navigator market variant");
+      const market = parseNavigatorMarket(loaded.document, catalog.symbol, catalog.run_mode);
+      if (market.timeframe !== entry.timeframe || market.ma_period !== entry.ma_period) {
+        throw new PresentationContractError("Navigator market variant timeframe/MA conflicts with its catalog entry");
+      }
+      navigatorVariants.push({ market, capturedAt: entry.captured_at, sourceIdentity: entry.source_identity,
+        navigatorGitRevision: entry.navigator_git_revision, reference: entry.artifact });
+    }
+  }
+
   const artifactIndex = new Map(snapshot.artifacts.map((reference) => [reference.name, reference]));
   const evidenceValues = await Promise.all(
     MISSION_EVIDENCE_NAMES.map((name) => loadEvidence(
@@ -444,6 +476,7 @@ export async function loadMissionBundle(
     artifactIndex,
     evidence,
     ...supplements,
+    navigatorVariants,
   };
 }
 

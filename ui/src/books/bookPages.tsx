@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { processLabel, withLedgerBriefing } from "./ledgerBriefings";
 import type { JsonObject, JsonValue } from "../contracts/presentation";
 import type { MissionEvidenceName } from "../data/loadMission";
 import {
@@ -30,6 +31,7 @@ export interface BookDefinition {
   title: string;
   subtitle: string;
   state: string;
+  processState: string;
   deskLines: readonly string[];
   pages: readonly BookPage[];
   accent: string;
@@ -537,12 +539,13 @@ function navigatorPages(viewModel: MissionViewModel): BookPage[] {
 }
 
 export function buildBookDefinitions(viewModel: MissionViewModel): readonly BookDefinition[] {
-  return [
+  const definitions: BookDefinition[] = [
     {
       id: "harbormaster",
       title: "Harbormaster",
       subtitle: "Mission control & integrity",
       state: viewModel.stages.harbormaster.displayState,
+      processState: processLabel(viewModel.stages.harbormaster.technicalStatus),
       deskLines: [viewModel.stages.harbormaster.summary, `Snapshots: ${viewModel.status.snapshotCount}`],
       pages: requestPages(viewModel),
       accent: "#355f78",
@@ -552,6 +555,7 @@ export function buildBookDefinitions(viewModel: MissionViewModel): readonly Book
       title: "Oracle",
       subtitle: "Facts, diagnostics & readiness",
       state: viewModel.stages.oracle.displayState,
+      processState: processLabel(viewModel.stages.oracle.technicalStatus),
       deskLines: [viewModel.stages.oracle.summary, `Native state: ${viewModel.stages.oracle.nativeState ?? "Not recorded"}`],
       pages: oraclePages(viewModel),
       accent: "#6b478f",
@@ -559,8 +563,9 @@ export function buildBookDefinitions(viewModel: MissionViewModel): readonly Book
     {
       id: "council",
       title: "Council",
-      subtitle: "Synthesis without score invention",
+      subtitle: "What the advisory evidence means",
       state: viewModel.stages.council.displayState,
+      processState: processLabel(viewModel.stages.council.technicalStatus),
       deskLines: [viewModel.stages.council.summary, `Native state: ${viewModel.stages.council.nativeState ?? "Not recorded"}`],
       pages: councilPages(viewModel),
       accent: "#9b6818",
@@ -570,6 +575,7 @@ export function buildBookDefinitions(viewModel: MissionViewModel): readonly Book
       title: "Governor",
       subtitle: "Rendered disposition",
       state: viewModel.stages.governor.displayState,
+      processState: processLabel(viewModel.stages.governor.technicalStatus),
       deskLines: [
         `Disposition: ${viewModel.status.governorDisposition ?? "Not recorded"}`,
         `Operator: ${viewModel.status.operatorResult ?? "Not recorded"}`,
@@ -583,6 +589,7 @@ export function buildBookDefinitions(viewModel: MissionViewModel): readonly Book
       title: "Navigator",
       subtitle: "SHADOW handoff & plan",
       state: viewModel.stages.navigator.displayState,
+      processState: processLabel(viewModel.stages.navigator.technicalStatus),
       deskLines: [
         `Handoff: ${viewModel.status.navigatorHandoffStatus ?? "Not recorded"}`,
         `Intake: ${viewModel.status.navigatorIntakeStatus ?? "Not recorded"}`,
@@ -592,4 +599,8 @@ export function buildBookDefinitions(viewModel: MissionViewModel): readonly Book
       accent: "#2f6d4d",
     },
   ];
+  return definitions.map((book) => ({
+    ...book,
+    pages: book.pages.map((page) => ({ ...page, content: withLedgerBriefing(viewModel, book.id, page.id, page.content) })),
+  }));
 }

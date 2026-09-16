@@ -286,7 +286,7 @@ export function NavigatorShipView({ data, variant, className = "" }: NavigatorSh
           className="navigator-ship__plot"
           viewBox={variant === "overview" ? "0 0 600 540" : "0 0 1000 430"}
           role="img"
-          aria-label={`${data.symbol} price history with supplied ${data.ma_period}-day moving average`}
+          aria-label={`${data.symbol} price history with supplied ${data.ma_period}-bar moving average`}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}

@@ -207,6 +207,8 @@ export interface PresentationManifestV1 extends Omit<DemoManifestV1,
   modeldock_mode: ModelDockPresentationMode;
   /** Optional wrapper is itself bound to the publication digest. */
   cabin_context?: ArtifactReference;
+  /** Optional exact Navigator variants, independently bound to this publication. */
+  navigator_catalog?: ArtifactReference;
 }
 
 export type MissionManifest = DemoManifestV1 | PresentationManifestV1;

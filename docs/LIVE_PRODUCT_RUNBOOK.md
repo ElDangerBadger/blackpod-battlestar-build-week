@@ -111,7 +111,23 @@ pack. Starting this command only views the existing run and never repeats it.
   `LOCAL_JSON`, with source identity
   `navigator-capture-mission-live-aapl-20260915-001`. The preserved yfinance
   provider/cache metadata describes that original capture, not a new fetch.
-  Both the transparent overview and expanded Navigator consume it.
+  The transparent overview and expanded Navigator's original/default selection
+  continue to consume it.
+- On **September 15 at 18:14:37 PDT** (September 16, 01:14:37 UTC), an explicitly
+  authorized canonical Navigator capture added the other **14 interval/MA
+  pairs**: hourly/daily/weekly bars with MA20/50/100/200/250. The original daily
+  MA250 artifact, Cabin context, and mission snapshot remain byte-identical.
+  The expanded view's selectors consume the hash-bound supplemental catalog;
+  the browser does not fetch provider data or calculate alternate MAs.
+  Hourly captures contain 420 bars through September 15 at 19:30 UTC; weekly
+  captures contain 523 bars through the week labeled September 14. The four
+  new daily captures contain 750 bars and end on September 14, **one bar earlier
+  than the preserved original daily/MA250 capture**. These are the provider's
+  exact responses, not synchronized series or streaming quotes. Each selection
+  displays its own capture/latest-bar timestamps and provenance. See the
+  [capture catalog guide](NAVIGATOR_CAPTURE_CATALOG.md) for acquisition and
+  validation boundaries. The temporary provider service was stopped afterward;
+  viewing the saved captures needs only the Cabin reader.
 - The Council mandate explicitly denies trading authority: `ok: false`,
   `allowed_sides: []`, `max_trades: 0`, and `risk_posture: READ_ONLY`.
   The authorized stop target is `GOVERNOR`, before any operator approval.

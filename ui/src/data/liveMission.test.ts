@@ -15,6 +15,8 @@ import {
 } from "./liveMission";
 import { parsePresentationManifest } from "./validate";
 import { createMissionViewModel } from "./viewModel";
+import type { NavigatorMarket } from "../contracts/cabinContext";
+import type { NavigatorCatalogV1 } from "../contracts/navigatorCatalog";
 
 const WHEN = "2026-09-15T19:00:00Z";
 
@@ -119,6 +121,147 @@ async function publication(
   });
   return { bundle, files, feed, fetchImpl: fetchImpl as typeof fetch & typeof fetchImpl };
 }
+
+async function catalogPublication(
+  changeCatalog: (catalog: NavigatorCatalogV1) => void = () => {},
+  changeMarket: (market: NavigatorMarket) => void = () => {},
+) {
+  const result = await publication();
+  const { bundle, files, feed } = result;
+  const market: NavigatorMarket = {
+    symbol: bundle.summary.symbol, name: "Apple Inc.", category: "equity", timeframe: "1d", ma_period: 250, currency: "USD",
+    data: { stale: false, age_seconds: 0, source: "provider", provider: "yfinance" },
+    points: [
+      { t: 100, o: 190, h: 192, l: 189, c: 191, v: 1000, ma: null, atr: null },
+      { t: 200, o: 191, h: 194, l: 190, c: 193, v: 1200, ma: 188, atr: 3 },
+    ],
+    summary: { last_price: 193, last_ma: 188, pct_vs_ma: 2.6596, position: "above", trend_slope_pct: 0.5,
+      volatility: "moderate", atr: 3, atr_pct: 1.5544, ma_period: 250, bar_count: 2 },
+  };
+  async function reference(name: string, path: string, schema: string, payload: unknown, producer: string, observed_at: string) {
+    const bytes = `${JSON.stringify(payload)}\n`;
+    files.set(path, bytes);
+    return { name, path, schema_version: schema, producer, observed_at, sha256: await digest(bytes),
+      byte_size: new TextEncoder().encode(bytes).byteLength };
+  }
+  const marketReference = await reference("navigator_market", "presentation/navigator_market.json", "navigator.api.ohlc.v1", market, "navigator", WHEN);
+  bundle.cabinContext = {
+    schema_version: "blackpod.cabin_context.v1", mission_id: bundle.summary.mission_id, request_id: bundle.summary.request_id,
+    symbol: bundle.summary.symbol, run_mode: "LIVE", captured_at: WHEN, market_artifact: marketReference, portfolio_artifact: null,
+    capture_provenance: {
+      market: { status: "CAPTURED", transport: "HTTP", source_identity: "navigator-original-capture", navigator_git_revision: "a".repeat(40) },
+      portfolio: { status: "NOT_CONFIGURED", transport: null, source_identity: null },
+    },
+  };
+  bundle.manifest.cabin_context = await reference("cabin_context", "presentation/cabin_context.json",
+    "blackpod.cabin_context.v1", bundle.cabinContext, "harbormaster", WHEN);
+  const variant = structuredClone(market);
+  variant.timeframe = "1h";
+  variant.ma_period = variant.summary.ma_period = 20;
+  changeMarket(variant);
+  const variantTime = "2026-09-15T20:00:00Z";
+  const catalogTime = "2026-09-15T21:00:00Z";
+  const variantReference = await reference("navigator_market_variant", "presentation/navigator_variants/1h-ma20.json",
+    "navigator.api.ohlc.v1", variant, "navigator", variantTime);
+  const catalog: NavigatorCatalogV1 = {
+    schema_version: "blackpod.navigator_catalog.v1", mission_id: bundle.summary.mission_id, request_id: bundle.summary.request_id,
+    symbol: bundle.summary.symbol, run_mode: "LIVE", captured_at: catalogTime,
+    entries: [{ timeframe: "1h", ma_period: 20, captured_at: variantTime, transport: "HTTP",
+      source_identity: "navigator-variant-capture", navigator_git_revision: "b".repeat(40), artifact: variantReference }],
+  };
+  changeCatalog(catalog);
+  bundle.manifest.navigator_catalog = await reference("navigator_catalog", "presentation/navigator_catalog.json",
+    "blackpod.navigator_catalog.v1", catalog, "harbormaster", catalogTime);
+  const manifestBytes = `${JSON.stringify(bundle.manifest)}\n`;
+  files.set("presentation/manifest.json", manifestBytes);
+  feed.publication_id = await digest(manifestBytes);
+  feed.base_url = `revisions/${feed.publication_id}/`;
+  return { ...result, market, variant, catalog };
+}
+
+describe("Navigator catalog publication loading", () => {
+  it("loads exact variants and their own capture metadata without replacing the original market", async () => {
+    const source = await catalogPublication();
+    const loaded = await loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl });
+    expect(loaded.navigatorMarket).toEqual(source.market);
+    expect(loaded.cabinContext?.captured_at).toBe(WHEN);
+    expect(loaded.navigatorVariants).toEqual([{
+      market: source.variant, capturedAt: source.catalog.entries[0].captured_at,
+      sourceIdentity: "navigator-variant-capture", navigatorGitRevision: "b".repeat(40),
+      reference: source.catalog.entries[0].artifact,
+    }]);
+    expect(source.fetchImpl.mock.calls.every(([url]) => String(url).startsWith(`/live/${source.feed.base_url}`))).toBe(true);
+  });
+
+  it.each(["presentation/navigator_catalog.json", "presentation/navigator_variants/1h-ma20.json"])(
+    "rejects missing or tampered declared %s instead of falling back", async (path) => {
+      const source = await catalogPublication();
+      source.files.set(path, `${source.files.get(path)} `);
+      await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/byte size|SHA-256/);
+      source.files.delete(path);
+      await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/HTTP 404/);
+    },
+  );
+
+  it("rejects capture-time disagreement even when catalog hashes verify", async () => {
+    const source = await catalogPublication((catalog) => { catalog.captured_at = "2026-09-15T22:00:00Z"; });
+    await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/capture time conflicts/);
+  });
+
+  it.each(["correlation", "duplicate variant", "duplicate default"])("rejects rehashed catalog %s", async (kind) => {
+    const source = await catalogPublication((catalog) => {
+      if (kind === "correlation") catalog.mission_id = "mission-other";
+      if (kind === "duplicate variant") catalog.entries = [...catalog.entries, catalog.entries[0]];
+      if (kind === "duplicate default") {
+        catalog.entries[0].timeframe = "1d";
+        catalog.entries[0].ma_period = 250;
+      }
+    });
+    await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/correlation|duplicates/);
+  });
+
+  it("requires the original captured market, not just an empty bound context", async () => {
+    const source = await catalogPublication();
+    source.bundle.cabinContext!.market_artifact = null;
+    source.bundle.cabinContext!.capture_provenance.market = {
+      status: "NOT_CONFIGURED", transport: null, source_identity: null, navigator_git_revision: null,
+    };
+    const bytes = `${JSON.stringify(source.bundle.cabinContext)}\n`;
+    source.files.set("presentation/cabin_context.json", bytes);
+    source.bundle.manifest.cabin_context!.sha256 = await digest(bytes);
+    source.bundle.manifest.cabin_context!.byte_size = new TextEncoder().encode(bytes).byteLength;
+    const manifest = `${JSON.stringify(source.bundle.manifest)}\n`;
+    source.files.set("presentation/manifest.json", manifest);
+    source.feed.publication_id = await digest(manifest);
+    source.feed.base_url = `revisions/${source.feed.publication_id}/`;
+    await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/original captured market context/);
+    expect(source.fetchImpl.mock.calls.some(([url]) => String(url).endsWith("navigator_catalog.json"))).toBe(false);
+  });
+
+  it.each(["timeframe", "MA", "symbol", "synthetic"])("rejects a rehashed %s mismatch in supplied variant bytes", async (kind) => {
+    const source = await catalogPublication(undefined, (market) => {
+      if (kind === "timeframe") market.timeframe = "1wk";
+      if (kind === "MA") market.ma_period = market.summary.ma_period = 50;
+      if (kind === "symbol") market.symbol = "MSFT";
+      if (kind === "synthetic") market.data!.provider = "synthetic";
+    });
+    await expect(loadLiveMissionBundle(source.feed, { fetchImpl: source.fetchImpl })).rejects.toThrow(/conflicts|does not match|synthetic/);
+  });
+
+  it("rejects malformed manifest references and never accepts a catalog on replay manifests", async () => {
+    const source = await catalogPublication();
+    const original = source.bundle.manifest.navigator_catalog!;
+    for (const changed of [
+      { name: "other" }, { path: "presentation/other.json" }, { schema_version: "other" },
+      { producer: "browser" }, { byte_size: null }, { observed_at: null },
+    ]) {
+      expect(() => parsePresentationManifest({ ...source.bundle.manifest, navigator_catalog: { ...original, ...changed } })).toThrow(/Navigator catalog/);
+    }
+    expect(() => parsePresentationManifest({ ...source.bundle.manifest, run_mode: "REPLAY" })).toThrow(/LIVE Navigator catalog/);
+    const { cabin_context: _context, ...withoutContext } = source.bundle.manifest;
+    expect(() => parsePresentationManifest(withoutContext)).toThrow(/LIVE Navigator catalog/);
+  });
+});
 
 describe("live mission feed contract", () => {
   it("reads the same-origin pointer without cache and forwards cancellation", async () => {
@@ -253,8 +396,12 @@ describe("immutable live publication loading", () => {
   it("ignores undeclared optional files and never fetches their unbound bytes", async () => {
     const { feed, fetchImpl, files } = await publication();
     files.set("presentation/cabin_context.json", "{}");
-    expect((await loadLiveMissionBundle(feed, { fetchImpl })).cabinContext).toBeNull();
+    files.set("presentation/navigator_catalog.json", "{}");
+    const loaded = await loadLiveMissionBundle(feed, { fetchImpl });
+    expect(loaded.cabinContext).toBeNull();
+    expect(loaded.navigatorVariants).toEqual([]);
     expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith("cabin_context.json"))).toBe(false);
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith("navigator_catalog.json"))).toBe(false);
   });
 
   it("hashes a declared optional wrapper and rejects missing or altered wrapper bytes", async () => {

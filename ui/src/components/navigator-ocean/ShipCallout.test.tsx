@@ -1,21 +1,10 @@
 import { render, screen } from "@testing-library/react";
-import type { Html } from "@react-three/drei";
-import type { ComponentProps } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 
 import ShipCallout from "./ShipCallout";
 import type { NavigatorOceanMarketSummary } from "./types";
-
-type HtmlProps = ComponentProps<typeof Html>;
-
-const html = vi.hoisted(() => ({ render: vi.fn<(props: HtmlProps) => void>() }));
-
-vi.mock("@react-three/drei", () => ({
-  Html: (props: HtmlProps) => {
-    html.render(props);
-    return <div data-testid="ship-callout-anchor" style={props.style}>{props.children}</div>;
-  },
-}));
 
 const suppliedSummary: NavigatorOceanMarketSummary = Object.freeze({
   last_price: 333.74,
@@ -30,22 +19,31 @@ const suppliedSummary: NavigatorOceanMarketSummary = Object.freeze({
   bar_count: 365,
 });
 
-beforeEach(() => html.render.mockClear());
-
 describe("ShipCallout presentation", () => {
-  it("keeps CSS-pixel sizing at the existing world anchor without intercepting scene gestures", () => {
+  it("keeps one screen-space readout without intercepting scene gestures", () => {
     const { rerender } = render(
       <ShipCallout summary={suppliedSummary} symbol="AAPL" currency="USD" zoomT={0} />,
     );
     for (const zoomT of [0, 0.08, 0.3, 0.55]) {
       rerender(<ShipCallout summary={suppliedSummary} symbol="AAPL" currency="USD" zoomT={zoomT} />);
-      const props = html.render.mock.calls.at(-1)![0];
-      expect(props.distanceFactor).toBeUndefined();
-      expect(props.transform).toBeUndefined();
-      expect(props.position).toEqual([-5.5, 2.5, 1.5]);
-      expect(props.style?.pointerEvents).toBe("none");
+      const callout = screen.getByText("333.74").closest(".bp-ship-callout") as HTMLElement;
+      expect(callout.style.pointerEvents).toBe("none");
+      expect(callout.style.transform).toBe("");
     }
     expect(screen.getByText("333.74").closest(".bp-ship-callout")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("anchors the transparent 224px readout at bottom left with no world projection", () => {
+    const css = readFileSync(resolve(__dirname, "navigator-ocean.css"), "utf8");
+    const rule = css.match(/\.navigator-ocean \.bp-ship-callout \{([^}]+)\}/)![1];
+    for (const declaration of ["position: absolute", "left: 12px", "bottom: 64px", "width: 224px", "background: transparent", "border: 0", "box-shadow: none"]) {
+      expect(rule).toContain(declaration);
+    }
+    expect(rule).toContain("text-shadow:");
+    const scene = readFileSync(resolve(__dirname, "NavigatorOceanScene.tsx"), "utf8");
+    expect(scene.indexOf("<ShipCallout")).toBeGreaterThan(scene.indexOf("</Canvas>"));
+    const callout = readFileSync(resolve(__dirname, "ShipCallout.tsx"), "utf8");
+    expect(callout).not.toMatch(/calculatePosition|Vector3|<Html/);
   });
 
   it("formats only the supplied symbol, currency, price and percentage", () => {
@@ -79,12 +77,12 @@ describe("ShipCallout presentation", () => {
     { zoomT: 0.6, opacity: 0 },
   ])("preserves the original fade at zoom $zoomT", ({ zoomT, opacity }) => {
     render(<ShipCallout summary={suppliedSummary} symbol="AAPL" zoomT={zoomT} />);
-    expect(html.render.mock.calls.at(-1)![0].style?.opacity).toBeCloseTo(opacity);
+    const callout = screen.getByText("333.74").closest(".bp-ship-callout") as HTMLElement;
+    expect(Number(callout.style.opacity)).toBeCloseTo(opacity);
   });
 
   it.each([0.6001, 0.68, 1])("does not render the ship label in chartward view $0", (zoomT) => {
     const { container } = render(<ShipCallout summary={suppliedSummary} symbol="AAPL" zoomT={zoomT} />);
     expect(container).toBeEmptyDOMElement();
-    expect(html.render).not.toHaveBeenCalled();
   });
 });
