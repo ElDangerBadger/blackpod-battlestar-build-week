@@ -5,7 +5,8 @@ import { HowToRead } from "./HowToRead";
 import { clampHistoryStart, historyStartIndex, sliceHistory, type HistoryPreset } from "./historyWindow";
 import { NavigatorOceanScene } from "./NavigatorOceanScene";
 import { projectNavigatorOcean } from "./projection";
-import type { NavigatorOceanMarket } from "./types";
+import { matchingLivePrice } from "./livePriceVisual";
+import type { LiveNavigatorPriceVisual, NavigatorOceanMarket } from "./types";
 import "./navigator-ocean.css";
 
 export type NavigatorOceanViewProps = Readonly<{
@@ -14,6 +15,7 @@ export type NavigatorOceanViewProps = Readonly<{
   runMode: "REPLAY" | "LIVE";
   capturedAt: string | null;
   reducedMotion: boolean;
+  livePrice?: LiveNavigatorPriceVisual | null;
   onRuntimeUnavailable?: () => void;
 }>;
 
@@ -55,6 +57,7 @@ export function NavigatorOceanView({
   runMode,
   capturedAt,
   reducedMotion,
+  livePrice,
   onRuntimeUnavailable = () => undefined,
 }: NavigatorOceanViewProps) {
   const [zoomT, setZoomT] = useState(reducedMotion ? 0.68 : 0.08);
@@ -69,6 +72,9 @@ export function NavigatorOceanView({
   const projection = useMemo(() => projectNavigatorOcean(visibleData), [visibleData]);
   const first = data.points[0] ?? null;
   const latest = data.points.at(-1) ?? null;
+  // Replay remains deterministic even if a caller accidentally supplies a tick.
+  const liveTrade = presentationMode === "LIVE" && runMode === "LIVE"
+    ? matchingLivePrice(data.symbol, livePrice) : null;
 
   if (projection === null || latest === null) {
     return (
@@ -127,7 +133,9 @@ export function NavigatorOceanView({
             onChange={(event) => setOceanExaggeration(Number(event.currentTarget.value))}
           />
         </label>
-        <p>View only · latest captured close stays anchored · chart view uses normal scale.</p>
+        <p>{liveTrade
+          ? "Last received trade positions the ship against fixed captured history and MA · chart view uses normal scale."
+          : "View only · latest captured close stays anchored · chart view uses normal scale."}</p>
       </section>
 
       <div className="navigator-ocean__scene-shell">
@@ -137,6 +145,7 @@ export function NavigatorOceanView({
           oceanExaggeration={oceanExaggeration}
           zoomT={zoomT}
           reducedMotion={reducedMotion}
+          livePrice={liveTrade}
           onZoomChange={setZoomT}
           onRuntimeUnavailable={onRuntimeUnavailable}
         />
@@ -177,12 +186,12 @@ export function NavigatorOceanView({
         <div className="navigator-ocean__ma-label" aria-hidden="true">MA{data.ma_period} bearing</div>
       </div>
 
-      <HowToRead maPeriod={data.ma_period}>
+      <HowToRead maPeriod={data.ma_period} livePrice={liveTrade}>
         <NavigatorMarketProvenance market={data} />
+        <p className="navigator-ocean__authority">
+          Market series is a captured Navigator reference artifact. Operational Navigator state remains in the Navigator book.
+        </p>
       </HowToRead>
-      <p className="navigator-ocean__authority">
-        Market series is a captured Navigator reference artifact. Operational Navigator state remains in the Navigator book.
-      </p>
     </section>
   );
 }

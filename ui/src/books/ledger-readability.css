@@ -64,6 +64,57 @@
   font-size: 0.91em;
 }
 
+.readable-ledger .oracle-recorded-narrative {
+  margin-block: 1.1em;
+  overflow-wrap: anywhere;
+}
+
+.readable-ledger .oracle-recorded-narrative h4 {
+  font-size: 1.1em;
+  margin-block: 1.1em 0.4em;
+}
+
+.readable-ledger .oracle-recorded-narrative h5 {
+  font-size: 1em;
+  color: #573b23;
+  margin-block: 0.85em 0.25em;
+}
+
+.readable-ledger .oracle-recorded-narrative p {
+  white-space: pre-wrap;
+  margin-block: 0.3em 0.65em;
+}
+
+.readable-ledger .oracle-narrative-source,
+.readable-ledger .oracle-narrative-summary {
+  font-size: 0.9em;
+}
+
+.readable-ledger .oracle-narrative-limits {
+  border-left: 3px solid #8b6030;
+  padding: 0.1em 1em;
+  margin-block: 1em;
+  background: rgb(255 244 205 / 20%);
+}
+
+.readable-ledger .oracle-model-statements li {
+  margin-block: 0.8em;
+}
+
+.readable-ledger .oracle-recorded-narrative a {
+  color: #245366;
+  text-underline-offset: 0.15em;
+}
+
+.readable-ledger .oracle-recorded-narrative a:visited {
+  color: #583572;
+}
+
+.readable-ledger .oracle-recorded-narrative a:focus-visible {
+  outline: 2px solid #315d75;
+  outline-offset: 3px;
+}
+
 .readable-ledger .ledger-recorded-details > summary {
   cursor: pointer;
   color: #52371f;

@@ -21,6 +21,15 @@ export type NavigatorOceanVolatility = NavigatorOceanMarket["summary"]["volatili
 
 export type NavigatorOceanVector = readonly [x: number, y: number, z: number];
 
+/** Ephemeral market-data overlay, never a mission bar or a supplied MA. */
+export type LiveNavigatorPriceVisual = Readonly<{
+  symbol: string;
+  price: number;
+  tradeAt: string;
+  feed: "iex" | "sip";
+  status: "LIVE" | "STALE" | "UNAVAILABLE" | "WAITING" | "CONNECTING";
+}>;
+
 export type NavigatorOceanProjectionOptions = Readonly<{
   /** Purely visual lateral exaggeration. It never changes source values. */
   oceanExaggeration?: number;

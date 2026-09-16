@@ -30,11 +30,13 @@ import {
 } from "./validateCabinContext";
 import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import { parseNavigatorCatalog } from "./validateNavigatorCatalog";
+import { parseNavigatorFleetCatalog } from "./validateNavigatorFleetCatalog";
 
 /** Known evidence used by the five focused books. Paths are never guessed. */
 export const MISSION_EVIDENCE_NAMES = [
   "mission_request",
   "oracle_report",
+  "oracle_normalized_snapshot",
   "oracle_measurements",
   "oracle_measurement_diagnostics",
   "oracle_readiness_report",
@@ -89,6 +91,7 @@ export interface MissionBundle {
   cabinContext: CabinContextV1 | null;
   navigatorMarket: NavigatorMarket | null;
   navigatorVariants?: readonly NavigatorMarketVariant[];
+  navigatorFleetVariants?: readonly NavigatorMarketVariant[];
   portfolio: PortfolioSnapshotV1 | null;
 }
 
@@ -127,6 +130,29 @@ export class MissionBundleLoadError extends PresentationContractError {
 interface LoadedJson {
   bytes: Uint8Array;
   document: unknown;
+}
+
+/** Bounded parallel I/O; results retain catalog order and never expose a partial catalog. */
+async function loadCapturedEntries<T, R>(
+  entries: readonly T[], load: (entry: T) => Promise<R>, signal?: AbortSignal,
+): Promise<R[]> {
+  const results = new Array<R>(entries.length);
+  let cursor = 0;
+  let failed = false;
+  await Promise.all(Array.from({ length: Math.min(4, entries.length) }, async () => {
+    while (!failed && cursor < entries.length) {
+      if (signal?.aborted) throw new PresentationContractError("Navigator capture loading was cancelled");
+      const index = cursor++;
+      try {
+        results[index] = await load(entries[index]);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  }));
+  if (signal?.aborted) throw new PresentationContractError("Navigator capture loading was cancelled");
+  return results;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -442,7 +468,7 @@ export async function loadMissionBundle(
     if (catalog.captured_at !== expectedCatalog.observed_at) {
       throw new PresentationContractError("Navigator catalog capture time conflicts with its publication reference");
     }
-    for (const entry of catalog.entries) {
+    navigatorVariants.push(...await loadCapturedEntries(catalog.entries, async (entry) => {
       const loaded = await fetchJson(fetchImpl,
         missionRelativeUrl(normalizedBase, entry.artifact.path), "Navigator market variant");
       await verifyReference(loaded, entry.artifact, "Navigator market variant");
@@ -450,9 +476,9 @@ export async function loadMissionBundle(
       if (market.timeframe !== entry.timeframe || market.ma_period !== entry.ma_period) {
         throw new PresentationContractError("Navigator market variant timeframe/MA conflicts with its catalog entry");
       }
-      navigatorVariants.push({ market, capturedAt: entry.captured_at, sourceIdentity: entry.source_identity,
-        navigatorGitRevision: entry.navigator_git_revision, reference: entry.artifact });
-    }
+      return { market, capturedAt: entry.captured_at, sourceIdentity: entry.source_identity,
+        navigatorGitRevision: entry.navigator_git_revision, reference: entry.artifact };
+    }, options.signal));
   }
 
   const artifactIndex = new Map(snapshot.artifacts.map((reference) => [reference.name, reference]));
@@ -467,6 +493,38 @@ export async function loadMissionBundle(
   );
   const evidence = new Map(evidenceValues.map((entry) => [entry.name, entry]));
 
+  const navigatorFleetVariants: NavigatorMarketVariant[] = [];
+  const expectedFleetCatalog = isLive && "navigator_fleet_catalog" in manifest ? manifest.navigator_fleet_catalog : undefined;
+  if (expectedFleetCatalog) {
+    const fleet = evidence.get("oracle_normalized_snapshot");
+    const indexedFleet = artifactIndex.get("oracle_normalized_snapshot");
+    if (fleet?.status !== "LOADED" || !fleet.document || !indexedFleet) {
+      throw new PresentationContractError("Navigator fleet catalog requires verified canonical normalized fleet evidence");
+    }
+    const loadedCatalog = await fetchJson(fetchImpl,
+      missionRelativeUrl(normalizedBase, expectedFleetCatalog.path), "Navigator fleet catalog");
+    await verifyReference(loadedCatalog, expectedFleetCatalog, "Navigator fleet catalog");
+    const catalog = parseNavigatorFleetCatalog(loadedCatalog.document, {
+      mission_id: summary.mission_id, request_id: summary.request_id,
+      symbol: summary.symbol, run_mode: summary.run_mode,
+    }, indexedFleet, fleet.document, supplements.navigatorMarket);
+    if (catalog.captured_at !== expectedFleetCatalog.observed_at) {
+      throw new PresentationContractError("Navigator fleet catalog capture time conflicts with its publication reference");
+    }
+    navigatorFleetVariants.push(...await loadCapturedEntries(catalog.entries, async (entry) => {
+      const loaded = await fetchJson(fetchImpl,
+        missionRelativeUrl(normalizedBase, entry.artifact.path), "Navigator fleet market");
+      await verifyReference(loaded, entry.artifact, "Navigator fleet market");
+      const market = parseNavigatorMarket(loaded.document, entry.symbol, "LIVE");
+      if (market.timeframe !== entry.timeframe || market.ma_period !== entry.ma_period) {
+        throw new PresentationContractError("Navigator fleet market timeframe/MA conflicts with its catalog entry");
+      }
+      return { market, capturedAt: entry.captured_at, sourceIdentity: entry.source_identity,
+        navigatorGitRevision: catalog.navigator_source.git_revision, reference: entry.artifact,
+        navigatorSourceSha256: catalog.navigator_source.backend_sha256, navigatorWorktreeDirty: catalog.navigator_source.worktree_dirty };
+    }, options.signal));
+  }
+
   return {
     baseUrl: normalizedBase,
     summary,
@@ -477,6 +535,7 @@ export async function loadMissionBundle(
     evidence,
     ...supplements,
     navigatorVariants,
+    navigatorFleetVariants,
   };
 }
 

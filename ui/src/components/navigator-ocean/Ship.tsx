@@ -12,6 +12,8 @@ export interface ShipProps {
   volatility?: NavigatorOceanVolatility;
   zoomT?: number;
   reducedMotion?: boolean;
+  /** Separate last-trade displacement; never changes the captured wake. */
+  worldX?: number;
 }
 
 /**
@@ -197,6 +199,7 @@ export default function Ship({
   volatility = 'gentle',
   zoomT = 0,
   reducedMotion = false,
+  worldX = 0,
 }: ShipProps) {
   const hull = useRef<THREE.Group>(null);
   const foam = useRef<THREE.Group>(null);
@@ -297,7 +300,7 @@ export default function Ship({
     const volUniform = volatilityIntensity(volatility) * (1 - zoomT * 0.92);
     const flatten = zoomT;
 
-    const surf = sampleOceanSurface(0, 0, t, volUniform, flatten);
+    const surf = sampleOceanSurface(worldX, 0, t, volUniform, flatten);
 
     const tiltGain = 0.6 * (1 - flatten);
     const targetY = DRAFT + surf.y;
@@ -329,7 +332,7 @@ export default function Ship({
   });
 
   return (
-    <group position={[0, 0, 0]}>
+    <group position={[worldX, 0, 0]}>
       {/* Wake + spray — lie flat on the water (track only surface height), so
           they stay pinned to the sea even as the hull bobs/pitches. The foam
           group is flipped PI about Y so local +Z points to the bow (world -Z). */}

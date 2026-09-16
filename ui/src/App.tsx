@@ -11,6 +11,10 @@ import { BookFocus } from "./books/BookFocus";
 import { buildBookDefinitions, type BookDefinition, type StageBookId } from "./books/bookPages";
 import { BottomNavigation, type CabinDestination } from "./components/BottomNavigation";
 import { CaptainsLog } from "./components/CaptainsLog";
+import { CaptainsLogDetails } from "./components/CaptainsLogDetails";
+import { CabinPanelDetails, CABIN_PANEL_TITLES } from "./components/CabinPanelDetails";
+import type { CabinPanelId } from "./components/cabinPanelTypes";
+import { ShadowPlanDetails } from "./components/ShadowPlanDetails";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
 import { MissionWarnings } from "./components/MissionWarnings";
@@ -25,6 +29,9 @@ import type { NavigatorMarketVariant } from "./contracts/navigatorCatalog";
 import { loadMissionBundle, MissionBundleLoadError } from "./data/loadMission";
 import { evidenceFreshness, useLiveMission, type LiveMissionState } from "./data/useLiveMission";
 import { createMissionViewModel, type MissionViewModel } from "./data/viewModel";
+import { createRecordedFleetOverview } from "./data/fleetOverview";
+import { hasNavigatorCapture, navigatorVariants, type NavigatorCaptureSelection } from "./data/navigatorSelection";
+import { navigatorPublicationId } from "./data/liveNavigatorPrice";
 import { useReplayTheater } from "./replay/useReplayTheater";
 import { CabinScene } from "./scene/CabinScene";
 import { useModalFocus } from "./scene/useModalFocus";
@@ -33,7 +40,11 @@ export type PresentationMode = "DEMO" | "LIVE";
 
 const REPLAY_BASE_URL = `${import.meta.env.BASE_URL}demo/approved/`;
 
-type NoticeState = "sentry" | "admiral" | "config" | "logbook" | "market" | null;
+type NoticeState = "sentry" | "admiral" | "config" | "logbook" | "reference-tape" | "shadow-plan" | CabinPanelId | null;
+
+function panelFromNotice(notice: NoticeState): CabinPanelId | null {
+  return notice && Object.hasOwn(CABIN_PANEL_TITLES, notice) ? notice as CabinPanelId : null;
+}
 
 export default function App() {
   const [presentationMode, setPresentationMode] = useState<PresentationMode>(() => modeFromSearch(window.location.search));
@@ -64,8 +75,8 @@ function LiveCabin() {
         <p>{live.message}</p>
         <p>Start the local reader with an explicit artifacts root and mission ID:</p>
         <pre><code>make cabin-live CABIN_ARTIFACTS_ROOT=/path/to/artifacts CABIN_MISSION_ID=your-mission-id</code></pre>
-        <p>No replay data is substituted. This Cabin follows recorded LIVE mission artifacts; it does not run missions or stream prices.</p>
-        <p>Read-only · SHADOW only · no approvals, symbol changes, or order execution.</p>
+        <p>No replay data is substituted. This Cabin follows recorded LIVE mission artifacts; it does not run missions. Separately configured Navigator live prices do not replace mission evidence.</p>
+        <p>Read-only · SHADOW only · no approvals, mission changes, or order execution.</p>
         <div className="load-mode-actions"><button type="button" disabled={live.refreshing} onClick={live.refresh}>Refresh evidence</button></div>
       </main>
     );
@@ -117,6 +128,9 @@ function MissionCabin({
   const [notice, setNotice] = useState<NoticeState>(null);
   const [activeDestination, setActiveDestination] = useState<CabinDestination>("bridge");
   const [shipFocused, setShipFocused] = useState(false);
+  const [navigatorInitialSymbol, setNavigatorInitialSymbol] = useState<string | null>(null);
+  const [navigatorInitialCapture, setNavigatorInitialCapture] = useState<NavigatorCaptureSelection | null>(null);
+  const [tapeInitialSymbol, setTapeInitialSymbol] = useState<string | null>(null);
   const shipTriggerRef = useRef<HTMLButtonElement>(null);
   const modalTriggerRef = useRef<HTMLElement | null>(null);
   const wasModalOpen = useRef(false);
@@ -142,6 +156,23 @@ function MissionCabin({
     return mission.market.navigatorMarket;
   }, [mission.market.navigatorMarket]);
   const modalOpen = Boolean(selectedBook || notice || (shipFocused && shipData));
+  const chartVariants = useMemo(() => navigatorVariants(mission), [mission]);
+  const chartFleetSymbols = useMemo(() => createRecordedFleetOverview(mission).rows.map((row) => row.symbol), [mission]);
+  const openNavigator = (symbol = shipData?.symbol, selection?: NavigatorCaptureSelection) => {
+    if (selection && selection.symbol !== symbol) return;
+    if (!symbol || !hasNavigatorCapture(mission, symbol)) return;
+    setNavigatorInitialSymbol(symbol);
+    setNavigatorInitialCapture(selection ?? null);
+    setSelectedBookId(null);
+    setNotice(null);
+    setShipFocused(true);
+  };
+  const openReferenceTape = (symbol = shipData?.symbol) => {
+    setTapeInitialSymbol(symbol ?? null);
+    setSelectedBookId(null);
+    setShipFocused(false);
+    setNotice("reference-tape");
+  };
 
   useLayoutEffect(() => {
     if (wasModalOpen.current && !modalOpen) modalTriggerRef.current?.focus();
@@ -173,6 +204,18 @@ function MissionCabin({
     setActiveDestination("bridge");
   };
 
+  const expandPanel = (panel: CabinPanelId) => {
+    setSelectedBookId(null);
+    setShipFocused(false);
+    setNotice(panel);
+  };
+
+  const expandShadowPlan = () => {
+    setSelectedBookId(null);
+    setShipFocused(false);
+    setNotice("shadow-plan");
+  };
+
   const navigate = (destination: CabinDestination) => {
     setActiveDestination(destination);
     setSelectedBookId(null);
@@ -198,6 +241,8 @@ function MissionCabin({
         modalOpen={modalOpen}
         missionBriefHref={`${mission.baseUrl}presentation/mission_brief.html`}
         status={<StatusPanel
+          onExpand={expandPanel}
+          activePanel={panelFromNotice(notice)}
           presentationMode={presentationMode}
           symbol={mission.status.symbol}
           companyName={mission.market.companyName}
@@ -229,11 +274,7 @@ function MissionCabin({
           onFocus={() => navigate("sentry")}
         />}
         marketConditions={<MarketConditions symbol={mission.status.symbol} market={mission.market}
-          expanded={notice === "market"} onFocus={() => {
-            setSelectedBookId(null);
-            setShipFocused(false);
-            setNotice("market");
-          }} />}
+          expanded={notice === "reference-tape"} onFocus={() => openReferenceTape()} />}
         captainsLog={<CaptainsLog
           entries={mission.captainsLog}
           revealedStages={theater.revealed}
@@ -248,19 +289,23 @@ function MissionCabin({
           expanded={shipFocused}
           onOpenShip={() => {
             modalTriggerRef.current = shipTriggerRef.current;
-            setShipFocused(true);
+            openNavigator();
           }}
         />}
         paperOrder={navigatorRevealed
           && mission.status.navigatorMode === "SHADOW"
           && mission.status.navigatorPlanStatus === "CREATED"
           ? <ShadowPlanPaper
+              onFocus={expandShadowPlan}
+              expanded={notice === "shadow-plan"}
               allowed={mission.safety.allowedOperations}
               prohibited={mission.safety.prohibitedOperations}
               outcome={missionRevealed ? mission.status.outcome : "AWAITING MISSION REVEAL"}
             />
-          : <AwaitingShadowPlan navigatorRevealed={navigatorRevealed} />}
+          : <AwaitingShadowPlan navigatorRevealed={navigatorRevealed} onFocus={expandShadowPlan} expanded={notice === "shadow-plan"} />}
         systemsPanel={<SystemsPanel
+          onExpand={expandPanel}
+          activePanel={panelFromNotice(notice)}
           presentationMode={presentationMode}
           warnings={theater.revealed.has("ORACLE") ? mission.warnings : []}
           governorDisposition={governorRevealed ? mission.status.governorDisposition ?? "Not present" : "Awaiting reveal"}
@@ -286,11 +331,19 @@ function MissionCabin({
         foreground={<>
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
           {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus}
-            onOpenNavigator={() => { setNotice(null); setShipFocused(true); }} /> : null}
+            tapeInitialSymbol={tapeInitialSymbol}
+            onOpenBook={selectBook}
+            onOpenWatchlist={() => setNotice("watchlist")}
+            onOpenReferenceTape={openReferenceTape}
+            onOpenNavigator={openNavigator} /> : null}
           {shipFocused && shipData ? (
             <NavigatorShipFocus
               data={shipData}
-              variants={mission.market.navigatorVariants}
+              variants={chartVariants}
+              fleetSymbols={chartFleetSymbols}
+              initialSymbol={navigatorInitialSymbol}
+              initialCapture={navigatorInitialCapture}
+              livePublicationId={live ? navigatorPublicationId(mission.baseUrl) : null}
               sourceIdentity={mission.market.sourceIdentity}
               presentationMode={presentationMode}
               runMode={mission.status.runMode}
@@ -347,6 +400,10 @@ function PresentationModeControl({
 function NavigatorShipFocus({
   data,
   variants,
+  fleetSymbols,
+  initialSymbol,
+  initialCapture,
+  livePublicationId,
   sourceIdentity,
   presentationMode,
   runMode,
@@ -356,6 +413,10 @@ function NavigatorShipFocus({
 }: {
   data: NavigatorMarket;
   variants?: readonly NavigatorMarketVariant[];
+  fleetSymbols: readonly string[];
+  initialSymbol: string | null;
+  initialCapture: NavigatorCaptureSelection | null;
+  livePublicationId: string | null;
   sourceIdentity: string | null;
   presentationMode: PresentationMode;
   runMode: "LIVE" | "REPLAY";
@@ -392,6 +453,10 @@ function NavigatorShipFocus({
         <NavigatorOceanBoundary
           data={data}
           variants={variants}
+          fleetSymbols={fleetSymbols}
+          initialSymbol={initialSymbol}
+          initialCapture={initialCapture}
+          livePublicationId={livePublicationId}
           sourceIdentity={sourceIdentity}
           presentationMode={presentationMode}
           runMode={runMode}
@@ -414,20 +479,35 @@ function DeskBookSummary({ book }: { book: BookDefinition }) {
   );
 }
 
-function CabinNotice({ notice, mission, onClose, onOpenNavigator }: {
-  notice: Exclude<NoticeState, null>; mission: MissionViewModel; onClose: () => void; onOpenNavigator: () => void;
+function CabinNotice({ notice, mission, onClose, onOpenNavigator, onOpenBook, onOpenWatchlist, onOpenReferenceTape, tapeInitialSymbol }: {
+  notice: Exclude<NoticeState, null>; mission: MissionViewModel; onClose: () => void;
+  onOpenNavigator: (symbol?: string, selection?: NavigatorCaptureSelection) => void;
+  onOpenBook: (id: StageBookId) => void;
+  onOpenWatchlist: () => void;
+  onOpenReferenceTape: (symbol?: string) => void;
+  tapeInitialSymbol: string | null;
 }) {
-  if (notice === "market") {
-    return <Notice title="Navigator reference tape" onClose={onClose}>
-      <NavigatorReferenceTape mission={mission} onOpenNavigator={onOpenNavigator} />
+  const panel = notice === "admiral" ? "fleet" : panelFromNotice(notice);
+  if (panel) {
+    return <Notice key={panel} title={CABIN_PANEL_TITLES[panel]} onClose={onClose}
+      eyebrow={panel === "watchlist" ? "Local preferences · mission evidence remains read-only" : undefined}>
+      <CabinPanelDetails panel={panel} mission={mission} onOpenBook={onOpenBook} onOpenWatchlist={onOpenWatchlist} onOpenNavigator={onOpenNavigator} onOpenReferenceTape={onOpenReferenceTape} />
+    </Notice>;
+  }
+  if (notice === "shadow-plan") {
+    return <Notice title="Navigator SHADOW plan" onClose={onClose}>
+      <ShadowPlanDetails mission={mission} onOpenBook={() => onOpenBook("navigator")} />
+    </Notice>;
+  }
+  if (notice === "reference-tape") {
+    return <Notice key="reference-tape" title="Navigator reference tape" onClose={onClose}>
+      <NavigatorReferenceTape mission={mission} initialSymbol={tapeInitialSymbol} onOpenNavigator={onOpenNavigator} />
     </Notice>;
   }
   if (notice === "logbook") {
     return (
       <Notice title="Captain’s Log" onClose={onClose}>
-        <div className="focused-log">
-          <CaptainsLog entries={mission.captainsLog} revealedStages={new Set(mission.captainsLog.map((entry) => entry.stage))} />
-        </div>
+        <CaptainsLogDetails mission={mission} />
       </Notice>
     );
   }
@@ -439,16 +519,15 @@ function CabinNotice({ notice, mission, onClose, onOpenNavigator }: {
     );
   }
   return (
-    <Notice title={notice === "admiral" ? "Admiral" : "Configuration"} onClose={onClose}>
-      <p>{notice === "admiral" ? "Fleet aggregation is not configured. This view follows one explicitly selected mission."
-        : "Configure the local mission reader with CABIN_ARTIFACTS_ROOT and CABIN_MISSION_ID, then restart it. Source selection is not editable here."}</p>
-      <p>The Captain’s Cabin does not expose settings, approval actions, trading controls, or backend mutation.</p>
-      <p>Symbol onboarding and trading integration are future work, not enabled capabilities.</p>
+    <Notice title="Configuration" onClose={onClose}>
+      <p>Configure the local mission reader with CABIN_ARTIFACTS_ROOT and CABIN_MISSION_ID, then restart it. Source selection is not editable here.</p>
+      <p>The Captain’s Cabin does not expose backend settings, approval actions, trading controls, or backend mutation.</p>
+      <p>Watchlist lets you save symbol labels in this browser only. Canonical Harbor onboarding, future-run fleet changes, and trading integration are not enabled.</p>
     </Notice>
   );
 }
 
-function AwaitingShadowPlan({ navigatorRevealed = false }: { navigatorRevealed?: boolean }) {
+function AwaitingShadowPlan({ navigatorRevealed = false, onFocus, expanded }: { navigatorRevealed?: boolean; onFocus: () => void; expanded: boolean }) {
   return (
     <section className="paper-order-copy" aria-label="Navigator SHADOW plan pending reveal">
       <span className="paper-title">Shadow plan</span>
@@ -456,6 +535,9 @@ function AwaitingShadowPlan({ navigatorRevealed = false }: { navigatorRevealed?:
       <p>{navigatorRevealed
         ? "No canonical Navigator SHADOW plan was created."
         : "Awaiting canonical Navigator evidence in mission replay."}</p>
+      <button className="shadow-plan-trigger" type="button" onClick={onFocus} aria-label="Open Shadow Plan details" aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? "notice-dialog" : undefined}>
+        <span>Open ↗</span>
+      </button>
     </section>
   );
 }

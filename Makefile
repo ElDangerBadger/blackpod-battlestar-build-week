@@ -12,10 +12,17 @@ NPM ?= npm
 CABIN_ARTIFACTS_ROOT ?=
 CABIN_MISSION_ID ?=
 CABIN_LIVE_PORT ?= 5174
+NAVIGATOR_LIVE_URL ?=
+NAVIGATOR_LIVE_PORT ?= 8001
+ALPACA_DATA_FEED ?= iex
 CABIN_READER := $(PYTHON) -m blackpod_build_week.cabin_reader
 CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
 	$(if $(strip $(CABIN_ARTIFACTS_ROOT)),--artifacts-root "$(CABIN_ARTIFACTS_ROOT)",) \
 	$(if $(strip $(CABIN_MISSION_ID)),--mission-id "$(CABIN_MISSION_ID)",)
+
+ifneq ($(strip $(NAVIGATOR_LIVE_URL)),)
+CABIN_READER_ARGS += --navigator-live-url "$(NAVIGATOR_LIVE_URL)"
+endif
 CABIN_SOURCE ?= $(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)
 CABIN_DEMO_SOURCE ?= $(CABIN_SOURCE)
 CABIN_DEMO_ROOT ?= $(UI_DIR)/public/demo/approved
@@ -89,13 +96,15 @@ CABIN_PORTFOLIO_ARGUMENT = $(if $(strip $(PORTFOLIO_JSON)),--portfolio-json "$(P
 	cabin-build cabin-test cabin-capture-demo cabin-capture-live cabin-prepare-demo \
 	cabin-prepare-live cabin-freeze-live-demo cabin-dev-demo cabin-dev-live \
 	cabin-build-demo cabin-build-live cabin-e2e navigator-check navigator-check-upstream \
-	cabin-live cabin-reader cabin-build-replay cabin-dev-replay
+	cabin-live cabin-reader cabin-build-replay cabin-dev-replay navigator-live
 
 help:
 	@echo "BlackPod Battlestar — live read-only Captain's Cabin"
 	@echo "  make cabin-live            Build and serve on 127.0.0.1:5174 (no mission execution)"
 	@echo "    CABIN_ARTIFACTS_ROOT=/path/to/artifacts CABIN_MISSION_ID=mission-id"
 	@echo "  make cabin-reader          Start the read-only reader without rebuilding"
+	@echo "  make navigator-live        Start canonical Alpaca market-data streaming (BATTLESTAR_PATH required)"
+	@echo "    Add NAVIGATOR_LIVE_URL=http://127.0.0.1:8001 to cabin-live/cabin-reader"
 	@echo "  make cabin-dev             Start Vite; proxies /live to the reader on port 5174"
 	@echo "  make cabin-build           Build product assets only; no replay data"
 	@echo "  make cabin-build-replay    Explicit historical regression build (includes fixtures)"
@@ -315,6 +324,12 @@ cabin-live: cabin-build
 
 cabin-reader:
 	$(CABIN_READER) $(CABIN_READER_ARGS)
+
+navigator-live: require-battlestar
+	PYTHONDONTWRITEBYTECODE=1 BPN_ALPACA_LIVE_ENABLED=true BPN_ALPACA_FEED="$(ALPACA_DATA_FEED)" \
+		BPN_CACHE_DIR="$(BUILD_WEEK_ROOT)/artifacts/navigator-live-cache" \
+		$(PYTHON) -m uvicorn src.main:app --app-dir "$(BATTLESTAR_PATH)/blackpod-navigator-3/backend" \
+		--host 127.0.0.1 --port "$(NAVIGATOR_LIVE_PORT)" --no-access-log --timeout-graceful-shutdown 5
 
 cabin-dev-replay: cabin-prepare
 	$(NPM) --prefix "$(UI_DIR)" run dev

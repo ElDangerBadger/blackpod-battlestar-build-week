@@ -1,4 +1,6 @@
 import type { PortfolioViewModel } from "../data/viewModel";
+import type { CabinPanelId } from "./cabinPanelTypes";
+import "./panel-triggers.css";
 
 export type SystemsPanelProps = {
   presentationMode: "DEMO" | "LIVE";
@@ -17,12 +19,15 @@ export type SystemsPanelProps = {
   portfolio: PortfolioViewModel;
   allowedOperations: readonly string[];
   prohibitedOperations: readonly string[];
+  onExpand?: (panel: CabinPanelId) => void;
+  activePanel?: CabinPanelId | null;
 };
 
 export function SystemsPanel(props: SystemsPanelProps) {
   return (
     <aside className="systems-copy" aria-label="Mission provenance and safety boundary">
       <section className="systems-warnings">
+        <PanelTrigger panel="watchlist" label="Open watchlist and warnings" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>{props.presentationMode} mission · warnings</h2>
         {props.warnings.length ? (
           <ul>{props.warnings.slice(0, 3).map((warning) => <li key={warning}>{humanize(warning)}</li>)}</ul>
@@ -30,6 +35,7 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
 
       <section className="systems-governance">
+        <PanelTrigger panel="governance" label="Open risk and governance" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>Risk &amp; governance</h2>
         <dl>
           <div><dt>Governor</dt><dd title={props.governorDisposition}>{props.governorDisposition}</dd></div>
@@ -40,12 +46,14 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
 
       <section className="systems-governor-record">
+        <PanelTrigger panel="governor" label="Open Governor disposition" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>Recorded Governor disposition</h2>
         <p>{props.governorDisposition}</p>
         <p>No execution authority.</p>
       </section>
 
       <section className="systems-portfolio">
+        <PanelTrigger panel="portfolio" label="Open portfolio exposure" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>Read-only portfolio source</h2>
         {props.portfolio.status === "CAPTURED" ? (
           <dl>
@@ -58,6 +66,7 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
 
       <section className="systems-modeldock">
+        <PanelTrigger panel="modeldock" label="Open ModelDock provenance" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>Recorded model provenance</h2>
         <dl>
           <div><dt>Mode</dt><dd>{props.modeldockMode}</dd></div>
@@ -72,17 +81,36 @@ export function SystemsPanel(props: SystemsPanelProps) {
       </section>
 
       <section className="systems-authority">
+        <PanelTrigger panel="model-routing" label="Open model routing" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>ModelDock routing</h2>
         <p>Narrative only. Oracle remains authoritative for facts, measurements, diagnostics, and readiness.</p>
       </section>
 
       <section className="systems-safety">
+        <PanelTrigger panel="safety" label="Open safety boundary" onExpand={props.onExpand} activePanel={props.activePanel} />
         <h2>Navigator SHADOW handoff only — no trade or order execution.</h2>
         <div><strong>Allowed</strong> {props.allowedOperations.join(" · ")}</div>
         <div><strong>Prohibited</strong> {props.prohibitedOperations.join(" · ")}</div>
       </section>
     </aside>
   );
+}
+
+function PanelTrigger({ panel, label, onExpand, activePanel }: {
+  panel: CabinPanelId;
+  label: string;
+  onExpand?: (panel: CabinPanelId) => void;
+  activePanel?: CabinPanelId | null;
+}) {
+  if (!onExpand) return null;
+  return <button
+    className="cabin-panel-trigger"
+    type="button"
+    aria-label={label}
+    aria-haspopup="dialog"
+    aria-expanded={activePanel === panel}
+    onClick={() => onExpand(panel)}
+  ><span className="cabin-panel-open-cue" aria-hidden="true">Open ↗</span></button>;
 }
 
 function formatLatency(value: number | null): string {

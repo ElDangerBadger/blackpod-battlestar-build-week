@@ -5,6 +5,8 @@ import { createMissionViewModel, type MissionViewModel } from "./viewModel";
 
 export const LIVE_POLL_MS = 5_000;
 export const LIVE_REQUEST_TIMEOUT_MS = 10_000;
+/** A verified fleet publication can include hundreds of independently hashed captures. */
+export const LIVE_BUNDLE_TIMEOUT_MS = 60_000;
 export const EVIDENCE_STALE_MS = 15 * 60_000;
 
 export interface LiveMissionState {
@@ -34,7 +36,7 @@ export function useLiveMission() {
       const signal = controller.signal;
       setState((prior) => ({ ...prior, refreshing: true }));
       let rejectAbort: (() => void) | undefined;
-      const timeout = setTimeout(() => controller?.abort(), LIVE_REQUEST_TIMEOUT_MS);
+      let timeout = setTimeout(() => controller?.abort(), LIVE_REQUEST_TIMEOUT_MS);
       try {
         const result = await Promise.race([
           (async () => {
@@ -44,8 +46,13 @@ export function useLiveMission() {
               && (publication.current.missionId !== feed.mission_id || publication.current.observedAt !== feed.observed_at)) {
               throw new Error("Live feed identity differs from its verified publication.");
             }
-            const mission = feed.status === "READY" && publication.current?.id !== feed.publication_id
-              ? createMissionViewModel(await loadLiveMissionBundle(feed, { signal })) : null;
+            let mission: MissionViewModel | null = null;
+            if (feed.status === "READY" && publication.current?.id !== feed.publication_id) {
+              clearTimeout(timeout);
+              timeout = setTimeout(() => controller?.abort(), LIVE_BUNDLE_TIMEOUT_MS);
+              mission = createMissionViewModel(await loadLiveMissionBundle(feed, { signal }));
+              if (signal.aborted) throw new Error("Mission reader request cancelled.");
+            }
             return { feed, mission };
           })(),
           new Promise<never>((_, reject) => {

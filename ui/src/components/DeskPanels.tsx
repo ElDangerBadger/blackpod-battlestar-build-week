@@ -104,7 +104,9 @@ function formatBarTime(value: string | null): string {
   return value.slice(0, 10);
 }
 
-export function ShadowPlanPaper({ allowed, prohibited, outcome }: { allowed: readonly string[]; prohibited: readonly string[]; outcome: string }) {
+export function ShadowPlanPaper({ allowed, prohibited, outcome, onFocus, expanded = false }: {
+  allowed: readonly string[]; prohibited: readonly string[]; outcome: string; onFocus?: () => void; expanded?: boolean;
+}) {
   return (
     <section className="paper-order-copy" aria-label="Navigator SHADOW plan boundary">
       <span className="paper-title">Shadow plan</span>
@@ -115,6 +117,9 @@ export function ShadowPlanPaper({ allowed, prohibited, outcome }: { allowed: rea
         <div><dt>Allowed</dt><dd>{allowed.join(" · ")}</dd></div>
       </dl>
       <p>Prohibited: {prohibited.join(" · ")}</p>
+      {onFocus ? <button className="shadow-plan-trigger" type="button" onClick={onFocus} aria-label="Open Shadow Plan details" aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? "notice-dialog" : undefined}>
+        <span>Open ↗</span>
+      </button> : null}
     </section>
   );
 }

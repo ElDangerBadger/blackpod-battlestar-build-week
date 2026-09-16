@@ -12,6 +12,40 @@
   min-width: 0;
 }
 
+.navigator-capture-view--with-live { grid-template-rows: auto auto minmax(0, 1fr); }
+
+.navigator-live-price {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #74502a;
+  border-radius: 0.22rem;
+  background: #2b2116;
+  color: #f0dba9;
+  font: 13px Georgia, "Times New Roman", serif;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.navigator-live-price__controls, .navigator-live-price [role="group"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.navigator-live-price button {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #8b6b37;
+  border-radius: 0.15rem;
+  background: #251c12;
+  color: #f4daa0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.navigator-live-price button[aria-pressed="true"] { background: #604a24; }
+.navigator-live-price button:focus-visible { outline: 2px solid #e2c675; outline-offset: 2px; }
+.navigator-live-price p { margin: 0.3rem 0 0; overflow-wrap: anywhere; }
+
 .navigator-capture-controls {
   display: flex;
   flex-wrap: wrap;
@@ -22,8 +56,8 @@
   border-radius: 0.22rem;
   background: #2b2116;
   color: #dfca96;
-  font: 12px Georgia, "Times New Roman", serif;
-  max-height: 9rem;
+  font: 14px Georgia, "Times New Roman", serif;
+  max-height: 11rem;
   overflow-y: auto;
 }
 
@@ -47,6 +81,9 @@
   color: #a99670;
   cursor: default;
 }
+
+.navigator-capture-controls select { max-width: 20rem; }
+.navigator-capture-controls option:disabled { color: #a99670; }
 
 .navigator-capture-controls :where(select, button, summary):focus-visible {
   outline: 2px solid #e2c675;

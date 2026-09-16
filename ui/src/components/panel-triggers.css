@@ -1,0 +1,55 @@
+/* Full-cell native buttons preserve the artwork's existing positioned facts. */
+.status-panel .cabin-panel-trigger,
+.systems-copy .cabin-panel-trigger {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgb(203 164 90 / 22%);
+  border-radius: 0.16em;
+  background: transparent;
+  color: #d9b66e;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  text-align: right;
+}
+
+.status-panel .cabin-panel-trigger:hover,
+.systems-copy .cabin-panel-trigger:hover,
+.status-panel .cabin-panel-trigger[aria-expanded="true"],
+.systems-copy .cabin-panel-trigger[aria-expanded="true"] {
+  border-color: #cba45a;
+  background: rgb(219 177 100 / 7%);
+}
+
+.status-panel .cabin-panel-trigger:focus-visible,
+.systems-copy .cabin-panel-trigger:focus-visible {
+  outline: 2px solid #f1d28d;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 4px rgb(35 24 13 / 90%);
+}
+
+.cabin-panel-trigger .cabin-panel-open-cue {
+  position: absolute;
+  right: 0.2em;
+  bottom: 0.1em;
+  padding: 0.05em 0.22em;
+  border-radius: 0.14em;
+  background: rgb(28 19 10 / 90%);
+  color: #d9b66e;
+  font-size: 0.66em;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+.systems-copy .cabin-panel-open-cue {
+  right: 0.45em;
+  bottom: 0.2em;
+}

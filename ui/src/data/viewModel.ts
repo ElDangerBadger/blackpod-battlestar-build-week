@@ -102,6 +102,7 @@ export interface MarketContextViewModel {
   navigatorMarket: NavigatorMarket | null;
   artifactReference?: ArtifactReference | null;
   navigatorVariants?: readonly NavigatorMarketVariant[];
+  navigatorFleetVariants?: readonly NavigatorMarketVariant[];
 }
 
 export interface PortfolioViewModel {
@@ -260,6 +261,7 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
       regime: null,
       navigatorMarket: bundle.navigatorMarket,
       navigatorVariants: bundle.navigatorVariants ?? [],
+      navigatorFleetVariants: bundle.navigatorFleetVariants ?? [],
     },
     portfolio: {
       status: bundle.portfolio === null ? "NOT_CONFIGURED" : "CAPTURED",

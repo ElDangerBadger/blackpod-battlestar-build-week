@@ -582,6 +582,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     "prohibited_operations",
     ...(Object.hasOwn(item, "cabin_context") ? ["cabin_context"] : []),
     ...(Object.hasOwn(item, "navigator_catalog") ? ["navigator_catalog"] : []),
+    ...(Object.hasOwn(item, "navigator_fleet_catalog") ? ["navigator_fleet_catalog"] : []),
   ], "presentation manifest");
   if (item.schema_version !== PRESENTATION_MANIFEST_SCHEMA) {
     throw new PresentationContractError("unsupported presentation manifest schema");
@@ -607,6 +608,14 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     || navigatorCatalog.observed_at === null)) {
     throw new PresentationContractError("presentation manifest references an inconsistent LIVE Navigator catalog");
   }
+  const fleetCatalog = Object.hasOwn(item, "navigator_fleet_catalog")
+    ? parseArtifactReference(item.navigator_fleet_catalog, "navigator_fleet_catalog") : undefined;
+  if (fleetCatalog && (item.run_mode !== "LIVE" || fleetCatalog.name !== "navigator_fleet_catalog"
+    || fleetCatalog.path !== "presentation/navigator_fleet_catalog.json" || fleetCatalog.schema_version !== "blackpod.navigator_fleet_catalog.v1"
+    || fleetCatalog.producer !== "harbormaster" || fleetCatalog.byte_size === null || !Number.isSafeInteger(fleetCatalog.byte_size)
+    || fleetCatalog.observed_at === null)) {
+    throw new PresentationContractError("presentation manifest references an inconsistent LIVE Navigator fleet catalog");
+  }
   return {
     schema_version: PRESENTATION_MANIFEST_SCHEMA,
     mission_id: stringValue(item.mission_id, "mission_id"),
@@ -630,6 +639,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     prohibited_operations: prohibited,
     ...(cabinContext ? { cabin_context: cabinContext } : {}),
     ...(navigatorCatalog ? { navigator_catalog: navigatorCatalog } : {}),
+    ...(fleetCatalog ? { navigator_fleet_catalog: fleetCatalog } : {}),
   };
 }
 

@@ -6,7 +6,7 @@ const DESTINATIONS: readonly { id: CabinDestination; title: string; subtitle: st
   { id: "oracle", title: "Oracle", subtitle: "Intelligence" },
   { id: "council", title: "Council", subtitle: "Synthesis" },
   { id: "sentry", title: "Sentry", subtitle: "Warnings" },
-  { id: "admiral", title: "Admiral", subtitle: "Not included" },
+  { id: "admiral", title: "Admiral", subtitle: "Recorded fleet" },
   { id: "logbook", title: "Logbook", subtitle: "Mission record" },
   { id: "config", title: "Config", subtitle: "Not included" },
 ];

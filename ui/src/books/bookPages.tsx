@@ -173,7 +173,7 @@ function oraclePages(viewModel: MissionViewModel): BookPage[] {
   return [
     {
       id: "oracle-assessment",
-      title: "Executive assessment",
+      title: "Market summary and analysis",
       eyebrow: "Oracle authority",
       content: <>
         <EvidenceState viewModel={viewModel} name="oracle_report" />

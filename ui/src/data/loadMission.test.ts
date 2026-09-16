@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMissionBundleFixture } from "../test/missionFixture";
+import { artifact, createMissionBundleFixture } from "../test/missionFixture";
 import {
   MissionBundleLoadError,
   loadCabinPresentationSupplements,
@@ -22,6 +22,54 @@ const correlation = {
   symbol: "AAPL",
   run_mode: "LIVE" as const,
 };
+
+async function recordedFleetPublication(includeSnapshot = true) {
+  const bundle = createMissionBundleFixture();
+  const files = new Map<string, string>();
+  const fleetPath = "oracle/captured_normalized.json";
+  async function reference(name: string, path: string, schema: string | null, document: unknown) {
+    const bytes = `${JSON.stringify(document)}\n`;
+    files.set(path, bytes);
+    return { ...artifact(name, path, schema), sha256: await digest(bytes), byte_size: new TextEncoder().encode(bytes).byteLength };
+  }
+  const fleet = { normalized_snapshot_id: "snapshot-captured", fleet_id: "fleet-captured", symbols: [{ symbol: "XLK", price: 183.74 }] };
+  if (includeSnapshot) bundle.snapshot.artifacts.push(await reference("oracle_normalized_snapshot", fleetPath, null, fleet));
+  bundle.manifest.final_snapshot = await reference("mission_snapshot", "mission_snapshot.json", bundle.snapshot.schema_version, bundle.snapshot);
+  const immutable = { ...bundle.manifest.final_snapshot, name: "mission_snapshot_r0013", path: "snapshots/mission_snapshot-r0013.json" };
+  bundle.summary.generated_from_snapshot = immutable;
+  bundle.captainsLog.generated_from_snapshot = { ...immutable };
+  bundle.manifest.mission_summary = await reference("mission_summary", "presentation/mission_summary.json", bundle.summary.schema_version, bundle.summary);
+  bundle.manifest.captains_log = await reference("captains_log", "presentation/captains_log.json", bundle.captainsLog.schema_version, bundle.captainsLog);
+  files.set("presentation/demo_manifest.json", JSON.stringify(bundle.manifest));
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input).replace(/^\.\/test-fleet\//, "");
+    const bytes = files.get(path);
+    return bytes === undefined ? new Response("Missing", { status: 404 }) : new Response(bytes);
+  });
+  return { files, fleet, fleetPath, fetchImpl: fetchImpl as typeof fetch & typeof fetchImpl };
+}
+
+describe("recorded normalized fleet evidence", () => {
+  it("loads the indexed normalized snapshot through existing hash verification", async () => {
+    const fixture = await recordedFleetPublication();
+    const bundle = await loadMissionBundle("./test-fleet/", { fetchImpl: fixture.fetchImpl, strictEvidence: true });
+    expect(bundle.evidence.get("oracle_normalized_snapshot")).toMatchObject({ status: "LOADED", document: fixture.fleet });
+    expect(fixture.fetchImpl).toHaveBeenCalledWith(`./test-fleet/${fixture.fleetPath}`, expect.objectContaining({ cache: "no-store" }));
+  });
+
+  it("rejects tampered normalized fleet bytes in strict evidence mode", async () => {
+    const fixture = await recordedFleetPublication();
+    fixture.files.set(fixture.fleetPath, fixture.files.get(fixture.fleetPath)!.replace("XLK", "XLF"));
+    await expect(loadMissionBundle("./test-fleet/", { fetchImpl: fixture.fetchImpl, strictEvidence: true })).rejects.toThrow(/SHA-256/);
+  });
+
+  it("does not guess a fleet path or fetch an unreferenced symbol list", async () => {
+    const fixture = await recordedFleetPublication(false);
+    const bundle = await loadMissionBundle("./test-fleet/", { fetchImpl: fixture.fetchImpl });
+    expect(bundle.evidence.get("oracle_normalized_snapshot")).toMatchObject({ status: "NOT_REFERENCED", document: null });
+    expect(fixture.fetchImpl.mock.calls.some(([url]) => String(url).includes("normalized"))).toBe(false);
+  });
+});
 
 describe("mission data URLs and fallback", () => {
   it("resolves only mission-relative URLs", () => {

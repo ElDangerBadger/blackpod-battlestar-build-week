@@ -8,7 +8,7 @@ import {
   SMAA,
   Vignette,
 } from "@react-three/postprocessing";
-import { AdaptiveDpr, Environment, Lightformer, PerformanceMonitor } from "@react-three/drei";
+import { AdaptiveDpr, Environment, Html, Lightformer, Line, PerformanceMonitor } from "@react-three/drei";
 import { BlendFunction } from "postprocessing";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
@@ -25,7 +25,8 @@ import Sky from "./Sky";
 import SunDisc from "./SunDisc";
 import Wake from "./Wake";
 import { projectNavigatorOcean } from "./projection";
-import type { NavigatorOceanMarket, ProjectedNavigatorOcean } from "./types";
+import { formatLiveTradePrice, projectLiveNavigatorPrice } from "./livePriceVisual";
+import type { LiveNavigatorPriceVisual, NavigatorOceanMarket, ProjectedNavigatorOcean } from "./types";
 
 export type NavigatorOceanSceneProps = Readonly<{
   data: NavigatorOceanMarket;
@@ -33,6 +34,7 @@ export type NavigatorOceanSceneProps = Readonly<{
   oceanExaggeration?: number;
   zoomT: number;
   reducedMotion: boolean;
+  livePrice?: LiveNavigatorPriceVisual | null;
   onZoomChange: (value: number) => void;
   onRuntimeUnavailable: () => void;
 }>;
@@ -64,6 +66,7 @@ export function NavigatorOceanScene({
   oceanExaggeration = 1,
   zoomT,
   reducedMotion,
+  livePrice,
   onZoomChange,
   onRuntimeUnavailable,
 }: NavigatorOceanSceneProps) {
@@ -94,6 +97,8 @@ export function NavigatorOceanScene({
   const shipScale = Math.max(0.65, 2 - viewT * 1.35);
   const fxAmount = 1 - Math.min(1, viewT / 0.85);
   const qualityReduced = lowFx || reducedMotion;
+  const livePosition = projectLiveNavigatorPrice(data.symbol, visualProjection, livePrice, viewT);
+  const shipX = livePosition?.x ?? 0;
 
   return (
     <>
@@ -163,12 +168,32 @@ export function NavigatorOceanScene({
           maPeriod={data.ma_period}
           timeframe={data.timeframe}
         />
-        <ShipMarker zoomT={viewT} reducedMotion={reducedMotion} />
+        {livePosition ? <group>
+          {shipX !== 0 ? <Line
+            points={[[0, 0.28, 0], [shipX, 0.28, 0]]}
+            color="#67e8f9" lineWidth={2} dashed dashSize={1.2} gapSize={0.8}
+            transparent opacity={0.8} toneMapped={false} depthWrite={false} depthTest={false}
+          /> : null}
+          <mesh position={[shipX, 0.32, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.7 + viewT * 14, 1.1 + viewT * 17, 48]} />
+            <meshBasicMaterial color="#67e8f9" transparent opacity={0.9} toneMapped={false} depthWrite={false} depthTest={false} />
+          </mesh>
+          {viewT > 0.6 ? <Html position={[shipX, 0.6, 0]} style={{ pointerEvents: "none" }}>
+            <div className="navigator-ocean__live-chart-label">
+              {livePosition.trade.status === "LIVE" ? "LIVE TRADE" : "STALE TRADE"} {formatLiveTradePrice(livePosition.trade.price)}
+              {livePosition.clipped ? " · visual edge" : ""}
+            </div>
+          </Html> : null}
+        </group> : null}
+        <group position={[shipX, 0, 0]}>
+          <ShipMarker zoomT={viewT} reducedMotion={reducedMotion} />
+        </group>
         <Ship
           scale={shipScale}
           volatility={data.summary.volatility}
           zoomT={viewT}
           reducedMotion={reducedMotion}
+          worldX={shipX}
         />
         <SunDisc
           position={sunPosition}
@@ -187,7 +212,7 @@ export function NavigatorOceanScene({
         <EffectComposer multisampling={qualityReduced ? 0 : 4}>
           {!qualityReduced ? (
             <DepthOfField
-              target={[0, 1.4, 0]}
+              target={[shipX, 1.4, 0]}
               focalLength={0.02}
               bokehScale={1.7 * fxAmount}
               height={480}
@@ -232,6 +257,8 @@ export function NavigatorOceanScene({
       symbol={data.symbol}
       currency={data.currency}
       zoomT={viewT}
+      livePrice={livePosition?.trade}
+      livePositionClipped={livePosition?.clipped}
     />
     </>
   );

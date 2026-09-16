@@ -31,8 +31,10 @@ The reader expects:
 
 Set the root above `missions/`, not the mission's own directory. Use an
 explicit mission ID; the reader never scans directories to choose a newest
-mission. Start with the first intended single mission/symbol in the Harbor;
-multi-symbol aggregation is later V6/V7 scope. The source must be a genuine
+mission. Navigator may independently review available fleet chart captures;
+the reader's mission correlation does not restrict the product to one reviewable
+symbol. Mission-wide symbol semantics and aggregation remain future work.
+The source must be a genuine
 `LIVE` mission in the canonical store
 format, with a valid snapshot chain and captured-artifact integrity. Do not
 change a REPLAY request's mode or timestamps to make it appear live.
@@ -63,6 +65,11 @@ The reader binds only `127.0.0.1`; there is no public-host option. It reads
 source artifacts and creates verified publication bytes in memory, not in the
 mission directory. It does not import or run the mission producer, start
 ModelDock, acquire quotes, or repair source files.
+
+After updating reader code, stop and restart this reader to load the new code;
+rebuilding the UI alone does not replace an already-running Python process.
+Already supported new artifact publications are picked up by normal polling.
+Saved Navigator fleet captures require no running provider or ModelDock service.
 
 ### If you have not selected a source yet
 
@@ -128,6 +135,15 @@ pack. Starting this command only views the existing run and never repeats it.
   [capture catalog guide](NAVIGATOR_CAPTURE_CATALOG.md) for acquisition and
   validation boundaries. The temporary provider service was stopped afterward;
   viewing the saved captures needs only the Cabin reader.
+- On **September 16**, a separately authorized market-only acquisition added
+  **315 datasets for all 21 observed fleet symbols**, covering hourly/daily/weekly
+  intervals and MA20/50/100/200/250. Navigator's review-symbol picker and
+  Fleet/Admiral **Review chart** buttons select these exact captures. Each
+  capture retains its own time and provenance; this is not streaming data.
+  The original AAPL reference, prior 14 variants, mission state, and analytical
+  exclusions remain unchanged. Only the missing symbols were added to canonical
+  Navigator's registry; no ModelDock inference or mission workflow was run.
+  See the [fleet capture guide](NAVIGATOR_CAPTURE_CATALOG.md#recorded-fleet-symbol-selection--september-16).
 - The Council mandate explicitly denies trading authority: `ok: false`,
   `allowed_sides: []`, `max_trades: 0`, and `risk_posture: READ_ONLY`.
   The authorized stop target is `GOVERNOR`, before any operator approval.
@@ -168,6 +184,22 @@ It has not been rewritten or promoted to current data.
 
 ### Reading the indicators
 
+Open the **Navigator Reference Tape** for a symbol-selectable detail view, or
+choose **View details** on a Fleet/Admiral/recorded Watchlist row. The Tape shows
+the selected captured price/MA, timing, provenance, and separate fleet snapshot
+and analysis coverage. Its interval/MA choices are captured data only; **Open
+full Navigator** carries the selection into the chart. A fleet row without a
+chart capture can still be inspected, with missing chart values left explicit.
+These local selections do not change the collapsed desk reference or mission.
+
+Open the **Oracle book** to read **Market summary and analysis** on page 1;
+recorded ModelDock commentary and its cited facts are on page 4. Long pages
+scroll inside the parchment. Native Oracle prose and ModelDock explanations
+are distinct sources, retain their recorded times, and are not refreshed by
+opening the book. The [Oracle coverage audit](ORACLE_COVERAGE.md) explains why
+seven acquired symbols are excluded from the current 14-symbol measurements
+and why the missing-prior warning needs producer work, not another identical run.
+
 - A connected reader means the local artifact-reading service responded. It is
   not a ModelDock health check and does not prove the mission producer is running.
 - Last checked/verified time describes this reader interaction. Snapshot
@@ -207,6 +239,13 @@ or launch the reader. `make cabin-build` builds the normal UI without any judge
 or demo-preparation dependency.
 
 ## Transport and diagnostics
+
+For optional price-driven ship movement, start canonical Navigator's read-only
+Alpaca stream and pass `NAVIGATOR_LIVE_URL=http://127.0.0.1:8001` to `cabin-live`
+or `cabin-reader`. See [Alpaca live market data](ALPACA_LIVE_MARKET.md) for the
+credential source, IEX/SIP coverage, startup commands, and stale-feed behavior.
+This is separate from mission polling and never replaces captured chart/MA
+evidence. No order or execution route is enabled.
 
 The local reader exposes only read operations:
 

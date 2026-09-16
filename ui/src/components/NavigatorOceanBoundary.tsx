@@ -13,6 +13,9 @@ import { NavigatorShipView } from "./NavigatorShipView";
 import { NavigatorMarketProvenance } from "./NavigatorMarketProvenance";
 import type { NavigatorOceanViewProps } from "./navigator-ocean/NavigatorOceanView";
 import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
+import type { NavigatorCaptureSelection } from "../data/navigatorSelection";
+import { useLiveNavigatorPrice } from "../data/useLiveNavigatorPrice";
+import { liveNavigatorPriceUrl } from "../data/liveNavigatorPrice";
 import "./navigator-captures.css";
 
 type OceanModule = { default: ComponentType<NavigatorOceanViewProps> };
@@ -23,6 +26,10 @@ export type NavigatorOceanBoundaryProps = NavigatorOceanViewProps & Readonly<{
   loadView?: OceanLoader;
   variants?: readonly NavigatorMarketVariant[];
   sourceIdentity?: string | null;
+  fleetSymbols?: readonly string[];
+  initialSymbol?: string | null;
+  initialCapture?: NavigatorCaptureSelection | null;
+  livePublicationId?: string | null;
 }>;
 
 const defaultLoader: OceanLoader = () => import("./navigator-ocean/NavigatorOceanView");
@@ -78,17 +85,44 @@ export function NavigatorOceanBoundary({
   loadView = defaultLoader,
   variants = [],
   sourceIdentity = null,
+  fleetSymbols = [],
+  initialSymbol = null,
+  initialCapture = null,
+  livePublicationId = null,
   ...props
 }: NavigatorOceanBoundaryProps) {
   const [runtimeUnavailable, setRuntimeUnavailable] = useState(false);
-  const [selectedPair, setSelectedPair] = useState<string | null>(null);
-  const pair = (market: NavigatorOceanViewProps["data"]) => `${market.timeframe}:${market.ma_period}`;
-  const variant = variants.find((item) => pair(item.market) === selectedPair);
-  const selectedProps = variant ? { ...props, data: variant.market, capturedAt: variant.capturedAt } : props;
-  const selectedData = selectedProps.data;
-  const choices = [props.data, ...variants.map((item) => item.market)];
-  const select = (market: NavigatorOceanViewProps["data"]) => setSelectedPair(
-    pair(market) === pair(props.data) ? null : pair(market),
+  const [priceMode, setPriceMode] = useState<"LIVE" | "CAPTURED">("LIVE");
+  const [paused, setPaused] = useState(false);
+  const key = (market: NavigatorOceanViewProps["data"]) => `${market.symbol}:${market.timeframe}:${market.ma_period}`;
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => {
+    if (initialCapture) {
+      // A precise Tape handoff must never silently select another pair or symbol.
+      if (initialSymbol && initialSymbol !== initialCapture.symbol) return "invalid-initial-capture";
+      const requested = `${initialCapture.symbol}:${initialCapture.timeframe}:${initialCapture.ma_period}`;
+      return requested === key(props.data) ? null : requested;
+    }
+    if (!initialSymbol || initialSymbol === props.data.symbol) return null;
+    const matches = variants.filter((item) => item.market.symbol === initialSymbol);
+    const initial = matches.find((item) => item.market.timeframe === props.data.timeframe && item.market.ma_period === props.data.ma_period) ?? matches[0];
+    return initial ? key(initial.market) : `${initialSymbol}:${props.data.timeframe}:${props.data.ma_period}`;
+  });
+  const variant = variants.find((item) => key(item.market) === selectedKey);
+  const capturedProps = variant ? { ...props, data: variant.market, capturedAt: variant.capturedAt } : props;
+  const selectedData = capturedProps.data;
+  const liveAvailable = props.presentationMode === "LIVE" && props.runMode === "LIVE"
+    && liveNavigatorPriceUrl(livePublicationId, selectedData.symbol) !== null;
+  const live = useLiveNavigatorPrice({ publicationId: livePublicationId, symbol: selectedData.symbol,
+    enabled: liveAvailable && priceMode === "LIVE" && !paused });
+  const livePrice = liveAvailable && priceMode === "LIVE" && live.quote?.price !== null && live.quote?.trade_at
+    ? { symbol: selectedData.symbol, price: live.quote.price, tradeAt: live.quote.trade_at, feed: live.quote.feed,
+      status: paused || live.status === "PAUSED" ? "UNAVAILABLE" as const : live.status } : undefined;
+  const selectedProps: NavigatorOceanViewProps = { ...capturedProps, livePrice };
+  const allChoices = [props.data, ...variants.map((item) => item.market)];
+  const choices = allChoices.filter((item) => item.symbol === selectedData.symbol);
+  const symbols = [...new Set([props.data.symbol, ...fleetSymbols, ...allChoices.map((item) => item.symbol)])];
+  const select = (market: NavigatorOceanViewProps["data"]) => setSelectedKey(
+    key(market) === key(props.data) ? null : key(market),
   );
   const capability = useMemo(() => capabilityProbe(), [capabilityProbe]);
   const LazyOcean = useMemo(() => lazy(loadView), [loadView]);
@@ -104,11 +138,47 @@ export function NavigatorOceanBoundary({
     </OceanErrorBoundary>
   );
 
-  if (!variants.length && selectedPair === null) return content;
+  if (!variants.length && !fleetSymbols.length && selectedKey === null && !liveAvailable) return content;
 
   return (
-    <div className="navigator-capture-view">
+    <div className={`navigator-capture-view${liveAvailable ? " navigator-capture-view--with-live" : ""}`}>
+      {liveAvailable ? <section className="navigator-live-price" aria-label="Live Navigator market data">
+        <div className="navigator-live-price__controls">
+          <strong>{selectedData.symbol} · {priceMode === "CAPTURED" ? "CAPTURED REFERENCE" : paused || live.status === "PAUSED" ? "UPDATES PAUSED" : live.status}</strong>
+          <div role="group" aria-label="Navigator price source">
+            <button type="button" aria-pressed={priceMode === "LIVE"} onClick={() => setPriceMode("LIVE")}>Live market data</button>
+            <button type="button" aria-pressed={priceMode === "CAPTURED"} onClick={() => setPriceMode("CAPTURED")}>Captured reference</button>
+          </div>
+          {priceMode === "LIVE" ? <button type="button" onClick={() => setPaused((value) => !value)}>{paused ? "Resume live updates" : "Pause live updates"}</button> : null}
+          {priceMode === "LIVE" && live.quote?.price !== null && live.quote?.price !== undefined ? <strong aria-label="Last received live trade">{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(live.quote.price)}</strong> : null}
+        </div>
+        {priceMode === "LIVE" ? <>
+          <p>Alpaca · {(live.event?.feed ?? live.quote?.feed) === "iex" ? "IEX: limited-exchange coverage, not the full U.S. market" : (live.event?.feed ?? live.quote?.feed) === "sip" ? "SIP: consolidated U.S. market feed" : "feed awaiting confirmation"}.</p>
+          <p>Trade: {live.quote?.trade_at ?? "not received"} · received: {live.quote?.received_at ?? "not received"} · checked: {live.event?.checked_at ?? "not yet"}.</p>
+          <p role="status">{paused || live.status === "PAUSED" ? "Live updates paused; any displayed trade is retained, not current."
+            : live.status === "LIVE" ? "Receiving live trades. Ship price may move; captured history and MA remain fixed."
+            : live.status === "STALE" ? "Last trade is outdated; awaiting a newer trade. Retained price is not current."
+            : live.status === "UNAVAILABLE" ? "Live feed disconnected or unavailable. Any retained price is not current; reconnecting when available."
+            : live.status === "WAITING" ? "Connected; waiting for a recent trade. Markets may be closed or this feed may have no recent trades. Any retained price is not current."
+            : "Connecting to the read-only live market-data feed. Any retained price is not current."}</p>
+        </> : <p>Showing saved market evidence only. Live subscription stopped; no live trade is applied to the ship.</p>}
+        <p>Live prices are separate, transient market context—not mission evidence. Captured chart history, intervals, and moving averages are unchanged; the SVG fallback stays captured.</p>
+      </section> : null}
       <section className="navigator-capture-controls" aria-label="Captured Navigator datasets">
+        <label>Review symbol
+          <select aria-label="Navigator review symbol" value={selectedData.symbol}
+            onChange={(event) => {
+              const available = allChoices.filter((item) => item.symbol === event.currentTarget.value);
+              const next = available.find((item) => item.timeframe === selectedData.timeframe && item.ma_period === selectedData.ma_period)
+                ?? available.find((item) => item.timeframe === selectedData.timeframe)
+                ?? available.find((item) => item.timeframe === "1d" && item.ma_period === 250) ?? available[0];
+              if (next) select(next);
+            }}>
+            {symbols.map((symbol) => <option key={symbol} value={symbol} disabled={!allChoices.some((item) => item.symbol === symbol)}>
+              {symbol}{symbol === props.data.symbol ? " · original reference" : !allChoices.some((item) => item.symbol === symbol) ? " · not captured" : ""}
+            </option>)}
+          </select>
+        </label>
         <label>Bar interval
           <select
             aria-label="Captured bar interval"
@@ -138,15 +208,17 @@ export function NavigatorOceanBoundary({
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => setSelectedPair(null)} disabled={selectedPair === null}>Original mission capture</button>
+        <button type="button" onClick={() => setSelectedKey(null)} disabled={selectedKey === null}>Original mission capture</button>
         <p role="status">
-          {selectedPair !== null && !variant ? "Selected capture is no longer available; showing the original. " : ""}
-          {selectedData.timeframe} · MA{selectedData.ma_period} · captured {selectedProps.capturedAt ?? "time not recorded"}
+          {selectedKey !== null && !variant ? "Selected capture is no longer available; showing the original. " : ""}
+          {selectedData.symbol} · {selectedData.timeframe} · MA{selectedData.ma_period} · captured {selectedProps.capturedAt ?? "time not recorded"}
           {" · "}{variant?.sourceIdentity ?? sourceIdentity ?? "mission capture"} · not streaming
         </p>
+        {symbols.length > 1 ? <p>Chart selection only · recorded mission results and the Cabin overview stay unchanged. Only captured intervals and moving averages are available.</p> : null}
         {variant ? <details>
           <summary>Capture provenance</summary>
           <span>Navigator revision: {variant.navigatorGitRevision}</span>
+          {variant.navigatorSourceSha256 ? <span>Backend source SHA-256: {variant.navigatorSourceSha256}{variant.navigatorWorktreeDirty ? " · includes uncommitted source changes" : ""}</span> : null}
           <span>Artifact: {variant.reference.path}</span>
           <span>SHA-256: {variant.reference.sha256}</span>
         </details> : null}

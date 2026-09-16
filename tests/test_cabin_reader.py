@@ -314,6 +314,105 @@ class CabinReaderTests(unittest.TestCase):
         for identifier in identifiers[1:]:
             self.assertIsNotNone(self.reader.artifact(identifier, MANIFEST_PATH))
 
+    def test_verified_artifacts_and_symbol_membership_do_not_wait_for_a_new_capture(self):
+        market = Path(__file__).resolve().parents[1] / "fixtures/cabin/aapl_navigator_market.live_capture.json"
+        capture_cabin_context(self.store, mission_id=MISSION_ID, captured_at=OBSERVED_AT,
+                              market_bytes=market.read_bytes(), market_transport=CaptureTransport.LOCAL_JSON,
+                              market_source_identity="reader-market-fixture", navigator_git_revision="a" * 40)
+        first, _ = self.manifest()
+        first_id = first["publication_id"]
+        first_bytes = self.reader.artifact(first_id, MANIFEST_PATH)
+        first_files = dict(self.reader._publications[first_id].files)
+        self.assertTrue(self.reader.permits_live_symbol(first_id, "AAPL"))
+        self.commit_value(lambda value: None)
+        # Compute the expected fully verified result without publishing it.
+        expected = capture_publication(self.reader.store, MISSION_ID)
+        self.assertNotEqual(first_id, expected.publication_id)
+        before = self.file_state()
+        entered, release, reads_finished = threading.Event(), threading.Event(), threading.Event()
+        feeds, reads = [], []
+        original_capture = cabin_reader.capture_publication
+
+        def waiting_capture(store, mission_id):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError("test did not release capture validation")
+            return original_capture(store, mission_id)
+
+        def read_verified():
+            reads.extend((self.reader.artifact(first_id, MANIFEST_PATH),
+                          self.reader.permits_live_symbol(first_id, "AAPL"),
+                          self.reader.artifact(expected.publication_id, MANIFEST_PATH),
+                          self.reader.permits_live_symbol(expected.publication_id, "AAPL")))
+            reads_finished.set()
+
+        capture_thread = threading.Thread(target=lambda: feeds.append(self.reader.current()), daemon=True)
+        read_thread = threading.Thread(target=read_verified, daemon=True)
+        with mock.patch.object(cabin_reader, "capture_publication", side_effect=waiting_capture):
+            capture_thread.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                read_thread.start()
+                # This fails under the old single-lock implementation, before
+                # releasing validation. No timing sleeps or source writes.
+                self.assertTrue(reads_finished.wait(2), "immutable reads blocked on capture validation")
+                self.assertEqual(reads, [first_bytes, True, None, False])
+                self.assertEqual(feeds, [])
+            finally:
+                release.set()
+                capture_thread.join(timeout=5)
+                if read_thread.ident is not None:
+                    read_thread.join(timeout=5)
+        self.assertFalse(capture_thread.is_alive())
+        self.assertFalse(read_thread.is_alive())
+        self.assertEqual(feeds[0]["status"], "READY")
+        self.assertEqual(feeds[0]["publication_id"], expected.publication_id)
+        self.assertEqual(self.reader.artifact(first_id, MANIFEST_PATH), first_bytes)
+        self.assertEqual(dict(self.reader._publications[first_id].files), first_files)
+        self.assertEqual(self.reader.artifact(expected.publication_id, MANIFEST_PATH), expected.files[MANIFEST_PATH])
+        self.assertEqual(self.file_state(), before)
+
+    def test_concurrent_current_requests_still_serialize_full_validation(self):
+        first_entered, second_attempted, second_entered, release = (threading.Event() for _ in range(4))
+        original_capture = cabin_reader.capture_publication
+        captures, feeds = [], []
+
+        def waiting_capture(store, mission_id):
+            captures.append(mission_id)
+            if len(captures) == 1:
+                first_entered.set()
+                if not release.wait(5):
+                    raise AssertionError("test did not release capture validation")
+            else:
+                second_entered.set()
+            return original_capture(store, mission_id)
+
+        def second_request():
+            second_attempted.set()
+            feeds.append(self.reader.current())
+
+        first_thread = threading.Thread(target=lambda: feeds.append(self.reader.current()), daemon=True)
+        second_thread = threading.Thread(target=second_request, daemon=True)
+        with mock.patch.object(cabin_reader, "capture_publication", side_effect=waiting_capture):
+            first_thread.start()
+            try:
+                self.assertTrue(first_entered.wait(2))
+                second_thread.start()
+                self.assertTrue(second_attempted.wait(2))
+                self.assertFalse(second_entered.wait(0.1), "shared source validator ran concurrently")
+                self.assertEqual(captures, [MISSION_ID])
+            finally:
+                release.set()
+                first_thread.join(timeout=5)
+                if second_thread.ident is not None:
+                    second_thread.join(timeout=5)
+        self.assertFalse(first_thread.is_alive())
+        self.assertFalse(second_thread.is_alive())
+        self.assertTrue(second_entered.is_set())
+        self.assertEqual(len(feeds), 2)
+        self.assertTrue(all(feed["status"] == "READY" for feed in feeds))
+        self.assertEqual(feeds[0]["publication_id"], feeds[1]["publication_id"])
+
     def test_late_optional_context_changes_publication_without_rewriting_mission_time(self):
         first, manifest = self.manifest()
         self.assertNotIn("cabin_context", manifest)

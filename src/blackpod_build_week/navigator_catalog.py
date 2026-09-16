@@ -208,7 +208,11 @@ def _baseline(artifacts_root: Path, mission_id: str):
     return store, publication, context, default
 
 
-def _publish_catalog_files(root: Path, payloads: Sequence[tuple[str, bytes]], baseline: Mapping[str, bytes]) -> bool:
+def _publish_catalog_files(
+    root: Path, payloads: Sequence[tuple[str, bytes]], baseline: Mapping[str, bytes], *,
+    catalog_path: str = NAVIGATOR_CATALOG_PATH,
+    variants_directory: str = "navigator_variants",
+) -> bool:
     """Stage complete bytes, link without replacement, publish the catalog last.
 
     Directory descriptors prevent symlink traversal; an advisory directory lock
@@ -217,9 +221,30 @@ def _publish_catalog_files(root: Path, payloads: Sequence[tuple[str, bytes]], ba
     """
     from .cabin_reader import _read_file, _safe_path
 
+    allowed_targets = {
+        (NAVIGATOR_CATALOG_PATH, "navigator_variants"),
+        ("presentation/navigator_fleet_catalog.json", "navigator_fleet"),
+    }
+    if (catalog_path, variants_directory) not in allowed_targets or not payloads or payloads[-1][0] != catalog_path:
+        raise UnsafePathError("catalog publication targets are unsupported")
+    paths = [relative for relative, _ in payloads]
+    if len(paths) != len(set(paths)) or any(
+        relative != catalog_path and (
+            not relative.startswith(f"presentation/{variants_directory}/")
+            or len(relative.split("/")) != 3
+        ) for relative in paths
+    ):
+        raise UnsafePathError("catalog publication paths are inconsistent")
+    for relative in paths:
+        _safe_path(root, relative)
+
     with contextlib.ExitStack() as stack:
         root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         stack.callback(os.close, root_fd)
+        try:
+            os.mkdir("presentation", mode=0o755, dir_fd=root_fd)
+        except FileExistsError:
+            pass
         presentation_fd = os.open("presentation", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
         stack.callback(os.close, presentation_fd)
         fcntl.flock(presentation_fd, fcntl.LOCK_EX)
@@ -255,16 +280,16 @@ def _publish_catalog_files(root: Path, payloads: Sequence[tuple[str, bytes]], ba
                     handle.flush()
                     os.fsync(handle.fileno())
             try:
-                os.mkdir("navigator_variants", mode=0o755, dir_fd=presentation_fd)
+                os.mkdir(variants_directory, mode=0o755, dir_fd=presentation_fd)
                 created_variants = True
             except FileExistsError:
                 pass
-            variants_fd = os.open("navigator_variants", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            variants_fd = os.open(variants_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                   dir_fd=presentation_fd)
             for index, (relative, payload) in enumerate(payloads):
                 if relative in existing:
                     continue
-                destination_fd = presentation_fd if relative == NAVIGATOR_CATALOG_PATH else variants_fd
+                destination_fd = presentation_fd if relative == catalog_path else variants_fd
                 destination_name = relative.rsplit("/", 1)[1]
                 try:
                     os.link(staged_names[index], destination_name, src_dir_fd=stage_fd,
@@ -288,7 +313,7 @@ def _publish_catalog_files(root: Path, payloads: Sequence[tuple[str, bytes]], ba
                 os.close(variants_fd)
             if not committed and created_variants:
                 try:
-                    os.rmdir("navigator_variants", dir_fd=presentation_fd)
+                    os.rmdir(variants_directory, dir_fd=presentation_fd)
                 except OSError:
                     pass
             for name in staged_names:

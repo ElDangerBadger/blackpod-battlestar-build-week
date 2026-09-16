@@ -20,6 +20,38 @@ const suppliedSummary: NavigatorOceanMarketSummary = Object.freeze({
 });
 
 describe("ShipCallout presentation", () => {
+  it("labels a live last trade separately and never presents the captured percentage as live", () => {
+    const before = JSON.stringify(suppliedSummary);
+    render(<ShipCallout summary={suppliedSummary} symbol="AAPL" currency="USD" zoomT={0} livePrice={{
+      symbol: "AAPL", price: 335.12, tradeAt: "2026-09-16T18:00:01Z", feed: "iex", status: "LIVE",
+    }} />);
+    expect(screen.getByText("AAPL · LAST TRADE (SHIP) · USD")).toBeInTheDocument();
+    expect(screen.getByText("335.12")).toHaveClass("price");
+    expect(screen.getByText("LIVE · Alpaca IEX")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-16T18:00:01Z")).toBeInTheDocument();
+    expect(screen.getByText("Captured MA250: 264.82")).toBeInTheDocument();
+    expect(screen.queryByText("+26.02%")).not.toBeInTheDocument();
+    expect(screen.queryByText("Above MA")).not.toBeInTheDocument();
+    expect(JSON.stringify(suppliedSummary)).toBe(before);
+  });
+
+  it.each(["STALE", "WAITING", "CONNECTING", "UNAVAILABLE"] as const)("marks retained %s trades stale instead of labeling the captured close current", (status) => {
+    render(<ShipCallout summary={suppliedSummary} symbol="AAPL" zoomT={0} livePrice={{
+      symbol: "AAPL", price: 335.12, tradeAt: "2026-09-16T18:00:01Z", feed: "sip", status,
+    }} />);
+    expect(screen.getByText("335.12")).toBeInTheDocument();
+    expect(screen.getByText("STALE — last received · Alpaca SIP")).toBeInTheDocument();
+  });
+
+  it("explains visual clipping without clipping the displayed price or inventing a missing MA", () => {
+    render(<ShipCallout summary={{ ...suppliedSummary, last_ma: null }} symbol="AAPL" zoomT={0} livePositionClipped livePrice={{
+      symbol: "AAPL", price: 12345, tradeAt: "2026-09-16T18:00:01Z", feed: "iex", status: "LIVE",
+    }} />);
+    expect(screen.getByText("12,345.00")).toBeInTheDocument();
+    expect(screen.getByText("Captured MA250: not supplied")).toBeInTheDocument();
+    expect(screen.getByText("Ship at visual edge; price shown in full.")).toBeInTheDocument();
+  });
+
   it("keeps one screen-space readout without intercepting scene gestures", () => {
     const { rerender } = render(
       <ShipCallout summary={suppliedSummary} symbol="AAPL" currency="USD" zoomT={0} />,
@@ -33,10 +65,10 @@ describe("ShipCallout presentation", () => {
     expect(screen.getByText("333.74").closest(".bp-ship-callout")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("anchors the transparent 224px readout at bottom left with no world projection", () => {
+  it("anchors the transparent bounded-width readout at bottom left with no world projection", () => {
     const css = readFileSync(resolve(__dirname, "navigator-ocean.css"), "utf8");
     const rule = css.match(/\.navigator-ocean \.bp-ship-callout \{([^}]+)\}/)![1];
-    for (const declaration of ["position: absolute", "left: 12px", "bottom: 64px", "width: 224px", "background: transparent", "border: 0", "box-shadow: none"]) {
+    for (const declaration of ["position: absolute", "left: 12px", "bottom: 64px", "width: 252px", "max-width: 42%", "background: transparent", "border: 0", "box-shadow: none"]) {
       expect(rule).toContain(declaration);
     }
     expect(rule).toContain("text-shadow:");

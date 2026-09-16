@@ -32,4 +32,7 @@ export interface NavigatorMarketVariant {
   sourceIdentity: string;
   navigatorGitRevision: string;
   reference: ArtifactReference;
+  /** Present only on source-attested multi-symbol fleet captures. */
+  navigatorSourceSha256?: string;
+  navigatorWorktreeDirty?: boolean;
 }

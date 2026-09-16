@@ -13,18 +13,27 @@ existing Captain's Cabin. Reuse Battlestar's Navigator V3 renderer behind the
 existing presentation contracts. Do not redesign the Cabin or recreate domain
 logic in the browser.
 
-The current increment is a local, read-only product. “Live” means following
-validated canonical LIVE mission revisions, not launching mission workflows,
-streaming exchange quotes, or enabling trading.
+The current increment is a local, read-only product. Mission “Live” means
+following validated canonical LIVE revisions, not launching mission workflows
+or enabling trading. The separately authorized September 16 Alpaca extension
+adds optional live last-trade prices in expanded Navigator; these are never
+substituted for saved mission evidence.
 
-Initial operation follows one explicitly selected mission/symbol in the Harbor.
-Multi-symbol aggregation is deferred to the later V6/V7 roadmap; the current
-reader does not combine independent missions into a portfolio-level result.
+The current reader follows one explicitly selected mission. Its recorded symbol
+is a correlation field, not a requirement that the product have only one
+reviewable symbol. Navigator can independently review captured fleet datasets.
+Mission-wide symbol semantics and multi-symbol aggregation remain deferred for
+product review; the reader does not combine missions into a portfolio result.
 
 ## Authority and boundaries
 
 - Battlestar remains the canonical owner of its native mission components and
-  Navigator renderer. Its repository is read-only during this work.
+  Navigator renderer. The September 16 authorized exception adds the recorded
+  fleet's missing symbols to its existing Navigator market registry, with tests
+  and documentation. A subsequent explicit exception adds credential loading
+  from the existing `buried_treasure` configuration and a read-only Alpaca
+  price stream in Navigator's backend. All other canonical changes remain out
+  of scope. See [Alpaca live market data](ALPACA_LIVE_MARKET.md).
 - ModelDock remains a separately operated narrative appliance. The reader does
   not modify its repository, start it, or call it automatically.
 - The Cabin renders mission artifacts; it cannot create, resume, approve,
@@ -98,25 +107,93 @@ glosses, not new model-generated analysis, scores, or rewritten evidence.
 Unrecognized codes remain explicitly uninterpreted; missing evidence is not
 converted into a negative finding or an invented value.
 
-The Navigator Reference Tape opens a read-only module with its original captured
-close, supplied moving average, interval, volatility category, timestamps, and
-source details. It also links to the full Navigator. Alternate chart selections
-do not rewrite the tape. Mission warnings explain known data-coverage and
+Oracle's opening page surfaces its recorded market narrative: participation,
+leadership, rotation, risk posture, original summary, source time, and limitations.
+It uses the report's embedded narrative when available, otherwise a correlated
+standalone narrative, without splicing prose across partial sources. Missing
+commentary stays missing. The separate ModelDock page exposes its recorded
+interpretation, confidence explanation, cited statements, and uncertainty limits;
+an empty uncertainty list is not proof of certainty. Links use only loaded,
+indexed mission evidence. No inference is triggered by opening either page.
+These views do not manufacture Delphi forward scenarios or expand Oracle's
+measurement universe. See [recorded Oracle coverage](ORACLE_COVERAGE.md).
+
+The Navigator Reference Tape opens a read-only, multi-symbol detail module.
+It defaults to the original reference from the desk, or the selected item when
+opened from Fleet/Admiral/recorded Watchlist coverage. Symbol, interval, and MA
+selectors use exact captured datasets; **Open full Navigator** carries the same
+symbol and interval/MA into the expanded chart. Prices, timestamps, provider
+metadata, and artifact links belong to the selected capture. The separate saved
+fleet observation and Oracle/Council classifications retain their own provenance
+and units. A fleet item without a chart capture still has a detail view, with no
+invented price history or MA. Watchlist-only labels do not become datasets.
+The collapsed desk tape and overview retain the original mission reference;
+expanded selections are temporary presentation state, not evidence mutations.
+Mission warnings explain known data-coverage and
 permission limits, with exact warning text expandable underneath. Long content
 scrolls within the parchment panels; inactive ledger pages are excluded from
 keyboard focus.
 
+Upper status cells and right-side instrument panels open readable, scrollable
+detail modules. The complete Captain's Log paper and the SHADOW-plan paper are
+also click targets. Log details preserve captured order and exact summaries,
+show human-readable UTC timestamps, and link to their recorded source artifacts.
+SHADOW-plan details explain the distinction between a market chart and an
+operational plan, and describe the canonical approval/handoff prerequisites
+without adding activation, approval, or execution controls.
+
+Fleet status, Watchlist, and Admiral expose the full observed symbol list from
+the saved normalized Oracle snapshot. Prices/returns retain source units;
+Oracle coverage and Council classifications join only on matching snapshot IDs.
+Without that snapshot, the view explicitly falls back to available analytical
+records, not an invented configured roster. The captured fleet-input file is
+linked separately. Text filtering changes only the view. Observed fleet symbols,
+configured membership, portfolio holdings, and the supplemental Navigator symbol
+are distinct scopes.
+
+Watchlist also has a separate, editable local list, reachable from Fleet Status
+and Admiral. It starts empty and stores only normalized symbol labels in this
+browser's origin-scoped localStorage (`blackpod.cabin.local-watchlist.v1`,
+version 1); it is not account/device synchronization. Add/remove operations
+persist up to 100 unique labels, with a 20-character limit per symbol. Labels
+are unverified and do not onboard a Harbor symbol, change future-run fleet
+configuration, fetch quotes, select Navigator symbols, or mutate any mission.
+Per-symbol evidence labels refer only to the displayed mission, with recorded
+fleet coverage distinct from Navigator captures. Clearing site data removes
+local preferences; changing browser, host, or port creates a separate list.
+
+Storage failures and malformed/unsupported saved data pause editing, preserve
+existing bytes, and never report an unsaved change as persisted. Read retry
+does not reset data. Other-tab storage events refresh the displayed list, and
+each mutation rereads storage; simultaneous cross-tab writes are not atomic.
+Canonical fleet configuration and arbitrary-symbol market acquisition remain
+out of scope, as do broker account, approval, and execution actions. The narrow
+Alpaca market-data exception does not grant any of those authorities.
+
 The expanded renderer can select a trailing visible-history window and adjust
 ship-view price/MA separation as local presentation state. The latest captured
-close remains the anchor; source MA values, summaries, and provenance are not
-recomputed or overwritten. Full chart view returns to normal visual scale.
+close remains the captured-history anchor; an enabled live last-trade overlay
+can move the ship relative to it. Source MA values, summaries, and provenance
+are not recomputed or overwritten. Full chart view returns to normal visual scale.
 History duration is not bar interval. Alternate bar intervals and MA periods
 select exact captured canonical Navigator responses from an optional, hash-bound
 presentation catalog. The catalog is an additive transport supplement; existing
 mission, default market, and Cabin context contracts remain unchanged. The
 original capture remains the overview/default. Every alternate exposes its own
-capture time and provenance; unavailable pairs are disabled. Selection never
-fetches from a provider, computes indicators, or mutates mission artifacts.
+capture time and provenance; unavailable pairs are disabled. Captured-pair
+selection never fetches replacement history, computes indicators, or mutates
+mission artifacts. The separately enabled live-price subscription follows the
+selected recorded symbol without changing these captures.
+
+An additional hash-bound fleet catalog permits symbol selection in the expanded
+Navigator and direct chart review from Fleet Status and Admiral. Membership
+must match the mission's exact normalized Oracle snapshot; a local watchlist
+label alone never authorizes a capture. Each response retains its own symbol,
+interval/MA, timestamps, provider metadata, and source fingerprint. Uncaptured
+symbols are unavailable, not relabeled AAPL data. The selected chart does not
+rewrite the overview, original desk tape, mission symbol, Oracle findings, or
+Council/Governor outcomes. Market captures for Oracle-excluded symbols do not
+change their recorded analytical exclusion.
 
 Normal product use has no Demo/Live switch or replay theater. Historical
 playback is explicitly requested through `?mode=replay` in a developer review
@@ -132,6 +209,8 @@ publications in memory, and does not persist, repair, or overwrite source
 artifacts. Unconfigured startup is permitted so the UI can explain setup.
 No automatic provider health probe, mission command, or market acquisition runs
 as a side effect of opening the Cabin.
+Opening expanded Navigator starts its read-only price subscription only when
+the operator has explicitly enabled the canonical service and Cabin relay.
 
 This increment is not a remotely exposed or multi-user deployment. Network
 hosting, authentication, operational supervision, and durable historical
@@ -163,8 +242,8 @@ ModelDock readiness.
 - Add-symbol and universe-management workflows, with explicit source ownership,
   supported universe semantics, validation, and operator intent. A symbol input
   must not merely relabel fixed-fleet Oracle evidence.
-- Multi-symbol aggregation in the later V6/V7 scope, after the first single
-  mission/symbol path is operational and its evidence boundaries are verified.
+- Mission-wide symbol semantics and multi-symbol aggregation, following a
+  separate product review; independent chart selection is not that redesign.
 - Mission initiation/resume and explicit operator decisions, after a separate
   authorization and interaction design review.
 - Trading integration, only under a separately defined execution boundary,

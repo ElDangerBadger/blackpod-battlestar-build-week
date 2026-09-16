@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { JsonObject } from "../contracts/presentation";
-import { getEvidenceDocument, type MissionViewModel, type StageBookId } from "../data/viewModel";
+import { getEvidence, getEvidenceDocument, type MissionViewModel, type StageBookId } from "../data/viewModel";
 import { getNumber, getString, getStringArray } from "../data/validate";
 import { explainMissionWarning } from "../components/MissionWarnings";
+import { ModelDockNarrativeDetails, OracleMarketNarrative } from "./OracleNarrative";
 
 type Briefing = { headline: string; explanation: string; points?: readonly [string, string][]; limit?: string };
 
@@ -68,9 +69,9 @@ const warnings = (doc: JsonObject | undefined, key: string) => {
 function briefingFor(viewModel: MissionViewModel, pageId: string): Briefing {
   const request = getEvidenceDocument(viewModel, "mission_request");
   const oracle = getEvidenceDocument(viewModel, "oracle_report");
-  const assessment = getEvidenceDocument(viewModel, "oracle_assessment");
   const diagnostics = getEvidenceDocument(viewModel, "oracle_measurement_diagnostics");
-  const narrative = getEvidenceDocument(viewModel, "oracle_modeldock_narrative");
+  const modelEvidence = getEvidence(viewModel, "oracle_modeldock_narrative");
+  const narrative = modelEvidence?.status === "LOADED" ? modelEvidence.document ?? undefined : undefined;
   const council = getEvidenceDocument(viewModel, "council_synthesis");
   const executive = getEvidenceDocument(viewModel, "council_executive_summary");
   const mandate = getEvidenceDocument(viewModel, "council_mandate_policy");
@@ -100,7 +101,6 @@ function briefingFor(viewModel: MissionViewModel, pageId: string): Briefing {
     case "oracle-assessment": return {
       headline: getString(oracle?.headline) ?? "Market assessment not recorded",
       explanation: "Oracle describes the measured market universe. Its broad-market assessment is separate from the selected symbol’s Navigator price chart.",
-      points: [["Participation", code(assessment, "breadth_posture")], ["Leadership", code(assessment, "leadership_posture")], ["Sector rotation", code(assessment, "rotation_posture")], ["Risk posture", code(assessment, "risk_regime_posture")]],
       limit: "Process completion means Oracle ran. A recorded READY diagnostic result describes its input checks; neither establishes complete data or recommends a trade. Missing or excluded inputs remain limitations.",
     };
     case "oracle-measurements": return { headline: "The measurements behind the assessment", explanation: "These recorded measures describe participation, relative strength, leadership concentration, rotation, and dispersion across the validation fleet.", points: [["How to read the numbers", "Each measure retains its source value and scale. The Cabin does not convert these values into approval probabilities or a new combined score."], ["Change over time", viewModel.warnings.includes("MISSING_PRIOR_ORACLE_MEASUREMENTS") ? "Prior measurements were unavailable or not sufficiently comparable. A recorded zero rotation velocity must not be read as evidence that no rotation occurred." : "Change measures depend on the prior observations supplied to Oracle."]], limit: "Fleet measurements do not establish an individual security’s suitability or a trading decision." };
@@ -138,7 +138,9 @@ export function withLedgerBriefing(viewModel: MissionViewModel, bookId: StageBoo
     <section className="ledger-briefing" aria-label="Plain-language reading">
       <p className="ledger-takeaway">{briefing.headline}</p>
       <p>{briefing.explanation}</p>
+      {pageId === "oracle-assessment" ? <OracleMarketNarrative viewModel={viewModel} /> : null}
       {briefing.points ? <dl className="ledger-meaning-list">{briefing.points.map(([label, text]) => <div key={label}><dt>{label}</dt><dd>{text}</dd></div>)}</dl> : null}
+      {pageId === "oracle-modeldock" ? <ModelDockNarrativeDetails viewModel={viewModel} /> : null}
       {briefing.limit ? <p className="ledger-boundary"><strong>Keep in mind:</strong> {briefing.limit}</p> : null}
     </section>
     <details className="ledger-recorded-details">

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMissionBundleFixture } from "../test/missionFixture";
 import { loadLiveMissionBundle, loadLiveMissionFeed, type LiveMissionFeed } from "./liveMission";
-import { evidenceFreshness, LIVE_POLL_MS, LIVE_REQUEST_TIMEOUT_MS, useLiveMission } from "./useLiveMission";
+import { evidenceFreshness, LIVE_BUNDLE_TIMEOUT_MS, LIVE_POLL_MS, LIVE_REQUEST_TIMEOUT_MS, useLiveMission } from "./useLiveMission";
 
 vi.mock("./liveMission", () => ({ loadLiveMissionFeed: vi.fn(), loadLiveMissionBundle: vi.fn() }));
 
@@ -85,6 +85,61 @@ describe("live mission following", () => {
     expect(vi.mocked(loadLiveMissionFeed).mock.calls[0][0]?.signal?.aborted).toBe(true);
     await act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS));
     expect(result.current.status).toBe("READY");
+  });
+
+  it("gives a new hash-bound bundle its own bounded deadline after a slow feed", async () => {
+    let resolveFeed!: (value: LiveMissionFeed) => void;
+    let resolveBundle!: (value: ReturnType<typeof createMissionBundleFixture>) => void;
+    vi.mocked(loadLiveMissionFeed).mockImplementationOnce(() => new Promise((resolve) => { resolveFeed = resolve; }));
+    vi.mocked(loadLiveMissionBundle).mockImplementationOnce(() => new Promise((resolve) => { resolveBundle = resolve; }));
+    const { result } = renderHook(useLiveMission);
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_REQUEST_TIMEOUT_MS - 1_000));
+    resolveFeed(feed());
+    await flush();
+    const signal = vi.mocked(loadLiveMissionBundle).mock.calls[0][1]?.signal;
+    await act(() => vi.advanceTimersByTimeAsync(20_000));
+    expect(signal?.aborted).toBe(false);
+    expect(result.current.status).toBe("LOADING");
+    expect(loadLiveMissionFeed).toHaveBeenCalledTimes(1);
+    resolveBundle(createMissionBundleFixture());
+    await flush();
+    expect(result.current.status).toBe("READY");
+    expect(result.current.mission).not.toBeNull();
+  });
+
+  it("aborts an overlong bundle without publishing partial evidence or overlapping retries", async () => {
+    let resolveBundle!: (value: ReturnType<typeof createMissionBundleFixture>) => void;
+    vi.mocked(loadLiveMissionBundle).mockImplementationOnce(() => new Promise((resolve) => { resolveBundle = resolve; }));
+    const { result, unmount } = renderHook(useLiveMission);
+    await flush();
+    const signal = vi.mocked(loadLiveMissionBundle).mock.calls[0][1]?.signal;
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_BUNDLE_TIMEOUT_MS - 1));
+    expect(signal?.aborted).toBe(false);
+    expect(result.current.mission).toBeNull();
+    expect(loadLiveMissionFeed).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(signal?.aborted).toBe(true);
+    expect(result.current.status).toBe("UNAVAILABLE");
+    resolveBundle(createMissionBundleFixture());
+    await flush();
+    expect(result.current.mission).toBeNull();
+    unmount();
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS));
+    expect(loadLiveMissionFeed).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the last complete publication when the next bundle times out", async () => {
+    const { result } = renderHook(useLiveMission);
+    await flush();
+    const prior = result.current.mission;
+    vi.mocked(loadLiveMissionFeed).mockResolvedValue(feed("b"));
+    vi.mocked(loadLiveMissionBundle).mockImplementationOnce(() => new Promise(() => {}));
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS));
+    expect(result.current.mission).toBe(prior);
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_BUNDLE_TIMEOUT_MS));
+    expect(result.current.status).toBe("UNAVAILABLE");
+    expect(result.current.mission).toBe(prior);
+    expect(vi.mocked(loadLiveMissionBundle).mock.calls[1][1]?.signal?.aborted).toBe(true);
   });
 
   it("cancels polling on unmount and ignores late completion", async () => {

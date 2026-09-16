@@ -15,15 +15,16 @@ type CaptainsLogProps = {
 
 export function CaptainsLog({ entries, revealedStages, focused, onFocus }: CaptainsLogProps) {
   return (
-    <section className={`captains-log-copy${focused ? " is-focused" : ""}`} aria-label="Captain's Log">
-      <button className="panel-heading-button" type="button" onClick={onFocus} aria-label="Focus Captain's Log">
+    <section className={`captains-log-copy captains-log-preview${onFocus ? " is-interactive" : ""}${focused ? " is-focused" : ""}`} aria-label="Captain's Log">
+      <h3 className="panel-heading-button">
         <span>Captain’s Log</span>
-      </button>
+        {onFocus ? <small className="captains-log-open-cue" aria-hidden="true">Open ↗</small> : null}
+      </h3>
       <ol>
         {entries.map((entry) => {
           const revealed = revealedStages.has(entry.stage);
           return (
-            <li key={entry.stage} className={revealed ? "is-revealed" : "is-concealed"}>
+            <li key={`${entry.stage}-${entry.timestamp}`} className={revealed ? "is-revealed" : "is-concealed"}>
               <time dateTime={entry.timestamp}>{formatMissionTime(entry.timestamp)}</time>
               <div>
                 <strong>{entry.stage}</strong>
@@ -35,6 +36,14 @@ export function CaptainsLog({ entries, revealedStages, focused, onFocus }: Capta
           );
         })}
       </ol>
+      {onFocus ? <button
+        className="captains-log-paper-button"
+        type="button"
+        onClick={onFocus}
+        aria-label="Focus Captain's Log"
+        aria-haspopup="dialog"
+        aria-expanded={focused}
+      /> : null}
     </section>
   );
 }
@@ -43,3 +52,4 @@ function formatMissionTime(timestamp: string): string {
   const match = timestamp.match(/T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/);
   return match?.[1] ?? timestamp;
 }
+import "./captains-log-details.css";

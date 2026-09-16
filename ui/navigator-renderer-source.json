@@ -7,6 +7,7 @@
     "HowToRead.tsx",
     "NavigatorOceanView.tsx",
     "historyWindow.ts",
+    "livePriceVisual.ts",
     "types.ts",
     "useReducedMotion.ts"
   ],
@@ -15,8 +16,8 @@
       "source": "scene/Scene2.tsx",
       "destination": "NavigatorOceanScene.tsx",
       "source_sha256": "df610032561e23978f02a2ebb1898de3663268f5496fc6746badb136858cdadc",
-      "destination_sha256": "372229c4776fb97bd7e5a611de1003905d139ee7b191351ea4443ee64ebbb784",
-      "adaptation": "Prop-only scene composition; no store; ship-view exaggeration eases to normal chart scale; price readout in screen space outside Canvas"
+      "destination_sha256": "580695a80d94617780e511bb157087312a240d43cb9a26af8c02b238aadf8b32",
+      "adaptation": "Prop-only scene composition; no store; exaggeration eases to chart scale; separate bounded live-trade ship/marker displacement leaves captured history and MA fixed; screen-space readout"
     },
     {
       "source": "scene/CameraRig2.tsx",
@@ -50,8 +51,8 @@
       "source": "scene/Ship.tsx",
       "destination": "Ship.tsx",
       "source_sha256": "7dab4651ede678ef3169e0496e1fc1a80faf40652965d69dd8c52b17fc2895cd",
-      "destination_sha256": "bc235e9e8e8e5c95867dc36eae8f27f0e60a4b011a19c0126314b06cafe4df2a",
-      "adaptation": "Reused model; visual props only"
+      "destination_sha256": "8b9417cca669eff7589775a05e4a0fd416329d1b3aa7bdd535cb16db9b68d4a7",
+      "adaptation": "Reused model; visual props only; optional lateral live-price displacement samples the actual ocean surface at that position"
     },
     {
       "source": "scene/BowWake.tsx",
@@ -99,8 +100,8 @@
       "source": "scene/ShipCallout.tsx",
       "destination": "ShipCallout.tsx",
       "source_sha256": "a1662143097a7521cf914eb0180c99fb7c165f9c57574d82000f0c7cbad861fe",
-      "destination_sha256": "c91f707302f806ad95c8e5acf05d64b453ffa0ba8586f477211f3b642ba4eef0",
-      "adaptation": "Summary supplied through props; transparent fixed bottom-left screen-space readout; original price typography and chart fade retained"
+      "destination_sha256": "0ead082e38ba0eee296aff128d1188803fd5a1d08ffb69c1a825a80c2b4a585e",
+      "adaptation": "Transparent fixed bottom-left readout; optional separately labeled last trade with feed/time/stale/clipping notices and captured MA, never relabels captured percentage as live"
     },
     {
       "source": "scene/ShipMarker.tsx",
@@ -141,8 +142,8 @@
       "source": "styles/app.css",
       "destination": "navigator-ocean.css",
       "source_sha256": "5632a3597b787bab8ce6ad7efda23969f62a499b52858c7be43f041aca023a60",
-      "destination_sha256": "7ba4bc0e3c4ae797f80403c7edf750c992308e645b6489422a5ecee345286a73",
-      "adaptation": "Scoped under .navigator-ocean; no global reset/font import; transparent bottom-left price readout with text shadow; axis gutters and hover values; history and visual scale controls"
+      "destination_sha256": "de5c42db211f24e8890926f1973742a99c98b4c6f19d8a5006468fb7506a4977",
+      "adaptation": "Scoped styles; transparent bounded-width bottom-left live readout and cyan chart label; axis/history/scale controls; authority note in normal scrollable legend flow"
     }
   ]
 }

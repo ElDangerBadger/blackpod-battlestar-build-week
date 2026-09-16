@@ -60,6 +60,38 @@ describe("focused stage books", () => {
     expect(screen.getByText(/Governor PROCEED is not mission approval/)).toBeInTheDocument();
   });
 
+  it("puts the recorded Oracle narrative on the opening page without expanding exact details", () => {
+    const bundle = withEvidence(readOnlyMission(), "oracle_report", {
+      headline: "A recorded market headline", as_of: "2026-09-15T23:05:20Z",
+      narrative_summary: { summary: "A recorded Oracle summary.", breadth_commentary: "Recorded participation commentary.",
+        leadership_commentary: "Recorded leadership commentary.", rotation_commentary: "Recorded rotation commentary.",
+        risk_regime_commentary: "Recorded risk commentary." },
+    });
+    const oracle = buildBookDefinitions(createMissionViewModel(bundle)).find((book) => book.id === "oracle")!;
+    render(<BookFocus book={oracle} artifactBaseUrl="/saved/" onClose={() => {}} />);
+    const narrative = within(screen.getByRole("region", { name: "Recorded Oracle market narrative" }));
+    const summary = narrative.getByText("A recorded Oracle summary.");
+    expect(summary).toBeVisible();
+    expect(summary.closest("details")).toBeNull();
+    expect(narrative.getByText("Recorded risk commentary.")).toBeVisible();
+    expect(screen.getByText("Page 1 of 6")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "oracle_report.json" })).toHaveAttribute("href", "/saved/evidence/oracle_report.json");
+  });
+
+  it("keeps the source-linked model statements visible on the separate commentary page", () => {
+    const bundle = withEvidence(readOnlyMission(), "oracle_modeldock_narrative", {
+      summary: "Recorded model summary.", interpretation: "Recorded model interpretation.",
+      confidence_explanation: "Bounded by the captured facts.", uncertainties: [], warnings: [],
+      observed_facts: [{ statement: "A recorded source-linked statement.", source_artifact: "oracle_report", json_pointer: "/headline" }],
+    });
+    const oracle = buildBookDefinitions(createMissionViewModel(bundle)).find((book) => book.id === "oracle")!;
+    render(<>{oracle.pages.find((page) => page.id === "oracle-modeldock")!.content}</>);
+    const details = within(screen.getByRole("region", { name: "Recorded ModelDock narrative details" }));
+    expect(details.getByText("A recorded source-linked statement.").closest("details")).toBeNull();
+    expect(details.getByText(/not an assessment that uncertainty is absent/)).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Recorded Oracle market narrative" })).not.toBeInTheDocument();
+  });
+
   it("keeps SHADOW-only allowed and prohibited operations visible", () => {
     const definitions = buildBookDefinitions(createMissionViewModel(createMissionBundleFixture()));
     const navigator = definitions.find((book) => book.id === "navigator");

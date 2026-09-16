@@ -2,7 +2,8 @@
 
 The configured canonical mission is verified on every current-feed request.
 Publications are coherent byte captures in bounded process memory, not another
-mission store. This module never invokes mission execution or external services.
+mission store. An explicitly configured loopback relay can separately supply
+ephemeral market prices; it never invokes mission execution or broker actions.
 """
 
 from __future__ import annotations
@@ -52,6 +53,14 @@ from .mission_store import LoadedMission, MissionStore, MissionStoreError, Unsaf
 from .navigator_catalog import (
     MAX_VARIANT_BYTES, NAVIGATOR_CATALOG_PATH, NAVIGATOR_CATALOG_SCHEMA_VERSION, NavigatorCatalog,
     validate_variant,
+)
+from .navigator_fleet_catalog import (
+    NAVIGATOR_FLEET_CATALOG_PATH, NAVIGATOR_FLEET_CATALOG_SCHEMA, NavigatorFleetCatalog,
+    canonical_fleet_reference, original_market_symbols, validate_fleet_market,
+)
+from .navigator_live import (
+    SYMBOL as LIVE_SYMBOL, LivePriceUnavailable, NavigatorLiveBridge,
+    encode_event, unavailable_event,
 )
 
 
@@ -294,6 +303,26 @@ def _capture_catalog(loaded: LoadedMission, files: dict[str, bytes]) -> None:
         validate_variant(entry, payload, symbol=loaded.request.symbol)
 
 
+def _capture_fleet_catalog(loaded: LoadedMission, files: dict[str, bytes]) -> None:
+    root = loaded.paths.mission_root
+    if not _safe_path(root, NAVIGATOR_FLEET_CATALOG_PATH).exists():
+        return
+    catalog = NavigatorFleetCatalog.from_mapping(parse_strict_json_object_bytes(
+        _capture_file(root, NAVIGATOR_FLEET_CATALOG_PATH, files)
+    ))
+    reference = canonical_fleet_reference(loaded.snapshot.artifacts)
+    catalog.validate_membership(mission_id=loaded.request.mission_id,
+        request_id=loaded.request.request_id, mission_symbol=loaded.request.symbol,
+        fleet_reference=reference, fleet_payload=files[reference.path],
+        excluded_symbols=original_market_symbols(files))
+    for entry in catalog.entries:
+        remaining = MAX_PUBLICATION_BYTES - sum(map(len, files.values()))
+        if entry.artifact.byte_size is None or entry.artifact.byte_size > min(remaining, MAX_VARIANT_BYTES):
+            raise CabinReaderError("Navigator fleet exceeds the publication memory limit")
+        payload = _capture_file(root, entry.artifact.path, files, max_bytes=entry.artifact.byte_size)
+        validate_fleet_market(entry, payload)
+
+
 @dataclass(frozen=True, slots=True)
 class Publication:
     publication_id: str
@@ -324,6 +353,7 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
         raise CabinReaderError("request bytes changed during validation")
     _capture_context(loaded, files)
     _capture_catalog(loaded, files)
+    _capture_fleet_catalog(loaded, files)
     if sum(map(len, files.values())) > MAX_PUBLICATION_BYTES:
         raise CabinReaderError("source exceeds the publication memory limit")
     projection = project_mission_presentation(loaded, files)
@@ -338,6 +368,8 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
         raise CabinReaderError("context appeared during capture")
     if (NAVIGATOR_CATALOG_PATH in files) != _safe_path(root, NAVIGATOR_CATALOG_PATH).exists():
         raise CabinReaderError("Navigator catalog appeared during capture")
+    if (NAVIGATOR_FLEET_CATALOG_PATH in files) != _safe_path(root, NAVIGATOR_FLEET_CATALOG_PATH).exists():
+        raise CabinReaderError("Navigator fleet catalog appeared during capture")
     files.update(projection.files)
     snapshot = loaded.snapshot
     call = snapshot.stages["oracle"].modeldock_calls[-1] if snapshot.stages["oracle"].modeldock_calls else None
@@ -377,6 +409,12 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
             NAVIGATOR_CATALOG_PATH, "navigator_catalog", NAVIGATOR_CATALOG_SCHEMA_VERSION,
             catalog.captured_at, files[NAVIGATOR_CATALOG_PATH],
         )
+    if NAVIGATOR_FLEET_CATALOG_PATH in files:
+        fleet_catalog = NavigatorFleetCatalog.from_mapping(parse_strict_json_object_bytes(files[NAVIGATOR_FLEET_CATALOG_PATH]))
+        manifest["navigator_fleet_catalog"] = _reference(
+            NAVIGATOR_FLEET_CATALOG_PATH, "navigator_fleet_catalog", NAVIGATOR_FLEET_CATALOG_SCHEMA,
+            fleet_catalog.captured_at, files[NAVIGATOR_FLEET_CATALOG_PATH],
+        )
     manifest_bytes = canonical_json_bytes(manifest)
     files[MANIFEST_PATH] = manifest_bytes
     if sum(map(len, files.values())) > MAX_PUBLICATION_BYTES:
@@ -391,23 +429,29 @@ class CabinReader:
         self.store = None if artifacts_root is None else ReadOnlyMissionStore(artifacts_root)
         self.mission_id = mission_id
         self._publications: OrderedDict[str, Publication] = OrderedDict()
+        # The shared validator has per-capture state. Serialize full captures,
+        # but do not block reads of already verified immutable publications
+        # while another request validates a potentially large fleet catalog.
+        self._capture_lock = threading.Lock()
         self._lock = threading.Lock()
 
     def current(self) -> dict:
-        with self._lock:
+        with self._capture_lock:
             checked_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             feed = {"schema_version": FEED_SCHEMA_VERSION, "checked_at": checked_at}
             if self.store is None or not self.mission_id:
                 return {**feed, "status": "NOT_CONFIGURED", "message": "Select an explicit artifacts root and mission ID when starting the read-only Cabin."}
             try:
                 publication = capture_publication(self.store, self.mission_id)
-                existing = self._publications.get(publication.publication_id)
-                if existing is not None and existing.files != publication.files:
-                    raise CabinReaderError("a publication cannot change its captured bytes")
-                self._publications[publication.publication_id] = publication
-                self._publications.move_to_end(publication.publication_id)
-                while len(self._publications) > RETAIN_PUBLICATIONS:
-                    self._publications.popitem(last=False)
+                # Only a fully validated capture is made visible atomically.
+                with self._lock:
+                    existing = self._publications.get(publication.publication_id)
+                    if existing is not None and existing.files != publication.files:
+                        raise CabinReaderError("a publication cannot change its captured bytes")
+                    self._publications[publication.publication_id] = publication
+                    self._publications.move_to_end(publication.publication_id)
+                    while len(self._publications) > RETAIN_PUBLICATIONS:
+                        self._publications.popitem(last=False)
             except (OSError, ValueError, MissionStoreError, CabinReaderError, RuntimeError):
                 # Neither exception text nor configured local paths go to the UI.
                 return {**feed, "status": "UNAVAILABLE", "message": "The configured LIVE mission is missing, changing, or failed evidence validation. No substitute data is shown."}
@@ -423,13 +467,38 @@ class CabinReader:
             publication = self._publications.get(publication_id)
             return None if publication is None else publication.files.get(relative_path)
 
+    def permits_live_symbol(self, publication_id: str, symbol: str) -> bool:
+        """Constrain supplemental reads to this verified publication's symbols."""
+        if not LIVE_SYMBOL.fullmatch(symbol):
+            return False
+        with self._lock:
+            publication = self._publications.get(publication_id)
+        if publication is None:
+            return False
+        # Publication files are immutable; parsing cannot race with insertion
+        # or eviction and need not hold the publication-map lock.
+        files = publication.files
+        original = files.get("presentation/navigator_market.json")
+        if original and parse_strict_json_object_bytes(original).get("symbol") == symbol:
+            return True
+        snapshot = parse_strict_json_object_bytes(files["mission_snapshot.json"])
+        for reference in snapshot.get("artifacts", []):
+            if reference.get("name") == "oracle_normalized_snapshot":
+                payload = files.get(reference["path"])
+                if payload:
+                    rows = parse_strict_json_object_bytes(payload).get("symbols", [])
+                    return any(isinstance(row, dict) and row.get("symbol") == symbol for row in rows)
+        return False
+
 
 class CabinHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, reader: CabinReader, ui_root: Path, port: int = 5174):
+    def __init__(self, reader: CabinReader, ui_root: Path, port: int = 5174, *, navigator_live_url: str | None = None):
         self.reader = reader
         self.ui_root = Path(ui_root)
+        self.navigator_live = NavigatorLiveBridge(navigator_live_url) if navigator_live_url else None
+        self.live_slots = threading.BoundedSemaphore(8)
         super().__init__(("127.0.0.1", port), CabinRequestHandler)
 
 
@@ -475,6 +544,51 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
     def _error(self, status: int) -> None:
         self._send(status, b"Read-only resource unavailable.\n", "text/plain; charset=utf-8")
 
+    def _live_price(self, publication_id: str, symbol: str) -> None:
+        if not self.server.reader.permits_live_symbol(publication_id, symbol):
+            self._error(404)
+            return
+        bridge = self.server.navigator_live
+        if bridge is None or self.command == "HEAD":
+            self._error(503 if bridge is None else 405)
+            return
+        if not self.server.live_slots.acquire(blocking=False):
+            self._error(503)
+            return
+        events = bridge.events(symbol)
+        try:
+            # Obtain a validated first event before committing streaming headers.
+            try:
+                first = next(events)
+            except (LivePriceUnavailable, StopIteration):
+                self._error(503)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            prior = first
+            self.connection.settimeout(15)
+            self.wfile.write(encode_event(first))
+            self.wfile.flush()
+            try:
+                for event in events:
+                    prior = event
+                    self.wfile.write(encode_event(event))
+                    self.wfile.flush()
+            except LivePriceUnavailable:
+                self.wfile.write(unavailable_event(symbol, prior))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            pass  # Closing the modal is normal; never write an error to a dead socket.
+        finally:
+            events.close()
+            self.server.live_slots.release()
+            self.close_connection = True
+
     def do_GET(self) -> None:
         if not self._local_request():
             self._error(403)
@@ -492,6 +606,9 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, canonical_json_bytes(self.server.reader.current()), "application/json")
                 return
             parts = PurePosixPath(relative).parts
+            if len(parts) == 5 and parts[:3] == ("live", "navigator", "price") and _PUBLICATION_ID.fullmatch(parts[3]):
+                self._live_price(parts[3], parts[4])
+                return
             if len(parts) >= 4 and parts[:2] == ("live", "revisions") and _PUBLICATION_ID.fullmatch(parts[2]):
                 artifact_path = "/".join(parts[3:])
                 payload = self.server.reader.artifact(parts[2], artifact_path)
@@ -509,6 +626,8 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
                 return
             payload = _read_file(self.server.ui_root, relative)
             self._send(200, payload, mimetypes.guess_type(relative)[0] or "application/octet-stream")
+        except (BrokenPipeError, ConnectionResetError):
+            return
         except (OSError, ValueError, RuntimeError):
             self._error(404)
 
@@ -526,10 +645,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mission-id")
     parser.add_argument("--ui-root", type=Path, default=Path("ui/dist"))
     parser.add_argument("--port", type=int, default=5174)
+    parser.add_argument("--navigator-live-url", help="Optional canonical Navigator loopback origin; enables only supplemental price reads.")
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65535:
         parser.error("port must be between 1 and 65535")
-    server = CabinHTTPServer(CabinReader(arguments.artifacts_root, arguments.mission_id), arguments.ui_root, arguments.port)
+    try:
+        server = CabinHTTPServer(CabinReader(arguments.artifacts_root, arguments.mission_id), arguments.ui_root, arguments.port,
+                                 navigator_live_url=arguments.navigator_live_url)
+    except ValueError:
+        parser.error("Navigator live URL must be an explicit loopback HTTP origin and port")
     print(f"Read-only Captain's Cabin: http://127.0.0.1:{server.server_port}/", flush=True)
     print("No mission controls, broker/order execution, or source writes.", flush=True)
     try:

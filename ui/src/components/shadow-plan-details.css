@@ -1,0 +1,24 @@
+.paper-order-copy { position: relative; }
+.paper-order-copy .paper-title { padding-right: 3em; }
+.shadow-plan-trigger {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: #573b23;
+  cursor: pointer;
+  font: inherit;
+}
+.shadow-plan-trigger > span {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+.shadow-plan-trigger:hover { box-shadow: inset 0 0 0 1px #79502a; }
+.shadow-plan-trigger:focus-visible { outline: 2px solid #3b6d87; outline-offset: -3px; }
+.shadow-plan-details li { margin-bottom: 0.65em; }
+.shadow-plan-details .panel-boundary { border-left: 3px solid #8b6030; padding-left: 1em; }

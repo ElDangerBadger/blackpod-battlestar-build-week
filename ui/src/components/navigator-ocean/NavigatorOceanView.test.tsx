@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NavigatorOceanSceneProps } from "./NavigatorOceanScene";
 import { NavigatorOceanView } from "./NavigatorOceanView";
-import type { NavigatorOceanMarket } from "./types";
+import type { LiveNavigatorPriceVisual, NavigatorOceanMarket } from "./types";
 
 const scene = vi.hoisted(() => ({ render: vi.fn<(props: NavigatorOceanSceneProps) => void>() }));
 
@@ -76,6 +76,55 @@ beforeEach(() => scene.render.mockClear());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("NavigatorOceanView local presentation controls", () => {
+  it("passes actual live ticks separately without resetting history, zoom, scale, or captured geometry", () => {
+    const source = market();
+    const original = JSON.stringify(source);
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const trade: LiveNavigatorPriceVisual = {
+      symbol: "AAPL", price: 334, tradeAt: "2026-09-16T18:00:00Z", feed: "iex", status: "LIVE",
+    };
+    const { rerender } = render(<NavigatorOceanView {...baseProps} data={source} livePrice={trade} />);
+    fireEvent.click(screen.getByRole("button", { name: "1M" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ship view" }));
+    fireEvent.change(screen.getByRole("slider", { name: "Ship price / MA exaggeration" }), { target: { value: "2" } });
+    const captured = currentScene().projection;
+    const selected = currentScene().data;
+    for (const price of [335, 330, 334]) {
+      const next = { ...trade, price };
+      rerender(<NavigatorOceanView {...baseProps} data={source} livePrice={next} />);
+      expect(currentScene().livePrice).toBe(next);
+      expect(currentScene().projection).toBe(captured);
+      expect(currentScene().data).toBe(selected);
+      expect(currentScene().zoomT).toBe(0);
+      expect(currentScene().oceanExaggeration).toBe(2);
+      expectCapturedFacts(source);
+    }
+    expect(screen.getByText(/saved history, MA and sea state do not update/)).toBeInTheDocument();
+    expect(JSON.stringify(source)).toBe(original);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { presentationMode: "DEMO" as const, runMode: "REPLAY" as const },
+    { presentationMode: "LIVE" as const, runMode: "REPLAY" as const },
+    { presentationMode: "DEMO" as const, runMode: "LIVE" as const },
+  ])("ignores a live overlay for deterministic $presentationMode / $runMode playback", (modes) => {
+    render(<NavigatorOceanView {...baseProps} {...modes} data={market()} livePrice={{
+      symbol: "AAPL", price: 999, tradeAt: "2026-09-16T18:00:00Z", feed: "iex", status: "LIVE",
+    }} />);
+    expect(currentScene().livePrice).toBeNull();
+    expect(screen.getByText(/Ship: latest captured close/)).toBeInTheDocument();
+  });
+
+  it("does not pass a late tick belonging to a different selected symbol", () => {
+    render(<NavigatorOceanView {...baseProps} data={market()} livePrice={{
+      symbol: "SPY", price: 760, tradeAt: "2026-09-16T18:00:00Z", feed: "iex", status: "LIVE",
+    }} />);
+    expect(currentScene().livePrice).toBeNull();
+    expect(screen.getByText(/Ship: latest captured close/)).toBeInTheDocument();
+  });
+
   it("starts with all supplied history and unit exaggeration while retaining canonical facts", () => {
     const source = market();
     render(<NavigatorOceanView {...baseProps} data={source} />);
@@ -90,6 +139,14 @@ describe("NavigatorOceanView local presentation controls", () => {
     expect(exaggeration).toHaveValue("1");
     expect(definition("Visible history")).toHaveTextContent(date(source.points[0].t));
     expectCapturedFacts(source);
+  });
+
+  it("keeps the authority note in normal reading order inside the scrollable legend", () => {
+    render(<NavigatorOceanView {...baseProps} data={market()} />);
+    const legend = screen.getByRole("complementary", { name: "How to read the Navigator ocean" });
+    const note = within(legend).getByText(/Market series is a captured Navigator reference artifact/);
+    expect(note).toHaveClass("navigator-ocean__authority");
+    expect(legend.lastElementChild).toBe(note);
   });
 
   it.each(["1M", "3M", "6M", "1Y"])("%s limits only the visible trailing history, without fetching or altering source evidence", (preset) => {
