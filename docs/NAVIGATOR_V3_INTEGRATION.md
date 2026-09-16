@@ -88,19 +88,25 @@ reviewed updates keep the canonical source explicit without changing Battlestar.
 | `scene/MaBearing2.tsx` | `ui/src/components/navigator-ocean/MaBearing.tsx` | Preserves missing-MA gaps |
 | `scene/ChartView.tsx` | `ui/src/components/navigator-ocean/ChartView.tsx` | UTC labels; depth-safe full chart |
 | `scene/ColorGrade.tsx` | `ui/src/components/navigator-ocean/ColorGrade.tsx` | Reused post-processing effect |
-| `scene/ShipCallout.tsx` | `ui/src/components/navigator-ocean/ShipCallout.tsx` | Summary supplied through props |
+| `scene/ShipCallout.tsx` | `ui/src/components/navigator-ocean/ShipCallout.tsx` | Summary supplied through props; screen-sized label without perspective shrinkage |
 | `scene/ShipMarker.tsx` | `ui/src/components/navigator-ocean/ShipMarker.tsx` | Reused marker; reduced-motion support |
 | `scene/SunDisc.tsx` | `ui/src/components/navigator-ocean/SunDisc.tsx` | Reused billboard visual |
 | `scene/projection.ts` | `ui/src/components/navigator-ocean/projection.ts` | V3 stretch plus Build Week's bounded deterministic sampling |
 | `scene/oceanHeight.ts` | `ui/src/components/navigator-ocean/oceanHeight.ts` | CPU/GPU surface parity; exact chart flattening |
 | `scene/renderOrder.ts` | `ui/src/components/navigator-ocean/renderOrder.ts` | Reused overlay order constants |
-| Relevant V3 in-scene rules in `styles/app.css` | `ui/src/components/navigator-ocean/navigator-ocean.css` | Scoped under `.navigator-ocean`; no global reset/font import |
+| Relevant V3 in-scene rules in `styles/app.css` | `ui/src/components/navigator-ocean/navigator-ocean.css` | Scoped under `.navigator-ocean`; no global reset/font import; readable Cabin ship-price typography |
 
 The existing Build Week files `NavigatorOceanBoundary.tsx`,
 `NavigatorOceanView.tsx`, `types.ts`, `useReducedMotion.ts`, and `HowToRead.tsx`
 form the consumer adapter. The Captain's Cabin continues to own routing,
 presentation mode, replay state, the expanded dialog, the SVG overview, and
 all user-facing safety copy.
+
+The user-requested ship-price legibility adjustment keeps the original world
+anchor and chart-transition fade, but omits Drei's `distanceFactor` so camera
+distance cannot shrink its text. The Cabin label is 224 CSS pixels wide with a
+32-pixel price, 16-pixel percentage, and 14-pixel MA-position text. No price
+formatting, observations, camera behavior, or canonical source files changed.
 
 ## Coupling removed at the boundary
 

@@ -98,8 +98,8 @@
       "source": "scene/ShipCallout.tsx",
       "destination": "ShipCallout.tsx",
       "source_sha256": "a1662143097a7521cf914eb0180c99fb7c165f9c57574d82000f0c7cbad861fe",
-      "destination_sha256": "93ad702a0ee186f543e683685e3c5659529e394f8d1d30a26f94860dbab39862",
-      "adaptation": "Summary supplied through props"
+      "destination_sha256": "400ed42218892fb6d23b8d5759fa5498e37306e8543023c6cdd9dce695f4ea61",
+      "adaptation": "Summary supplied through props; screen-sized price callout without perspective shrinkage"
     },
     {
       "source": "scene/ShipMarker.tsx",
@@ -140,8 +140,8 @@
       "source": "styles/app.css",
       "destination": "navigator-ocean.css",
       "source_sha256": "5632a3597b787bab8ce6ad7efda23969f62a499b52858c7be43f041aca023a60",
-      "destination_sha256": "03be173b30880e469a79dda2ae07a1d36850cc7ac1c5ee0b36d14002c7e96a37",
-      "adaptation": "Scoped under .navigator-ocean; no global reset/font import"
+      "destination_sha256": "18588816c24f8368f18cd2dfd889bc49c071fc4e8c127c45c3067c7b08c6c4a3",
+      "adaptation": "Scoped under .navigator-ocean; no global reset/font import; enlarged Cabin ship-price typography"
     }
   ]
 }

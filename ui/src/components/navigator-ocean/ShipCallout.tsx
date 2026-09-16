@@ -53,7 +53,8 @@ export function ShipCallout({
   return (
     <Html
       position={[-5.5, 2.5, 1.5]}
-      distanceFactor={7}
+      // Keep this price annotation at CSS-pixel size as the camera moves.
+      // Perspective scaling made the supplied numbers unreadably small.
       style={{ opacity, pointerEvents: "none" }}
     >
       <div className="bp-ship-callout" aria-hidden="true">

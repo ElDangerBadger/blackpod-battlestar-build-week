@@ -5,6 +5,23 @@ changes. It is not the upstream Battlestar or ModelDock changelog; both sibling
 repositories remain read-only. The [product specification](PRODUCT_SPEC.md)
 now governs scope.
 
+## 2026-09-15 — Legible in-scene ship price
+
+- Enlarged the floating ship-price card to 224 CSS pixels, with a 32-pixel
+  price and larger percentage/MA-position text. Removed distance-based HTML
+  scaling so the price does not shrink to a few pixels as the camera moves.
+- Preserved the original scene anchor, camera behavior, chart-transition fade,
+  supplied values/formatting, and pointer-transparent interaction. The SVG
+  overview and canonical market artifacts are unchanged.
+- Recorded this user-requested Cabin typography adaptation in the renderer
+  mapping, updating only the reviewed destination hashes. Battlestar and
+  ModelDock remain unchanged.
+
+Acceptance: 156 UI tests, 13 production browser regressions, the production
+build, and canonical renderer checks passed. Actual LIVE ship-view checks at
+1640×1234 and 1280×960 verified scale 1, a 32-pixel price, and no clipping or
+camera-control overlap. Normal production assets exclude demo data.
+
 ## 2026-09-15 — Verified LIVE pipeline through Governor, no trading
 
 - Replaced the invalid LIVE prompt placeholder with a worked example using
