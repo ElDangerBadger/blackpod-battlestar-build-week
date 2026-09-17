@@ -92,6 +92,10 @@ def validate_csv(data: bytes, start: str, end: str, allow_empty: bool = False) -
                         raise RecoveryError("CSV volume must be a nonnegative integer")
                 elif number <= 0 or float(number) <= 0:
                     raise RecoveryError("CSV prices must be positive")
+            low, high = Decimal(record["low"]), Decimal(record["high"])
+            if (low > high or not low <= Decimal(record["open"]) <= high
+                    or not low <= Decimal(record["close"]) <= high):
+                raise RecoveryError("CSV open and close must lie within the supplied low/high range")
             result.append(record)
         if not result and not allow_empty:
             raise RecoveryError("empty history is not a completed capture")

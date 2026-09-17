@@ -23,6 +23,23 @@ DATA = EMPTY_CSV + ROW
 
 
 class CSVValidationTests(unittest.TestCase):
+    def test_ohlc_range_guard_rejects_previously_adopted_malformed_tail(self):
+        # Sep16 BGX provider-shaped final row: its open is below its own low.
+        malformed = b"2026-09-16,10.569999694824219,10.649999618530273,10.609999656677246,10.640000343322754,10.640000343322754,66679\n"
+        with self.assertRaisesRegex(RecoveryError, "range"):
+            validate_csv(DATA + malformed, START, END)
+
+    def test_each_ohlc_inconsistency_fails_without_clamping_or_repair(self):
+        for values in ((8, 12, 9, 11), (13, 12, 9, 11), (10, 12, 9, 8),
+                       (10, 12, 9, 13), (10, 9, 12, 11)):
+            content = EMPTY_CSV + ("2026-09-16," + ",".join(str(v) for v in values) + ",11,100\n").encode()
+            with self.subTest(values=values), self.assertRaisesRegex(RecoveryError, "range"):
+                validate_csv(content, START, END)
+
+    def test_inclusive_ohlc_boundaries_do_not_constrain_separate_adjusted_close(self):
+        content = EMPTY_CSV + b"2026-09-16,10,10,10,10,5,100\n"
+        self.assertEqual(validate_csv(content, START, END)[0]["adj_close"], "5")
+
     def test_canonical_cells_are_preserved_not_reserialized(self):
         data = (EMPTY_CSV.replace(b"\n", b"\r\n")
                 + b"2026-09-15,1e1,12.00,9,11,,1000.0\r\n"
