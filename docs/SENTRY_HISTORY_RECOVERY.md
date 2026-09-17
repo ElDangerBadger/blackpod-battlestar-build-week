@@ -68,7 +68,8 @@ not count as evidence that the provider has recovered.
   files, hard links, escaping paths and colliding canonical filenames are
   rejected. An exclusive package lock prevents concurrent recovery writers.
 - CSV checks require exact canonical columns, increasing unique dates within
-  the request, finite positive prices, and nonnegative integral volume. Empty
+  the request, finite positive prices, open/close within low/high, and
+  nonnegative integral volume. Empty
   legacy CSVs are never adopted as successful or terminal results.
 - Each committed capture pins byte hash, size, row count, source kind, and known
   timestamps. Adopted files are labeled `adopted_partial_h25`: their original
@@ -164,6 +165,32 @@ Review and isolate those outputs before any separately authorized future backfil
 do not run the generated configuration from the canonical checkout.
 
 ## September 17 acceptance
+
+### Later evidence-validation correction
+
+The historical completion counts below describe the original recovery run.
+A subsequent strict audit found 22 invalid final-row OHLC ranges among the
+5,136 histories labeled usable by the older, weaker cache validator: 5,114 were
+strictly valid, with 23 separate provider gaps. The cache now rejects those
+range inconsistencies, with dedicated regression tests. Original recovery and
+publication files/receipts remain untouched; rerunning a stricter audit may
+therefore reject an older checkpoint rather than silently rewrite it.
+
+Canonical Battlestar's separate evidence-validation increment captured bounded
+tails and produced 22 valid, immutable research derivatives (923 rows) under
+`artifacts/sentry-evidence-validation-20260917/`. All original source hashes and
+valid OHLCV prefixes were preserved. Twenty-session prefix reproduction passed;
+60-session checks remain unavailable for these short histories. Price repair is
+not profile eligibility: 21 closed-end funds and ETSS (SPAC) remain quarantined
+from general-equity calibration. These derivatives have **not** replaced the
+published universe or Cabin source. No historical receipt is relabeled as a
+current-market or production-readiness guarantee.
+
+Current checks pass: 662 Build Week backend tests plus 668 subtests, and 828 UI
+tests. Canonical research/identity/calibration behavior is owned by Battlestar,
+not independently implemented in the Cabin.
+
+### Original recovery acceptance record
 
 The initial acceptance results below preceded full recovery. The subsequent
 authorized run completed all 5,159 symbols: **5,136 usable, 23 explicitly
