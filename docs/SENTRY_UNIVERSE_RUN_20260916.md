@@ -1,9 +1,11 @@
-# Real Sentry universe run — original hold and corrected rerun
+# Real Sentry universe run — recovery and final publication
 
-Current status: **classifier fixed and regression-tested; recovery added;
-1,299 verified histories checkpointed, 3,860 still pending**. Yahoo throttled the
-original rerun, but a bounded three-request recovery check succeeded September 17.
-No final 100-symbol universe has been published or connected to the Cabin.
+Current status: **recovery complete; canonical 100-symbol validation universe
+published locally and validated September 17**. All 5,159 requested histories
+are accounted for: 5,136 usable, 23 explicitly provider-unavailable, zero pending.
+The saved screening date remains September 16. This is not a verified-microcap
+or live-observation claim, and it has not replaced the Cabin's research archive.
+See [final publication and limitations](#september-17--completed-publication).
 
 Original run status: **incomplete; not published as a validated universe**.
 The authorized classifier correction and separate rerun are tracked below;
@@ -117,7 +119,8 @@ tests, and a fresh population/validation run. Canonical edits are limited to
   composite-unit, two ADR-to-warrant, ADSE to ordinary, and PSNYW to unknown.
   These row counts include malformed symbols and are not final eligible counts.
 
-Code provenance for the uncommitted correction:
+Code provenance for the correction (subsequently committed and merged into
+Battlestar main as `04d8509` on September 17):
 
 - Battlestar base commit: `4a4a5311b9cba144554d394d2a3a8d8a9af16ef1`.
 - Classifier SHA-256: `660c19e87dfe5ac6acb0d4ead5f00fcece8a5b6f6c97afb31390a27d078e8df1`.
@@ -238,3 +241,110 @@ handoff validator. Hashes of the canonical classifier/tests, July research
 archive, mission snapshot, Cabin context, and Navigator capture remain unchanged
 from before this increment. ModelDock is clean. No Git commit, merge, or push
 was requested or performed.
+
+### September 17 Git baseline publication
+
+The user subsequently requested commit, push, merge, and fresh branches before
+continuing recovery. Build Week `6685a88` and Battlestar `04d8509` were pushed
+from `update/2026-09-16-next`, fast-forwarded into each repository's existing
+`main`, and pushed there. Both remote main hashes were verified. Both repositories
+then opened and pushed `update/2026-09-17-sentry-universe`, with clean worktrees.
+All 659 backend, 828 UI, and 246 canonical Sentry tests passed before merging;
+production build and pinned/current-upstream renderer checks also passed.
+
+Recovery resumes the exact saved bootstrap and July 18–September 16 history
+window, with two-second serial pacing and the existing cooldown/outage guards.
+The Git merge does not constitute final H25 or selected-universe publication.
+
+## September 17 — completed publication
+
+After the Git baseline was published, the authorized recovery resumed with the
+same source package, July 18–September 16 inclusive window, canonical code,
+two-second minimum spacing, and cooldown/outage guards. It completed 3,883
+history calls without a rate-limit response or an exhausted retry. No provider
+or account substitution, symbol remapping, policy override, or manually chosen
+subset was used.
+
+### Recovery and integrity
+
+- **5,159 requested; 5,136 usable; 23 provider-unavailable; zero pending.**
+- Usable histories comprise 1,296 adopted originals and 3,840 fresh captures
+  (including the earlier three-call smoke test). There are 214,818 valid daily
+  rows. Fresh capture times span `2026-09-17T13:16:59Z`–`17:09:58Z`; adopted
+  originals still have unknown retrieval times, not invented timestamps.
+- Every cache fingerprint and CSV passed request/date/schema/positive-price
+  checks. All eight source-package hashes and three pinned canonical code hashes
+  match. All 4,066 original CSVs are preserved under `recovery/original_daily/`
+  with a verified backup manifest; all 1,296 adopted histories match their
+  originals byte-for-byte.
+- Canonical H25 assembled only from verified cache data and passed its handoff
+  validator. Manifest: `historical-backfill-789940a96ac67063`, assembled at
+  `2026-09-17T17:11:04.389060Z`, SHA-256
+  `da17ee82892595f00a8250b32b7ab0eabe629cafaefa17b6cf38be44068bc5a4`.
+- All 5,159 final series hashes and row sets were independently checked. The
+  manifest retains 23 `RecordedUnavailable` blockers and its existing
+  `PARTIAL_HISTORY` warnings; `dashboard_ready` remains false. Complete handoff
+  coverage does not mean every provider request returned prices.
+
+The 23 unavailable symbols are `AGM.A`, `AKO.A`, `AKO.B`, `BF.A`, `BF.B`, `BH.A`,
+`BIO.B`, `BRK.A`, `BRK.B`, `CIG.C`, `CRD.A`, `CRD.B`, `GEF.B`, `GTN.A`, `HEI.A`,
+`HVT.A`, `MKC.V`, `MOG.A`, `MOG.B`, `SVA`, `TAP.A`, `UHAL.B`, and `WSO.B`.
+Each had two consistent explicit provider missing-data responses. Twenty-two
+use dotted share-class notation: provider symbol mapping is a follow-up, not
+evidence that those securities are invalid. Their final price/history gate
+failures must not be confused with intrinsic company ineligibility.
+
+### Selected universe
+
+Canonical `universe-build-validation` used only the saved bootstrap and local
+H25 files, with explicit Build Week output paths and no policy/date overrides.
+It published the dated package and current export atomically:
+
+- **100 unique selected symbols**, from 3,401 eligible records; target 100 met.
+- 9,840 rejected rows include 7,949 static exclusions, 1,758 subsequent market-
+  data/eligibility exclusions, and 133 malformed source rows. Rejection reason
+  counts overlap and must not be summed as distinct companies.
+- Screening `as_of`: `2026-09-16`; publication's recorded `generated_at`:
+  `2026-09-17T17:12:42.848092Z`. All 100 selected latest-price dates are September 16.
+- Universe: `validation-universe-ab88b1ab374c205465fb`.
+- Run: `universe-build-run-2d2cdd545416020c0d2d`.
+- Manifest: `validation-universe-manifest-d8326255ed8db1c25404`.
+- Source snapshot: `universe-source-snapshot-592ebad64d590cf5092b`.
+- Dated package:
+  `artifacts/sentry-live-universe-20260916-classifier-fix/universes/2026-09-16/`.
+- Current export:
+  `artifacts/sentry-live-universe-20260916-classifier-fix/universes/current/microcap.validation.current.yaml`.
+- Current/dated fleet YAML SHA-256:
+  `bda571b2c661f3ec8fabfa175dd241724dc1760c3c6b134f745a46aba8bbac5b`.
+
+Both canonical `universe-validate` and `universe-summary` exited zero with
+`valid: true`; all 27 package/current-export validation checks passed. The
+completion marker is true, and current fleet/backfill configurations match the
+dated package. Build status is `COMPLETED_WITH_WARNINGS`, retaining malformed-
+source and survivorship-bias disclosures; package integrity has no errors.
+
+### Remaining product boundaries
+
+- Every selected record still lacks market cap and float. The unchanged policy
+  permits those gaps, so this is a price/history/liquidity-screened validation
+  universe, **not 100 independently verified microcap operating companies**.
+- The existing name classifier also admits fund/trust common shares. For example,
+  captured `FOF` explicitly says “Closed-End Opportunity Fund” yet is classified
+  `COMMON_STOCK`; fund-named selections also include `GCV`, `RFM`, `GLQ`, `TDF`,
+  and `VGI`. FOF exposes a pre-existing taxonomy gap: the closed-end-fund name
+  rule misses the intervening word “Opportunity.” This is not a new regression
+  from the narrowly approved derivative/ADR/SPAC fix or permission to broaden
+  that fix silently. No selection was manually removed.
+- Provider share-class mapping, cap/float enrichment, and any narrower operating-
+  company policy require separate follow-up before stronger universe claims.
+- The generated 1998-present H25 configuration was **not executed**. A selected
+  universe is not an observation feed; no real observation producer, scanner,
+  new mission run, ModelDock call, broker/account action, or trade was started.
+  Generated H25 paths are relative to the execution directory: they resolve
+  inside Build Week only when run from its repository root. The manifest/ledger
+  targets are shared `artifacts/history/` paths, not isolated run-root paths;
+  inspect and isolate those paths before any separately authorized future run.
+- Cabin research archive, mission snapshot, Cabin context, original Navigator
+  capture, and canonical classifier/test hashes remain unchanged by recovery.
+  ModelDock is clean. Generated data stays local in ignored Build Week artifacts;
+  it is not force-added to Git or silently wired into the Cabin.

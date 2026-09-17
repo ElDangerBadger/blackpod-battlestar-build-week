@@ -115,7 +115,62 @@ No final 100-symbol export or Cabin source switch happens automatically. See
 [the recorded population attempt](SENTRY_UNIVERSE_RUN_20260916.md) for its status
 and the separate real-observation producer gap.
 
+### Canonical final-universe publication
+
+Only after recovery reports `COMPLETE`, with `pending: 0`, finalize the saved
+request through Battlestar. Keep the same `SENTRY_BOOTSTRAP` and `BATTLESTAR_PATH`
+as above. Run from the Build Week repository root. The explicit output overrides
+keep publication artifacts there; generated long-history handoff paths are
+relative to that working directory, not portable absolute paths:
+
+```bash
+export SENTRY_RUN="$PWD/artifacts/sentry-live-universe-20260916-classifier-fix"
+
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$BATTLESTAR_PATH" .venv/bin/python3.11 \
+  -m microcap_sentry.cli universe-build-validation \
+  --config "$BATTLESTAR_PATH/configs/microcap_sentry.example.yaml" \
+  --bootstrap-package "$SENTRY_BOOTSTRAP" \
+  --output-root "$SENTRY_RUN/universes" \
+  --h25-root "$SENTRY_RUN/history/yfinance/daily"
+
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$BATTLESTAR_PATH" .venv/bin/python3.11 \
+  -m microcap_sentry.cli universe-validate \
+  --config "$BATTLESTAR_PATH/configs/microcap_sentry.example.yaml" \
+  --universe "$SENTRY_RUN/universes/current/microcap.validation.current.yaml" \
+  --output-root "$SENTRY_RUN/universes"
+
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$BATTLESTAR_PATH" .venv/bin/python3.11 \
+  -m microcap_sentry.cli universe-summary \
+  --config "$BATTLESTAR_PATH/configs/microcap_sentry.example.yaml" \
+  --universe "$SENTRY_RUN/universes/current/microcap.validation.current.yaml" \
+  --output-root "$SENTRY_RUN/universes"
+```
+
+Do not add date/provider/policy overrides, `--offline`, or `--overwrite` to this
+saved-bootstrap finalization. It consumes the validated captured histories,
+not a fresh source-directory fetch. Inspect the result rather than relying only
+on exit zero: require exactly 100 unique selected symbols, a complete dated
+package, matching payload hashes, and parity with the current export.
+`accepted.csv` includes every eligible symbol; only `selected=true` rows belong
+to the selected fleet. A valid target shortfall is not a completed 100-symbol
+publication.
+
+Provider-unavailable histories must remain distinguishable from eligibility
+failures. Missing cap/float warnings remain explicit; this validation universe
+is not proof of microcap status. Do not execute the generated long-history
+backfill or repoint the Cabin observation source as part of publication.
+The generated backfill's manifest/ledger use shared `artifacts/history/` paths.
+Review and isolate those outputs before any separately authorized future backfill;
+do not run the generated configuration from the canonical checkout.
+
 ## September 17 acceptance
+
+The initial acceptance results below preceded full recovery. The subsequent
+authorized run completed all 5,159 symbols: **5,136 usable, 23 explicitly
+provider-unavailable, zero pending**. Canonical H25 handoff validation passed,
+then the canonical selector published exactly 100 symbols and passed all 27
+package/current-export checks. Original files were backed up and independently
+hash-verified. See [completed publication and retained limitations](SENTRY_UNIVERSE_RUN_20260916.md#september-17--completed-publication).
 
 - 64 recovery tests pass, including an actual canonical H25/bootstrap integration
   using synthetic prices without network access. The full Build Week backend

@@ -6,6 +6,40 @@ remains unchanged; the September 16 Navigator registry and market-data exception
 below, along with the narrowly authorized Sentry classifier correction.
 The [product specification](PRODUCT_SPEC.md) now governs scope.
 
+## 2026-09-17 — Sentry history recovery and universe publication completed
+
+- Finished the saved September 16 request at the existing two-second pace:
+  5,136 usable histories, 23 explicit provider-unavailable results, zero pending.
+  All 5,159 cache/final series and 4,066 preserved originals were independently
+  verified. Canonical H25 assembled from cache only and passed its handoff checks.
+- Canonical selection published exactly 100 unique symbols from 3,401 eligible
+  records; dated package and current export are local Build Week artifacts.
+  All 27 package/export checks and the separate canonical summary passed.
+- No policy/source-date change, manual selection, new canonical code change,
+  live producer, long-history backfill, Cabin source switch, or trading action.
+  Missing cap/float, fund/trust common-share scope, and 23 provider gaps remain
+  explicit limitations; this is not a verified-microcap or live-detection claim.
+- Documented reproducible canonical finalization commands and publication IDs in
+  [the recovery guide](SENTRY_HISTORY_RECOVERY.md) and
+  [run evidence](SENTRY_UNIVERSE_RUN_20260916.md).
+
+## 2026-09-17 — Verified baseline published to main
+
+- Build Week `6685a88` commits the read-only Sentry ledger and checkpointed
+  history recovery. Battlestar `04d8509` commits the separately authorized
+  classifier correction and its regression tests.
+- Both feature branches were pushed, fast-forwarded into their existing `main`,
+  and pushed to GitHub. Remote main hashes were verified; neither repository
+  has a parallel main. Both then opened and pushed
+  `update/2026-09-17-sentry-universe` for the remaining recovery/publication work.
+- Pre-merge verification passed: 659 Build Week backend tests, 828 UI tests,
+  246 canonical Sentry tests, the production build, and pinned/current-upstream
+  renderer checks. ModelDock was not modified.
+
+This Git publication is not a completed market-data or final-universe publication.
+The recovery status and evidence remain in
+[the population record](SENTRY_UNIVERSE_RUN_20260916.md).
+
 ## 2026-09-17 — Throttled, checkpointed Sentry history recovery
 
 - Added a Build Week CLI around canonical public H25 APIs, with isolated staging,
@@ -22,7 +56,8 @@ The [product specification](PRODUCT_SPEC.md) now governs scope.
 
 Acceptance: 64 recovery tests, including an offline real-canonical integration,
 and all 659 backend tests pass. Existing source/mission hashes are unchanged;
-the labeled research ledger remains configured. Changes are uncommitted.
+the labeled research ledger remains configured. These changes were subsequently
+committed and merged in `6685a88`, as recorded above.
 See [recovery operation and boundaries](SENTRY_HISTORY_RECOVERY.md).
 
 ## 2026-09-16 — Sentry classifier correction and real-universe rerun

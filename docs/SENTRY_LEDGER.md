@@ -1,12 +1,13 @@
 # Microcap Sentry observation ledger
 
-The real-universe classifier fix and regression tests are complete. Fresh source
-validation passes; after Yahoo throttled population, checkpointed recovery was
-added and verified with a bounded live batch. Population is still incomplete
-(1,299 verified histories, 3,860 pending); no final universe is published. See
-[September 16 run findings](SENTRY_UNIVERSE_RUN_20260916.md). This has not replaced
-the research observation archive displayed here; real observation production
-remains a separate integration step.
+The real-universe classifier fix, recovery, and final canonical publication are
+complete: 5,136 usable histories, 23 explicit provider gaps, zero pending, and
+100 selected symbols in the validated September 16 package. Missing cap/float
+and fund/trust common-share classification still limit its scope; it is not a
+verified-microcap universe. See [run findings](SENTRY_UNIVERSE_RUN_20260916.md).
+This has not replaced the research observation archive displayed here: a universe
+is not an observation feed, and real observation production remains a separate
+integration step.
 
 The Cabin's **Sentry → Observations** opens an independent, read-only ledger of
 canonical Microcap Sentry Phase 1A snapshots. The mission-warnings paper still
