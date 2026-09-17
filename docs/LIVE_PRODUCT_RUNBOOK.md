@@ -71,6 +71,15 @@ rebuilding the UI alone does not replace an already-running Python process.
 Already supported new artifact publications are picked up by normal polling.
 Saved Navigator fleet captures require no running provider or ModelDock service.
 
+### Optional Microcap Sentry ledger
+
+Sentry is a separate saved-observation source, not part of the selected mission.
+Supply `SENTRY_ARCHIVE`, `SENTRY_SOURCE_KIND`, `SENTRY_SOURCE_LABEL`, and
+`SENTRY_CANONICAL_ROOT` together to the reader, then open **Sentry → Observations**.
+Without these settings, the ledger explains that no source is configured; the
+mission continues normally. The July 15 local archive is synthetic research,
+not a live scanner. See [source configuration and interpretation](SENTRY_LEDGER.md).
+
 ### If you have not selected a source yet
 
 Run `make cabin-live` without source variables to open the setup state. An

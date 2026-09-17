@@ -15,6 +15,10 @@ CABIN_LIVE_PORT ?= 5174
 NAVIGATOR_LIVE_URL ?=
 NAVIGATOR_LIVE_PORT ?= 8001
 ALPACA_DATA_FEED ?= iex
+SENTRY_ARCHIVE ?=
+SENTRY_SOURCE_KIND ?=
+SENTRY_SOURCE_LABEL ?=
+SENTRY_CANONICAL_ROOT ?=
 CABIN_READER := $(PYTHON) -m blackpod_build_week.cabin_reader
 CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
 	$(if $(strip $(CABIN_ARTIFACTS_ROOT)),--artifacts-root "$(CABIN_ARTIFACTS_ROOT)",) \
@@ -22,6 +26,10 @@ CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
 
 ifneq ($(strip $(NAVIGATOR_LIVE_URL)),)
 CABIN_READER_ARGS += --navigator-live-url "$(NAVIGATOR_LIVE_URL)"
+endif
+ifneq ($(strip $(SENTRY_ARCHIVE)$(SENTRY_SOURCE_KIND)$(SENTRY_SOURCE_LABEL)$(SENTRY_CANONICAL_ROOT)),)
+CABIN_READER_ARGS += --sentry-archive "$(SENTRY_ARCHIVE)" --sentry-source-kind "$(SENTRY_SOURCE_KIND)" \
+	--sentry-source-label "$(SENTRY_SOURCE_LABEL)" --sentry-canonical-root "$(SENTRY_CANONICAL_ROOT)"
 endif
 CABIN_SOURCE ?= $(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)
 CABIN_DEMO_SOURCE ?= $(CABIN_SOURCE)
@@ -105,6 +113,7 @@ help:
 	@echo "  make cabin-reader          Start the read-only reader without rebuilding"
 	@echo "  make navigator-live        Start canonical Alpaca market-data streaming (BATTLESTAR_PATH required)"
 	@echo "    Add NAVIGATOR_LIVE_URL=http://127.0.0.1:8001 to cabin-live/cabin-reader"
+	@echo "  Optional Sentry archive: SENTRY_ARCHIVE, SENTRY_SOURCE_KIND, SENTRY_SOURCE_LABEL, SENTRY_CANONICAL_ROOT"
 	@echo "  make cabin-dev             Start Vite; proxies /live to the reader on port 5174"
 	@echo "  make cabin-build           Build product assets only; no replay data"
 	@echo "  make cabin-build-replay    Explicit historical regression build (includes fixtures)"

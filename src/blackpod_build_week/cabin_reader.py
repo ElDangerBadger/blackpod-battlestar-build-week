@@ -62,6 +62,7 @@ from .navigator_live import (
     SYMBOL as LIVE_SYMBOL, LivePriceUnavailable, NavigatorLiveBridge,
     encode_event, unavailable_event,
 )
+from .sentry_reader import SentryReader
 
 
 FEED_SCHEMA_VERSION = "blackpod.cabin_feed.v1"
@@ -494,8 +495,10 @@ class CabinReader:
 class CabinHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, reader: CabinReader, ui_root: Path, port: int = 5174, *, navigator_live_url: str | None = None):
+    def __init__(self, reader: CabinReader, ui_root: Path, port: int = 5174, *, navigator_live_url: str | None = None,
+                 sentry_reader: SentryReader | None = None):
         self.reader = reader
+        self.sentry_reader = sentry_reader if sentry_reader is not None else SentryReader()
         self.ui_root = Path(ui_root)
         self.navigator_live = NavigatorLiveBridge(navigator_live_url) if navigator_live_url else None
         self.live_slots = threading.BoundedSemaphore(8)
@@ -605,6 +608,9 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
             if relative == "live/current.json":
                 self._send(200, canonical_json_bytes(self.server.reader.current()), "application/json")
                 return
+            if relative == "live/sentry/current.json":
+                self._send(200, canonical_json_bytes(self.server.sentry_reader.current()), "application/json")
+                return
             parts = PurePosixPath(relative).parts
             if len(parts) == 5 and parts[:3] == ("live", "navigator", "price") and _PUBLICATION_ID.fullmatch(parts[3]):
                 self._live_price(parts[3], parts[4])
@@ -646,12 +652,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--ui-root", type=Path, default=Path("ui/dist"))
     parser.add_argument("--port", type=int, default=5174)
     parser.add_argument("--navigator-live-url", help="Optional canonical Navigator loopback origin; enables only supplemental price reads.")
+    parser.add_argument("--sentry-archive", type=Path, help="Explicit read-only canonical Sentry JSONL archive; no discovery or scans.")
+    parser.add_argument("--sentry-source-kind", choices=("research", "recorded"))
+    parser.add_argument("--sentry-source-label", help="Short visible provenance label; not a local path.")
+    parser.add_argument("--sentry-canonical-root", type=Path, help="Explicit Battlestar checkout supplying the pure Sentry snapshot contract.")
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65535:
         parser.error("port must be between 1 and 65535")
     try:
+        sentry_reader = SentryReader(arguments.sentry_archive, arguments.sentry_source_kind,
+                                     arguments.sentry_source_label, arguments.sentry_canonical_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    try:
         server = CabinHTTPServer(CabinReader(arguments.artifacts_root, arguments.mission_id), arguments.ui_root, arguments.port,
-                                 navigator_live_url=arguments.navigator_live_url)
+                                 navigator_live_url=arguments.navigator_live_url, sentry_reader=sentry_reader)
     except ValueError:
         parser.error("Navigator live URL must be an explicit loopback HTTP origin and port")
     print(f"Read-only Captain's Cabin: http://127.0.0.1:{server.server_port}/", flush=True)

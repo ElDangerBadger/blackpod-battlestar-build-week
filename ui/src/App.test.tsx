@@ -16,12 +16,15 @@ vi.mock("./data/liveMission", () => ({
   loadLiveMissionBundle: vi.fn(),
 }));
 
+vi.mock("./data/useSentryFeed", () => ({ useSentryFeed: vi.fn() }));
+
 import App from "./App";
 import { CABIN_PANEL_TITLES } from "./components/CabinPanelDetails";
 import type { CabinPanelId } from "./components/cabinPanelTypes";
 import { loadMissionBundle } from "./data/loadMission";
 import { loadLiveMissionBundle, loadLiveMissionFeed } from "./data/liveMission";
 import { LOCAL_WATCHLIST_KEY } from "./data/localWatchlist";
+import { useSentryFeed } from "./data/useSentryFeed";
 
 const mockedLoadMissionBundle = vi.mocked(loadMissionBundle);
 
@@ -177,6 +180,11 @@ describe("Captain's Cabin", () => {
     mockedLoadMissionBundle.mockImplementation(async () => createMissionBundleFixture());
     vi.mocked(loadLiveMissionFeed).mockReset();
     vi.mocked(loadLiveMissionBundle).mockReset();
+    vi.mocked(useSentryFeed).mockReset();
+    vi.mocked(useSentryFeed).mockReturnValue({
+      status: "NOT_CONFIGURED", feed: null, message: "No Sentry archive is configured.",
+      refreshing: false, refresh: vi.fn(),
+    });
   });
 
   it("shows the canonical approval chain and SHADOW-only boundary", async () => {
@@ -365,6 +373,7 @@ describe("Captain's Cabin", () => {
   it.each([
     { trigger: "Open Oracle book", dialog: "Oracle", close: "Return to full cabin" },
     { trigger: "Focus mission warnings", dialog: "Mission warnings", close: "Return to bridge" },
+    { trigger: "Sentry Observations", dialog: "Microcap Sentry", close: "Return to bridge" },
     { trigger: "Open Navigator reference tape", dialog: "Navigator reference tape", close: "Return to bridge" },
     { trigger: "Focus Captain's Log", dialog: "Captain’s Log", close: "Return to bridge" },
     { trigger: "Open Shadow Plan details", dialog: "Navigator SHADOW plan", close: "Return to bridge" },
@@ -388,6 +397,32 @@ describe("Captain's Cabin", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument());
     expect(opener).toHaveFocus();
     expect(opener.closest("[inert]")).toBeNull();
+  });
+
+  it("keeps mission warnings separate from the independent Sentry feed", async () => {
+    supplyLiveMission(liveMission());
+    render(<App />);
+    const opener = await screen.findByRole("button", { name: "Focus mission warnings" });
+    expect(useSentryFeed).not.toHaveBeenCalled();
+    fireEvent.click(opener);
+    expect(screen.getByRole("dialog", { name: "Mission warnings" })).toBeInTheDocument();
+    expect(useSentryFeed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Return to bridge" }));
+    const sentry = screen.getByRole("button", { name: "Sentry Observations" });
+    fireEvent.click(sentry);
+    expect(screen.getByRole("dialog", { name: "Microcap Sentry" })).toBeInTheDocument();
+    expect(useSentryFeed).toHaveBeenLastCalledWith({ enabled: true });
+    expect(screen.getByText("No Sentry archive is configured.")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(sentry).toHaveFocus());
+    expect(screen.getByText("APPROVED · COMPLETE")).toBeInTheDocument();
+  });
+
+  it("does not enable independent Sentry polling during replay", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Sentry Observations" }));
+    expect(screen.getByRole("dialog", { name: "Microcap Sentry" })).toBeInTheDocument();
+    expect(useSentryFeed).toHaveBeenLastCalledWith({ enabled: false });
   });
 
   it.each<[string, CabinPanelId]>([

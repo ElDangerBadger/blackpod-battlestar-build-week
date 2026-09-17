@@ -3,7 +3,78 @@
 This document retains Build Week history and records subsequent Cabin product
 changes. It is not the upstream Battlestar or ModelDock changelog. ModelDock
 remains unchanged; the September 16 Navigator registry and market-data exceptions are recorded
-below. The [product specification](PRODUCT_SPEC.md) now governs scope.
+below, along with the narrowly authorized Sentry classifier correction.
+The [product specification](PRODUCT_SPEC.md) now governs scope.
+
+## 2026-09-17 — Throttled, checkpointed Sentry history recovery
+
+- Added a Build Week CLI around canonical public H25 APIs, with isolated staging,
+  serial pacing, bounded retry/request budgets, persisted cooldowns, and an outage
+  guard that survives process restarts. No new canonical or ModelDock changes.
+- Per-symbol atomic commit markers pin source/request identity, original bytes,
+  hashes and timestamps. Offline adoption does not invent retrieval times or
+  mark empty/incomplete legacy files complete. Unsafe paths and tampering fail
+  closed. Final canonical history assembly requires full verified coverage and
+  backs up original partial files; it neither selects a universe nor changes UI.
+- The offline audit safely reused 1,296 histories; 1,276 other nonempty files have
+  a blank latest close and need refetch. A three-request live smoke test succeeded
+  and stopped at its budget: 1,299 ready and 3,860 pending. No final publication.
+
+Acceptance: 64 recovery tests, including an offline real-canonical integration,
+and all 659 backend tests pass. Existing source/mission hashes are unchanged;
+the labeled research ledger remains configured. Changes are uncommitted.
+See [recovery operation and boundaries](SENTRY_HISTORY_RECOVERY.md).
+
+## 2026-09-16 — Sentry classifier correction and real-universe rerun
+
+With explicit authorization, canonical Battlestar's security-name classifier and
+its regression tests were updated for enclosing derivatives/units, contextual
+ADR/ADS descriptions, and existing SPAC refinement of ordinary shares. Provider
+authority, the SPAC heuristic, eligibility policy, and data contracts are unchanged.
+The 246-test canonical Sentry suite and all 21 Cabin Sentry-reader tests pass.
+
+A fresh official Nasdaq bootstrap passed all 14 canonical validation checks and
+eight manifest hash checks, yielding 5,159 provisional symbols. Canonical H25
+population then hit confirmed Yahoo `YFRateLimitError`, persisting through a
+bounded cooldown retry. The downloader was stopped; 2,572 nonempty price files
+are retained, but no completed history manifest or final universe is published.
+The partial download is not represented as complete population or live alerts.
+
+All new artifacts/caches remain in Build Week. ModelDock, mission evidence, and
+the Cabin's labeled research archive are untouched. No trade path, observation
+producer, Git commit, merge, or push was introduced. See
+[run evidence and recovery boundary](SENTRY_UNIVERSE_RUN_20260916.md).
+
+## 2026-09-16 — Independent Microcap Sentry observation ledger
+
+- The Cabin's Sentry navigation opens a read-only canonical observation ledger;
+  the mission-warnings paper remains separate. No scan, producer, model call,
+  mission change, or trading control is introduced.
+- An optional bounded local-reader endpoint validates an explicitly configured
+  archive with Battlestar's pure snapshot contract, collapses exact duplicates,
+  rejects conflicting identities, and preserves raw observations and dates.
+  It does not import the Sentry engine or write into the canonical checkout.
+- The parchment ledger provides symbol/classification filters, complete
+  observation history, readable recorded-state explanations, rule-based scores,
+  factors, risks, missing inputs, and exact-record/source-integrity disclosures.
+- The first local visual review uses the existing July 15 synthetic research
+  archive: seven symbols, 22 distinct observations from 36 rows. It is prominently
+  marked **not live detections**. Synthetic watchlist/Navigator actions are
+  disabled; genuine recorded-source handoffs require explicit user action and
+  an existing Navigator capture. See [Sentry configuration](SENTRY_LEDGER.md).
+- Source checks run only while the Live ledger is open and visible. Missing,
+  empty, malformed, and unavailable archives never become an “all clear” or a
+  substitute mission result. Last-verified data remains explicitly labeled
+  after failed refresh.
+
+Acceptance: 828 UI tests pass. The 595-test backend suite passed with its optional
+canonical-source test skipped; all 21 Sentry tests subsequently passed with the
+canonical checkout explicitly configured. Production build, pinned/upstream
+renderer checks, and diff checks pass; no demo assets are published. Playwright
+visual QA checked research provenance, filters, history, exact JSON, disabled
+synthetic actions, and layout overflow. Source archive, mission snapshot, Cabin
+context, and original Navigator capture hashes are unchanged. Battlestar and
+ModelDock remain clean and untouched. Changes are left uncommitted for review.
 
 ## 2026-09-16 — Read-only Alpaca prices in expanded Navigator
 

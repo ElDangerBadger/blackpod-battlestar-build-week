@@ -15,6 +15,7 @@ import { CaptainsLogDetails } from "./components/CaptainsLogDetails";
 import { CabinPanelDetails, CABIN_PANEL_TITLES } from "./components/CabinPanelDetails";
 import type { CabinPanelId } from "./components/cabinPanelTypes";
 import { ShadowPlanDetails } from "./components/ShadowPlanDetails";
+import { SentryLedger } from "./components/SentryLedger";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
 import { MissionWarnings } from "./components/MissionWarnings";
@@ -40,7 +41,7 @@ export type PresentationMode = "DEMO" | "LIVE";
 
 const REPLAY_BASE_URL = `${import.meta.env.BASE_URL}demo/approved/`;
 
-type NoticeState = "sentry" | "admiral" | "config" | "logbook" | "reference-tape" | "shadow-plan" | CabinPanelId | null;
+type NoticeState = "sentry" | "mission-warnings" | "admiral" | "config" | "logbook" | "reference-tape" | "shadow-plan" | CabinPanelId | null;
 
 function panelFromNotice(notice: NoticeState): CabinPanelId | null {
   return notice && Object.hasOwn(CABIN_PANEL_TITLES, notice) ? notice as CabinPanelId : null;
@@ -271,7 +272,11 @@ function MissionCabin({
         }))}
         sentryAlerts={<SentryAlerts
           warnings={theater.revealed.has("ORACLE") ? mission.warnings : []}
-          onFocus={() => navigate("sentry")}
+          onFocus={() => {
+            setSelectedBookId(null);
+            setShipFocused(false);
+            setNotice("mission-warnings");
+          }}
         />}
         marketConditions={<MarketConditions symbol={mission.status.symbol} market={mission.market}
           expanded={notice === "reference-tape"} onFocus={() => openReferenceTape()} />}
@@ -331,6 +336,7 @@ function MissionCabin({
         foreground={<>
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
           {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus}
+            presentationMode={presentationMode}
             tapeInitialSymbol={tapeInitialSymbol}
             onOpenBook={selectBook}
             onOpenWatchlist={() => setNotice("watchlist")}
@@ -479,8 +485,9 @@ function DeskBookSummary({ book }: { book: BookDefinition }) {
   );
 }
 
-function CabinNotice({ notice, mission, onClose, onOpenNavigator, onOpenBook, onOpenWatchlist, onOpenReferenceTape, tapeInitialSymbol }: {
+function CabinNotice({ notice, mission, presentationMode, onClose, onOpenNavigator, onOpenBook, onOpenWatchlist, onOpenReferenceTape, tapeInitialSymbol }: {
   notice: Exclude<NoticeState, null>; mission: MissionViewModel; onClose: () => void;
+  presentationMode: PresentationMode;
   onOpenNavigator: (symbol?: string, selection?: NavigatorCaptureSelection) => void;
   onOpenBook: (id: StageBookId) => void;
   onOpenWatchlist: () => void;
@@ -512,6 +519,12 @@ function CabinNotice({ notice, mission, onClose, onOpenNavigator, onOpenBook, on
     );
   }
   if (notice === "sentry") {
+    return <Notice title="Microcap Sentry" eyebrow="Independent observation ledger · read-only" onClose={onClose}>
+      <SentryLedger enabled={presentationMode === "LIVE" && mission.status.runMode === "LIVE"}
+        mission={mission} onOpenNavigator={onOpenNavigator} />
+    </Notice>;
+  }
+  if (notice === "mission-warnings") {
     return (
       <Notice title="Mission warnings" onClose={onClose}>
         <MissionWarnings warnings={mission.warnings} />

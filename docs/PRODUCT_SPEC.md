@@ -48,6 +48,17 @@ See [Safety Boundary](SAFETY_BOUNDARY.md) for the component-level rules.
 
 ## Current product requirements
 
+### Independent Sentry observation ledger
+
+The Sentry navigation entry reads an explicitly configured canonical observation
+archive independently of mission evidence. The existing mission-warnings paper
+remains separate. Recorded classifications, scores, reasons, risks, and missing
+inputs are explained without rerunning analysis. Source times and research
+labels remain prominent; synthetic archives cannot become live detections or
+feed watchlist/Navigator handoffs. No scanner or producer is started by opening
+or refreshing the ledger. See [Sentry ledger](SENTRY_LEDGER.md) for configuration
+and validation boundaries.
+
 ### Source selection and automatic refresh
 
 The operator explicitly configures an artifact root and a single mission ID
