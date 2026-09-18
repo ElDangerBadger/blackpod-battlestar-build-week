@@ -96,7 +96,7 @@ class ModelDockCliTests(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, EXIT_SUCCESS, stderr.getvalue())
-        self.assertEqual(transport.calls, 2)
+        self.assertEqual(transport.calls, 1)
         self.assertIn("provider=mlx", stdout.getvalue())
         self.assertIn("trace_id=trace-modeldock-live-test", stdout.getvalue())
 
@@ -122,7 +122,7 @@ class ModelDockCliTests(unittest.TestCase):
                 ]
             )
 
-        self.assertEqual(transport.calls, 2)
+        self.assertEqual(transport.calls, 1)
         self.assertEqual(code, EXIT_MODELDOCK_FAILURE)
         self.assertIn("modeldock_call_status=FAILED", stdout.getvalue())
         self.assertIn("MODELDOCK_MOCKED_LIVE_RESPONSE", stderr.getvalue())
@@ -202,8 +202,8 @@ class ModelDockCliTests(unittest.TestCase):
             service_reachable=True,
             health_ready=True,
             health_response={"status": "ok", "service": "modeldock", "version": "0.1.0"},
-            models_endpoint_ready=True,
-            selected_model_available=True,
+            models_endpoint_ready=None,
+            selected_model_available=None,
             text_generate_endpoint_available=True,
             inference_ready=True,
             provider="mlx",
@@ -236,8 +236,8 @@ class ModelDockCliTests(unittest.TestCase):
             'health_response={"service":"modeldock","status":"ok","version":"0.1.0"}',
             stdout.getvalue(),
         )
-        self.assertIn("models_endpoint_ready=true", stdout.getvalue())
-        self.assertIn("selected_model_available=true", stdout.getvalue())
+        self.assertIn("models_endpoint_ready=null", stdout.getvalue())
+        self.assertIn("selected_model_available=null", stdout.getvalue())
         self.assertIn("provider=mlx", stdout.getvalue())
 
     def test_preflight_cli_mocked_or_shallow_result_exits_nonzero(self) -> None:
@@ -247,8 +247,8 @@ class ModelDockCliTests(unittest.TestCase):
             service_reachable=True,
             health_ready=True,
             health_response={"status": "ok", "service": "modeldock", "version": "0.1.0"},
-            models_endpoint_ready=True,
-            selected_model_available=True,
+            models_endpoint_ready=None,
+            selected_model_available=None,
             text_generate_endpoint_available=True,
             inference_ready=False,
             provider="mlx",

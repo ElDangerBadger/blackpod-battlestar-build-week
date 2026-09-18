@@ -845,7 +845,9 @@ def _run_modeldock_preflight_command(argv: Sequence[str]) -> int:
         )
     )
     print(
-        f"models_endpoint_ready={str(report.models_endpoint_ready).lower()}"
+        "models_endpoint_ready="
+        + (str(report.models_endpoint_ready).lower()
+           if report.models_endpoint_ready is not None else "null")
     )
     print(
         "selected_model_available="

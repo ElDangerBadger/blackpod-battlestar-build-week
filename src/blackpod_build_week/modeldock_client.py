@@ -1,6 +1,8 @@
 """Strict local HTTP client for ModelDock ``POST /text/generate``.
 
-The client has no retry or provider-fallback behavior.  It validates the real
+LIVE requests leave model routing to the appliance, without a model selector
+or registry lookup. The returned model is recorded as provenance, not checked
+against a local pin. The client has no retry or provider-fallback behavior. It validates the real
 ModelDock MLX envelope before exposing a deliberately projected response that
 cannot serialize ModelDock's absolute ``model_path``.
 """
@@ -303,7 +305,8 @@ class ModelDockClient:
         self.transport = transport or UrlLibTransport(monotonic=monotonic)
         self._monotonic = monotonic
         self._now = now or (lambda: datetime.now(UTC))
-        self._live_model_route_verified = live_model_route_verified
+        # Retained as a no-op keyword for older callers. The appliance owns
+        # model routing; this client no longer queries or pins the registry.
 
     def generate_text(
         self,
@@ -347,8 +350,6 @@ class ModelDockClient:
                 symbol=symbol,
                 run_mode=normalized_mode,
             )
-            if normalized_mode == "LIVE" and not self._live_model_route_verified:
-                self._validate_live_model_route(started)
             request_bytes = canonical_json_bytes(normalized_request)
             remaining = self.config.timeout_seconds - (
                 self._monotonic() - started
@@ -499,85 +500,6 @@ class ModelDockClient:
                 safe_response=safe_response,
             ) from None
 
-    def _validate_live_model_route(self, started: float) -> None:
-        """Prove the selected model routes to local MLX before sending facts."""
-
-        model = self.config.model
-        if model is None:  # The request validator normally catches this first.
-            raise _ProtocolIssue(
-                "live_model_required",
-                "ModelDockRequestValidationError",
-                "LIVE ModelDock narrative requires an explicitly configured MLX model",
-            )
-        remaining = self.config.timeout_seconds - (self._monotonic() - started)
-        if remaining <= 0:
-            raise TimeoutError("ModelDock deadline elapsed before route validation")
-        response = self.transport.request(
-            method="GET",
-            url=self.config.endpoint("/models"),
-            headers={"Accept": "application/json"},
-            body=None,
-            timeout_seconds=remaining,
-            max_response_bytes=self.config.max_response_bytes,
-        )
-        if self._monotonic() - started > self.config.timeout_seconds:
-            raise TimeoutError("ModelDock route validation exceeded total deadline")
-        if not isinstance(response, HttpResponse) or not isinstance(response.body, bytes):
-            raise _ProtocolIssue(
-                "live_model_route_contract",
-                "ModelDockProtocolError",
-                "ModelDock model registry returned an unsupported response",
-            )
-        if response.status != 200:
-            raise _ProtocolIssue(
-                "live_model_route_http_status",
-                "ModelDockHttpError",
-                f"ModelDock model registry returned HTTP status {response.status}",
-                resumable=response.status >= 500 or response.status in {408, 429},
-            )
-        declared = _content_length(response.headers)
-        if (
-            len(response.body) > self.config.max_response_bytes
-            or (declared is not None and declared > self.config.max_response_bytes)
-            or not response.complete
-            or (declared is not None and declared != len(response.body))
-        ):
-            raise _ProtocolIssue(
-                "live_model_route_response_invalid",
-                "ModelDockProtocolError",
-                "ModelDock model registry response is truncated or oversized",
-            )
-        registry = _strict_json_object(response.body, "ModelDock model registry")
-        if set(registry) != {"models"} or not isinstance(registry.get("models"), list):
-            raise _ProtocolIssue(
-                "live_model_route_contract",
-                "ModelDockProtocolError",
-                "ModelDock model registry failed strict validation",
-            )
-        matches = [
-            candidate
-            for candidate in registry["models"]
-            if isinstance(candidate, Mapping) and candidate.get("name") == model
-        ]
-        if len(matches) != 1:
-            raise _ProtocolIssue(
-                "live_model_route_unavailable",
-                "ModelDockProtocolError",
-                "Configured ModelDock model is not uniquely registered",
-            )
-        selected = matches[0]
-        capabilities = selected.get("capabilities")
-        if (
-            selected.get("provider") != self.config.provider
-            or not isinstance(capabilities, list)
-            or "text" not in capabilities
-        ):
-            raise _ProtocolIssue(
-                "live_model_route_policy",
-                "ModelDockProtocolError",
-                "Configured ModelDock model is not registered for local MLX text generation",
-            )
-
     def _validate_request(
         self,
         value: Mapping[str, Any],
@@ -608,15 +530,15 @@ class ModelDockClient:
                 "ModelDock request profile conflicts with configuration",
             )
         model = value.get("model")
-        if run_mode == "LIVE" and self.config.model is None:
+        if run_mode == "LIVE" and "model" in value:
             raise _ProtocolIssue(
-                "live_model_required",
+                "live_model_override_forbidden",
                 "ModelDockRequestValidationError",
-                "LIVE ModelDock narrative requires an explicitly configured MLX model",
+                "LIVE requests must leave model selection to the ModelDock appliance",
             )
         if model is not None:
             _safe_token(model, "request model")
-        if self.config.model is not None and model != self.config.model:
+        if run_mode == "REPLAY" and self.config.model is not None and model != self.config.model:
             raise _ProtocolIssue(
                 "request_model_mismatch",
                 "ModelDockRequestValidationError",
@@ -783,7 +705,7 @@ class ModelDockClient:
                 "LIVE ModelDock narrative rejected a mocked response",
             )
         model = _safe_token(value["model"], "response model")
-        if self.config.model is not None and model != self.config.model:
+        if run_mode == "REPLAY" and self.config.model is not None and model != self.config.model:
             raise _ProtocolIssue(
                 "response_model_mismatch",
                 "ModelDockProtocolError",

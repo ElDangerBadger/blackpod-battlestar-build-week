@@ -35,7 +35,8 @@ class ModelDockPreflightReport:
     service_reachable: bool
     health_ready: bool
     health_response: Mapping[str, Any] | None
-    models_endpoint_ready: bool
+    # Historical fields retained; null means no client-side registry/route check.
+    models_endpoint_ready: bool | None
     selected_model_available: bool | None
     text_generate_endpoint_available: bool
     inference_ready: bool
@@ -86,7 +87,7 @@ def run_modeldock_preflight(
     monotonic: Callable[[], float] = time.monotonic,
     now: Callable[[], datetime] | None = None,
 ) -> ModelDockPreflightReport:
-    """Check health, registry visibility, and one non-mocked MLX inference.
+    """Check health and one genuine, service-routed structured inference.
 
     A valid shallow health response never sets ``ready`` by itself.
     Failures are returned as sanitized issues rather than raised so CLI callers
@@ -99,8 +100,6 @@ def run_modeldock_preflight(
     service_reachable = False
     health_ready = False
     health_response: dict[str, Any] | None = None
-    models_ready = False
-    selected_available: bool | None = None
     endpoint_available = False
     inference_ready = False
     provider: str | None = None
@@ -152,63 +151,11 @@ def run_modeldock_preflight(
         issues.append(exc.to_dict())
 
     if health_ready:
-        try:
-            models_payload = _get_json(
-                active_transport,
-                config,
-                "/models",
-            )
-            if set(models_payload) != {"models"} or not isinstance(
-                models_payload.get("models"), list
-            ):
-                raise _PreflightIssue(
-                    "models_contract_invalid",
-                    "ModelDock models response failed strict validation",
-                )
-            models_ready = True
-            if config.model is None:
-                selected_available = None
-            else:
-                selected_available = any(
-                    isinstance(candidate, Mapping)
-                    and candidate.get("name") == config.model
-                    and candidate.get("provider") == config.provider
-                    and isinstance(candidate.get("capabilities"), list)
-                    and "text" in candidate["capabilities"]
-                    for candidate in models_payload["models"]
-                )
-                if not selected_available:
-                    raise _PreflightIssue(
-                        "selected_model_unavailable",
-                        "Configured ModelDock model is not registered for MLX text generation",
-                    )
-        except _PreflightIssue as exc:
-            issues.append(exc.to_dict())
-
-    if health_ready and models_ready and config.model is None:
-        issues.append(
-            {
-                "code": "live_model_required",
-                "message": (
-                    "Deep LIVE preflight requires MODELDOCK_MODEL to pin a "
-                    "registered local MLX route before inference"
-                ),
-                "resumable": False,
-            }
-        )
-
-    if (
-        health_ready
-        and models_ready
-        and config.model is not None
-        and selected_available is not False
-    ):
         client = ModelDockClient(
             config,
             transport=active_transport,
             monotonic=monotonic,
             now=clock,
-            live_model_route_verified=True,
         )
         request_payload: dict[str, Any] = {
             "profile": config.profile,
@@ -233,8 +180,6 @@ def run_modeldock_preflight(
             ),
             "max_tokens": 128,
         }
-        if config.model is not None:
-            request_payload["model"] = config.model
         try:
             result = client.generate_text(
                 request_payload,
@@ -277,8 +222,8 @@ def run_modeldock_preflight(
         service_reachable=service_reachable,
         health_ready=health_ready,
         health_response=health_response,
-        models_endpoint_ready=models_ready,
-        selected_model_available=selected_available,
+        models_endpoint_ready=None,
+        selected_model_available=None,
         text_generate_endpoint_available=endpoint_available,
         inference_ready=inference_ready,
         provider=provider,

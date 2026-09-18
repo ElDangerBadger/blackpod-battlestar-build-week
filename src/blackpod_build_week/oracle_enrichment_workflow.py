@@ -11,7 +11,7 @@ import copy
 import math
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
@@ -343,6 +343,10 @@ def run_oracle_enrichment(
         loaded.request,
         settings.replay_fixture,
     )
+    if replay_pack is not None:
+        # A historical request pin is recorded evidence, not current appliance
+        # configuration. Do not require an environment pin to replay it.
+        config = replace(config, model=replay_pack.request.get("model"))
     source_artifacts, evidence = _load_oracle_evidence(
         loaded.request,
         loaded.snapshot,
@@ -781,7 +785,6 @@ def _build_wire_request(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "profile": config.profile,
-        "model": config.model,
         "capabilities": ["text"],
         "response_format": {"type": "json"},
         "timeout": max(1, math.ceil(config.timeout_seconds)),
@@ -796,6 +799,10 @@ def _build_wire_request(
         "prompt": narrative_request.build_prompt(),
         "max_tokens": 2048,
     }
+    # Preserve frozen replay request bytes; new LIVE calls leave model routing
+    # entirely to ModelDock and retain the returned identity only as evidence.
+    if narrative_request.run_mode is RunMode.REPLAY:
+        payload["model"] = config.model
     return payload
 
 
@@ -828,7 +835,7 @@ def _build_component_provenance(
             "endpoint": config.endpoint("/text/generate"),
             "profile": config.profile,
             "expected_provider": config.provider,
-            "requested_model": config.model,
+            "requested_model": config.model if replay else None,
             "timeout_seconds": config.timeout_seconds,
             "max_response_bytes": config.max_response_bytes,
             "run_mode": request.run_mode.value,
@@ -1221,13 +1228,32 @@ def _validate_completed_invocation(
         raise OracleEnrichmentStateConflictError(
             "ModelDock enrichment previously FAILED; there is no retry option"
         )
+    recorded_provenance = snapshot.components.get("modeldock")
+    expected_provenance = provenance
+    expected_request_hashes = {sha256_bytes(canonical_json_bytes(dict(wire_request)))}
+    if request.run_mode is RunMode.LIVE and isinstance(
+        recorded_provenance, ModelDockComponentProvenance
+    ):
+        # Old, completed LIVE captures included a model key (possibly null).
+        # Recognize that historical wire shape only for this read-only no-op;
+        # never feed its pin into configuration or a new inference request.
+        pin = recorded_provenance.requested_model
+        if pin is not None and pin != call.model:
+            raise OracleEnrichmentStateConflictError(
+                "completed ModelDock identity differs from its recorded pin"
+            )
+        expected_provenance = replace(provenance, requested_model=pin)
+        legacy_hash = sha256_bytes(canonical_json_bytes({**wire_request, "model": pin}))
+        expected_request_hashes = {legacy_hash}
+        if pin is None:
+            expected_request_hashes.add(sha256_bytes(canonical_json_bytes(dict(wire_request))))
     if (
         snapshot.stages["oracle"].status is not StageStatus.SUCCEEDED
         or snapshot.current_phase is not CurrentPhase.COUNCIL
         or snapshot.stages["council"].status is not StageStatus.NOT_STARTED
         or snapshot.mission_outcome is not MissionOutcome.INCOMPLETE
         or snapshot.terminal
-        or snapshot.components.get("modeldock") != provenance
+        or recorded_provenance != expected_provenance
     ):
         raise OracleEnrichmentStateConflictError(
             "completed ModelDock state does not match this invocation"
@@ -1269,7 +1295,7 @@ def _validate_completed_invocation(
             )
     request_artifact = artifacts[MODELDOCK_REQUEST_ARTIFACT]
     if (
-        request_artifact.sha256 != sha256_bytes(canonical_json_bytes(dict(wire_request)))
+        request_artifact.sha256 not in expected_request_hashes
         or request_artifact.sha256 != call.request_sha256
     ):
         raise OracleEnrichmentStateConflictError(

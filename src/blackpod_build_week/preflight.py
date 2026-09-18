@@ -961,7 +961,7 @@ def _append_live_modeldock_checks(
                 "timeout_seconds": config.timeout_seconds,
                 "profile": config.profile,
                 "provider": config.provider,
-                "model": config.model,
+                "model": None,
             },
         )
     )

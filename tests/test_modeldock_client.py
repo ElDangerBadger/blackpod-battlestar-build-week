@@ -75,9 +75,8 @@ def correlation(run_mode: str = "LIVE") -> dict[str, str]:
 
 
 def request_payload(run_mode: str = "LIVE") -> dict[str, Any]:
-    return {
+    payload = {
         "profile": "default",
-        "model": MODEL,
         "capabilities": ["text"],
         "response_format": {"type": "json"},
         "timeout": 10,
@@ -85,6 +84,9 @@ def request_payload(run_mode: str = "LIVE") -> dict[str, Any]:
         "prompt": "Return only the validated Oracle narrative JSON.",
         "max_tokens": 256,
     }
+    if run_mode == "REPLAY":
+        payload["model"] = MODEL
+    return payload
 
 
 def narrative() -> dict[str, Any]:
@@ -181,7 +183,7 @@ class ModelDockClientTests(unittest.TestCase):
         self.assertEqual(result.model_revision, "revision-abc123")
         self.assertEqual(result.trace_id, "trace-modeldock-test")
         self.assertFalse(result.mocked)
-        self.assertEqual(result.latency_ms, 625.0)
+        self.assertEqual(result.latency_ms, 375.0)
         self.assertEqual(result.request_sha256, sha256_bytes(result.request_bytes))
         self.assertEqual(
             result.raw_response_sha256,
@@ -192,9 +194,10 @@ class ModelDockClientTests(unittest.TestCase):
         self.assertNotIn("model_path", str(result.safe_response))
         self.assertNotIn("/Users/private", result.safe_response_bytes.decode())
         self.assertEqual(result.started_at, "2026-07-19T12:00:00.000000Z")
-        self.assertEqual(transport.calls, 2)
+        self.assertEqual(transport.calls, 1)
         self.assertEqual(transport.last_request["url"], "http://127.0.0.1:8000/text/generate")
-        self.assertEqual(transport.last_request["timeout_seconds"], 9.625)
+        self.assertEqual(transport.last_request["timeout_seconds"], 9.875)
+        self.assertNotIn("model", json.loads(transport.last_request["body"]))
         self.assertNotIn("Authorization", transport.last_request["headers"])
 
     def test_current_mlx_vlm_text_engine_is_a_real_supported_response(self) -> None:
@@ -490,7 +493,7 @@ class ModelDockClientTests(unittest.TestCase):
             payload=payload,
         )
 
-    def test_live_requires_explicit_model_before_oracle_facts_are_sent(self) -> None:
+    def test_live_uses_appliance_without_configured_model(self) -> None:
         transport = FakeTransport(http_response(response_envelope()))
         client = ModelDockClient(
             ModelDockConfig(
@@ -502,32 +505,52 @@ class ModelDockClientTests(unittest.TestCase):
             now=lambda: datetime(2026, 7, 19, 12, 0, tzinfo=UTC),
         )
 
-        with self.assertRaises(ModelDockClientError) as caught:
-            client.generate_text(
-                {**request_payload(), "model": None},
-                mission_id=MISSION_ID,
-                request_id=REQUEST_ID,
-                symbol=SYMBOL,
-                run_mode="LIVE",
-                content_validator=lambda value: value,
-            )
+        result = client.generate_text(
+            request_payload(), mission_id=MISSION_ID, request_id=REQUEST_ID,
+            symbol=SYMBOL, run_mode="LIVE", content_validator=lambda value: value,
+        )
+        self.assertEqual(result.model, MODEL)
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(transport.last_request["method"], "POST")
+        self.assertNotIn("model", json.loads(transport.last_request["body"]))
 
-        self.assertEqual(caught.exception.code, "live_model_required")
-        self.assertEqual(transport.calls, 0)
-
-    def test_live_rejects_non_mlx_registered_route_before_post(self) -> None:
+    def test_live_never_queries_model_registry(self) -> None:
         transport = FakeTransport(
             http_response(response_envelope()),
             model_provider="ollama",
         )
-
-        with self.assertRaises(ModelDockClientError) as caught:
-            self.invoke(transport)
-
-        self.assertEqual(caught.exception.code, "live_model_route_policy")
+        self.invoke(transport)
         self.assertEqual(transport.calls, 1)
-        self.assertTrue(transport.last_request["url"].endswith("/models"))
-        self.assertEqual(transport.last_request["method"], "GET")
+        self.assertTrue(transport.last_request["url"].endswith("/text/generate"))
+        self.assertEqual(transport.last_request["method"], "POST")
+
+    def test_live_rejects_any_model_override_before_network(self) -> None:
+        for model in (MODEL, "appliance-active-model", None):
+            with self.subTest(model=model):
+                transport = FakeTransport(http_response(response_envelope()))
+                self.assert_code("live_model_override_forbidden", transport,
+                    payload={**request_payload(), "model": model})
+                self.assertEqual(transport.calls, 0)
+
+    def test_live_records_appliance_identity_without_pin_comparison(self) -> None:
+        envelope = response_envelope()
+        envelope["model"] = "appliance-active-model"
+        transport = FakeTransport(http_response(envelope))
+        result = self.invoke(transport)
+        self.assertEqual(self.config.model, MODEL)  # Legacy setting has no LIVE effect.
+        self.assertEqual(result.model, "appliance-active-model")
+        self.assertEqual(result.safe_response["model"], "appliance-active-model")
+        self.assertEqual(transport.calls, 1)
+
+    def test_replay_retains_recorded_model_identity_checks(self) -> None:
+        envelope = response_envelope(run_mode="REPLAY", mocked=True)
+        envelope["model"] = "different-recorded-model"
+        self.assert_code("response_model_mismatch", FakeTransport(http_response(envelope)), run_mode="REPLAY")
+        payload = request_payload("REPLAY")
+        payload["model"] = "different-recorded-model"
+        transport = FakeTransport(http_response(response_envelope(run_mode="REPLAY", mocked=True)))
+        self.assert_code("request_model_mismatch", transport, run_mode="REPLAY", payload=payload)
+        self.assertEqual(transport.calls, 0)
 
 
 if __name__ == "__main__":

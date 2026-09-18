@@ -40,7 +40,12 @@ class ModelDockConfigurationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ModelDockConfig:
-    """Validated ModelDock network policy and request defaults."""
+    """Validated appliance policy; ``model`` is legacy replay metadata only.
+
+    New LIVE requests leave model routing entirely to ModelDock. Direct
+    construction retains this field so recorded replay requests can still be
+    validated; it does not pin or constrain a LIVE response.
+    """
 
     base_url: str
     timeout_seconds: float
@@ -104,10 +109,12 @@ class ModelDockConfig:
 def load_modeldock_config(
     *, environ: Mapping[str, str] | None = None
 ) -> ModelDockConfig:
-    """Load the required endpoint and deadline plus optional MLX selection.
+    """Load the endpoint, deadline, and appliance profile; never select a model.
 
     Both the URL and timeout are required so a LIVE invocation can never
-    inherit a surprising network target or an unbounded deadline.
+    inherit a surprising network target or an unbounded deadline. Legacy
+    ``MODELDOCK_MODEL`` is deliberately ignored, including stale values from old
+    launch configurations. Model selection belongs to the ModelDock appliance.
     """
 
     environment = os.environ if environ is None else environ
@@ -128,8 +135,6 @@ def load_modeldock_config(
         environment.get(MODELDOCK_PROFILE_ENV, DEFAULT_MODELDOCK_PROFILE).strip(),
         MODELDOCK_PROFILE_ENV,
     )
-    raw_model = environment.get(MODELDOCK_MODEL_ENV, "").strip()
-    model = _validate_name(raw_model, MODELDOCK_MODEL_ENV) if raw_model else None
     provider = _validate_name(
         environment.get(MODELDOCK_PROVIDER_ENV, DEFAULT_MODELDOCK_PROVIDER).strip(),
         MODELDOCK_PROVIDER_ENV,
@@ -144,7 +149,7 @@ def load_modeldock_config(
         base_url=base_url,
         timeout_seconds=timeout_seconds,
         profile=profile,
-        model=model,
+        model=None,
         provider=provider,
     )
 

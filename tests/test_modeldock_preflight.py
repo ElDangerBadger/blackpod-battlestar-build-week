@@ -36,26 +36,7 @@ def health() -> HttpResponse:
     return response({"status": "ok", "service": "modeldock", "version": "0.1.0"})
 
 
-def models() -> HttpResponse:
-    return response(
-        {
-            "models": [
-                {
-                    "name": "mlx-community/test-model",
-                    "provider": "mlx",
-                    "capabilities": ["text"],
-                    "context_length": 4096,
-                    "vision_support": False,
-                    "priority": 1,
-                    "memory_requirements": None,
-                    "preferred_use_cases": [],
-                }
-            ]
-        }
-    )
-
-
-def smoke(*, mocked: bool = False, engine: str = "mlx-vlm") -> HttpResponse:
+def smoke(*, mocked: bool = False, engine: str = "mlx-vlm", model: str = "mlx-community/test-model") -> HttpResponse:
     correlation = {
         "mission_id": "modeldock-preflight",
         "request_id": "modeldock-preflight-request",
@@ -75,7 +56,7 @@ def smoke(*, mocked: bool = False, engine: str = "mlx-vlm") -> HttpResponse:
             "request_type": "text.generate",
             "profile": "default",
             "provider": "mlx",
-            "model": "mlx-community/test-model",
+            "model": model,
             "content": json.dumps(content),
             "data": {
                 "engine": engine,
@@ -111,7 +92,6 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.config = ModelDockConfig(
             base_url="http://127.0.0.1:8000",
             timeout_seconds=10.0,
-            model="mlx-community/test-model",
         )
 
     def run_preflight(self, transport: QueueTransport):
@@ -123,12 +103,14 @@ class ModelDockPreflightTests(unittest.TestCase):
         )
 
     def test_real_structured_smoke_inference_passes_readiness(self) -> None:
-        transport = QueueTransport([health(), models(), smoke()])
+        transport = QueueTransport([health(), smoke()])
         report = self.run_preflight(transport)
         self.assertTrue(report.ready)
         self.assertTrue(report.health_ready)
-        self.assertTrue(report.models_endpoint_ready)
-        self.assertTrue(report.selected_model_available)
+        self.assertIsNone(report.models_endpoint_ready)
+        self.assertIsNone(report.selected_model_available)
+        self.assertIsNone(report.to_dict()["models_endpoint_ready"])
+        self.assertIsNone(report.to_dict()["selected_model_available"])
         self.assertTrue(report.text_generate_endpoint_available)
         self.assertTrue(report.inference_ready)
         self.assertEqual(report.provider, "mlx")
@@ -136,21 +118,29 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.assertEqual(report.model_revision, "rev-preflight")
         self.assertEqual(report.trace_id, "trace-preflight")
         self.assertFalse(report.mocked)
-        self.assertEqual(len(transport.calls), 3)
+        self.assertEqual(len(transport.calls), 2)
         self.assertEqual(transport.calls[0]["url"], "http://127.0.0.1:8000/health")
-        self.assertEqual(transport.calls[1]["url"], "http://127.0.0.1:8000/models")
         self.assertEqual(
-            transport.calls[2]["url"], "http://127.0.0.1:8000/text/generate"
+            transport.calls[1]["url"], "http://127.0.0.1:8000/text/generate"
         )
+        self.assertEqual([call["method"] for call in transport.calls], ["GET", "POST"])
+        payload = json.loads(transport.calls[1]["body"])
+        self.assertNotIn("model", payload)
+        self.assertNotIn("provider", payload)
+        self.assertEqual(payload["profile"], "default")
+        self.assertEqual(payload["capabilities"], ["text"])
+        self.assertEqual(payload["response_format"], {"type": "json"})
 
     def test_shallow_health_without_inference_is_not_ready(self) -> None:
         report = self.run_preflight(
-            QueueTransport([health(), models(), ConnectionError("offline")])
+            QueueTransport([health(), ConnectionError("offline")])
         )
         self.assertTrue(report.health_ready)
         self.assertFalse(report.inference_ready)
         self.assertFalse(report.ready)
         self.assertEqual(report.issues[-1]["code"], "connection_failure")
+        self.assertIsNone(report.model)
+        self.assertIsNone(report.provider)
 
     def test_current_health_requires_real_inference_for_ready_and_busy_states(self) -> None:
         for state in ("READY", "BUSY"):
@@ -159,17 +149,17 @@ class ModelDockPreflightTests(unittest.TestCase):
                     "status": "ok", "service": "modeldock", "version": "1.0.0",
                     "state": state, "ready": True, "provider_available": True,
                 }
-                transport = QueueTransport([response(current_health), models(), smoke()])
+                transport = QueueTransport([response(current_health), smoke()])
                 report = self.run_preflight(transport)
                 self.assertTrue(report.ready)
                 self.assertTrue(report.health_ready)
                 self.assertTrue(report.inference_ready)
                 self.assertEqual(report.health_response, current_health)
-                self.assertEqual(len(transport.calls), 3)
+                self.assertEqual(len(transport.calls), 2)
                 self.assertEqual(transport.calls[-1]["method"], "POST")
 
                 failed_transport = QueueTransport([
-                    response(current_health), models(), ConnectionError("offline")
+                    response(current_health), ConnectionError("offline")
                 ])
                 failed = self.run_preflight(failed_transport)
                 self.assertTrue(failed.health_ready)
@@ -205,7 +195,7 @@ class ModelDockPreflightTests(unittest.TestCase):
 
     def test_mocked_smoke_fails_live_readiness(self) -> None:
         report = self.run_preflight(
-            QueueTransport([health(), models(), smoke(mocked=True)])
+            QueueTransport([health(), smoke(mocked=True)])
         )
         self.assertFalse(report.ready)
         self.assertTrue(report.text_generate_endpoint_available)
@@ -213,7 +203,7 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.assertTrue(report.mocked)
         self.assertEqual(report.issues[-1]["code"], "mocked_live_response")
 
-    def test_invalid_health_stops_before_models_or_inference(self) -> None:
+    def test_invalid_health_stops_before_inference(self) -> None:
         invalid_health = response(
             {"status": "ok", "service": "other", "version": "0.1.0"}
         )
@@ -224,22 +214,25 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.assertFalse(report.ready)
         self.assertEqual(len(transport.calls), 1)
 
-    def test_unregistered_selected_model_fails_before_inference(self) -> None:
-        empty_models = response({"models": []})
-        transport = QueueTransport([health(), empty_models])
+    def test_legacy_config_model_does_not_select_or_limit_service_model(self) -> None:
+        self.config = ModelDockConfig(base_url="http://127.0.0.1:8000", timeout_seconds=10.0,
+                                      model="legacy-configured-model")
+        transport = QueueTransport([health(), smoke(model="service-selected-other-model")])
         report = self.run_preflight(transport)
-        self.assertTrue(report.models_endpoint_ready)
-        self.assertFalse(report.selected_model_available)
-        self.assertFalse(report.ready)
+        self.assertTrue(report.ready)
+        self.assertEqual(report.model, "service-selected-other-model")
+        self.assertIsNone(report.models_endpoint_ready)
+        self.assertIsNone(report.selected_model_available)
         self.assertEqual(len(transport.calls), 2)
-        self.assertEqual(report.issues[-1]["code"], "selected_model_unavailable")
+        self.assertNotIn("model", json.loads(transport.calls[-1]["body"]))
+        self.assertFalse(any(call["url"].endswith("/models") for call in transport.calls))
 
-    def test_missing_live_model_never_dispatches_smoke_prompt(self) -> None:
+    def test_service_routed_model_without_client_pin_dispatches_one_smoke_prompt(self) -> None:
         config = ModelDockConfig(
             base_url="http://127.0.0.1:8000",
             timeout_seconds=10.0,
         )
-        transport = QueueTransport([health(), models()])
+        transport = QueueTransport([health(), smoke()])
 
         report = run_modeldock_preflight(
             config,
@@ -248,11 +241,25 @@ class ModelDockPreflightTests(unittest.TestCase):
             now=lambda: datetime(2026, 7, 19, 12, 0, tzinfo=UTC),
         )
 
-        self.assertFalse(report.ready)
+        self.assertTrue(report.ready)
+        self.assertIsNone(report.models_endpoint_ready)
         self.assertIsNone(report.selected_model_available)
-        self.assertFalse(report.text_generate_endpoint_available)
-        self.assertEqual(report.issues[-1]["code"], "live_model_required")
+        self.assertTrue(report.text_generate_endpoint_available)
+        self.assertEqual(report.issues, ())
         self.assertEqual(len(transport.calls), 2)
+        self.assertNotIn("model", json.loads(transport.calls[-1]["body"]))
+
+    def test_no_client_model_or_provenance_is_invented_when_health_fails(self) -> None:
+        self.config = ModelDockConfig(base_url="http://127.0.0.1:8000", timeout_seconds=10.0,
+                                      model="legacy-configured-model")
+        transport = QueueTransport([ConnectionError("offline")])
+        report = self.run_preflight(transport)
+        self.assertFalse(report.ready)
+        self.assertIsNone(report.model)
+        self.assertIsNone(report.provider)
+        self.assertIsNone(report.models_endpoint_ready)
+        self.assertIsNone(report.selected_model_available)
+        self.assertEqual(len(transport.calls), 1)
 
 
 if __name__ == "__main__":

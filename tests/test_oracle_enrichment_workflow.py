@@ -4,6 +4,7 @@ import copy
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -24,7 +25,7 @@ from blackpod_build_week.contracts.oracle_narrative import (
     OracleNarrativeSelection,
 )
 from blackpod_build_week.council_workflow import _validate_council_preconditions
-from blackpod_build_week.hashing import canonical_json_bytes, sha256_file
+from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes, sha256_file
 from blackpod_build_week.mission_store import (
     ImmutableArtifactError,
     MissionStore,
@@ -52,6 +53,7 @@ from blackpod_build_week.oracle_enrichment_workflow import (
     OracleEnrichmentAction,
     OracleEnrichmentSettings,
     OracleEnrichmentStateConflictError,
+    _build_component_provenance,
     _build_narrative_request,
     _build_wire_request,
     _load_oracle_evidence,
@@ -432,7 +434,8 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             config_loader=self.config_loader,
         )
 
-    def execute_live(self, *, mocked: bool = False):
+    def execute_live(self, *, mocked: bool = False, historical: bool = False,
+                     historical_pin: str | None = None):
         live_root = self.base / "live-artifacts"
         live_store = MissionStore(live_root)
         live_request = MissionRequest.from_mapping(
@@ -491,7 +494,7 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
         live_config = ModelDockConfig(
             base_url="http://127.0.0.1:8000",
             timeout_seconds=10.0,
-            model="mlx-community/test-live-model",
+            model="legacy-client-pin-not-the-active-model",
         )
         wire = _build_wire_request(live_config, narrative_request)
         selection = OracleNarrativeSelection.from_mapping(
@@ -537,15 +540,40 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             monotonic=lambda: 0.0,
             now=fixed_clock,
         )
-        result = run_oracle_enrichment(
-            OracleEnrichmentSettings(
-                mission_id=live_request.mission_id or "",
-                artifacts_root=live_root,
-            ),
-            client=client,
-            config_loader=lambda **_: live_config,
-            clock=fixed_clock,
+        settings = OracleEnrichmentSettings(
+            mission_id=live_request.mission_id or "", artifacts_root=live_root,
         )
+        if historical:
+            # Build a fully validated historical capture in this temporary test
+            # store. The injected fixture models old wire receipts, not a new
+            # production LIVE request, and never touches a network transport.
+            class HistoricalFixtureClient:
+                def generate_text(self, request, **kwargs):
+                    result = client.generate_text(
+                        {key: value for key, value in request.items() if key != "model"},
+                        **kwargs,
+                    )
+                    old_bytes = canonical_json_bytes(request)
+                    return replace(result, request_bytes=old_bytes,
+                                   request_sha256=sha256_bytes(old_bytes))
+
+            def old_wire(config, narrative_request):
+                return {**_build_wire_request(config, narrative_request), "model": historical_pin}
+
+            def old_provenance(*args, **kwargs):
+                return replace(_build_component_provenance(*args, **kwargs),
+                               requested_model=historical_pin)
+
+            with patch("blackpod_build_week.oracle_enrichment_workflow._build_wire_request",
+                       side_effect=old_wire), patch(
+                "blackpod_build_week.oracle_enrichment_workflow._build_component_provenance",
+                side_effect=old_provenance,
+            ):
+                result = run_oracle_enrichment(settings, client=HistoricalFixtureClient(),
+                    config_loader=lambda **_: live_config, clock=fixed_clock)
+        else:
+            result = run_oracle_enrichment(settings, client=client,
+                config_loader=lambda **_: live_config, clock=fixed_clock)
         return result, transport
 
     def test_success_preserves_oracle_facts_and_writes_canonical_artifacts(self) -> None:
@@ -648,13 +676,17 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
             result = self.execute()
         self.assertEqual(result.call.status, ModelDockCallStatus.SUCCEEDED)
 
-    def test_live_verifies_route_then_uses_one_generation_call_and_never_replay(self) -> None:
+    def test_live_asks_only_modeldock_and_records_its_chosen_model(self) -> None:
         result, transport = self.execute_live()
-        self.assertEqual(transport.calls, 2)
+        self.assertEqual(transport.calls, 1)
         self.assertEqual(
             [item["method"] for item in transport.requests],
-            ["GET", "POST"],
+            ["POST"],
         )
+        self.assertEqual(transport.requests[0]["url"], "http://127.0.0.1:8000/text/generate")
+        self.assertNotIn("model", json.loads(transport.requests[0]["body"]))
+        self.assertIsNone(result.snapshot.components["modeldock"].requested_model)
+        self.assertEqual(result.call.model, "mlx-community/test-live-model")
         self.assertEqual(result.snapshot.run_mode.value, "LIVE")
         self.assertEqual(result.call.status, ModelDockCallStatus.SUCCEEDED)
         self.assertFalse(result.call.mocked)
@@ -666,6 +698,84 @@ class OracleEnrichmentWorkflowTests(unittest.TestCase):
         self.assertFalse(
             (result.paths.mission_root / "oracle/inputs/modeldock_replay.json").exists()
         )
+
+    def test_replay_model_pin_is_preserved_from_frozen_evidence_not_environment(self) -> None:
+        self.config = replace(self.config, model="mlx-community/test-narrative-model")
+        self._write_replay_pack()
+        self.config = replace(self.config, model=None)
+        with patch("blackpod_build_week.modeldock_client.UrlLibTransport.request",
+                   side_effect=AssertionError("network called")):
+            result = self.execute()
+        self.assertEqual(result.call.status, ModelDockCallStatus.SUCCEEDED)
+        self.assertEqual(result.snapshot.components["modeldock"].requested_model, "mlx-community/test-narrative-model")
+        recorded = json.loads((result.paths.mission_root / MODELDOCK_REQUEST_PATH).read_text())
+        self.assertEqual(recorded["model"], "mlx-community/test-narrative-model")
+
+    def _assert_historical_live_no_op(self, pin: str | None) -> None:
+        completed, _ = self.execute_live(historical=True, historical_pin=pin)
+        root = completed.paths.mission_root
+        before = {path.relative_to(root): path.read_bytes()
+                  for path in root.rglob("*") if path.is_file()}
+        recorded = json.loads((root / MODELDOCK_REQUEST_PATH).read_text())
+        self.assertIn("model", recorded)
+        self.assertEqual(recorded["model"], pin)
+        self.assertEqual(completed.snapshot.components["modeldock"].requested_model, pin)
+        settings = OracleEnrichmentSettings(
+            mission_id=completed.request.mission_id or "",
+            artifacts_root=self.base / "live-artifacts",
+        )
+        # The current environment has no pin; repeat validation must not infer
+        # or reissue the historical request or weaken other invocation checks.
+        config = ModelDockConfig(base_url="http://127.0.0.1:8000", timeout_seconds=10)
+        with patch("blackpod_build_week.modeldock_client.UrlLibTransport.request",
+                   side_effect=AssertionError("historical repeat used the network")):
+            repeated = run_oracle_enrichment(settings, client=BombClient(),
+                config_loader=lambda **_: config)
+        self.assertEqual(repeated.action, OracleEnrichmentAction.NO_OP_ALREADY_SUCCEEDED)
+        self.assertEqual(repeated.snapshot, completed.snapshot)
+        self.assertEqual(before, {path.relative_to(root): path.read_bytes()
+                                 for path in root.rglob("*") if path.is_file()})
+        with self.assertRaises(OracleEnrichmentStateConflictError):
+            run_oracle_enrichment(settings, client=BombClient(),
+                config_loader=lambda **_: replace(config, timeout_seconds=11))
+        with self.assertRaises(OracleEnrichmentStateConflictError):
+            run_oracle_enrichment(settings, client=BombClient(),
+                config_loader=lambda **_: replace(config, profile="different-profile"))
+        for changed_field in ("prompt", "correlation"):
+            def different_wire(current_config, current_request):
+                value = _build_wire_request(current_config, current_request)
+                if changed_field == "prompt":
+                    value["prompt"] += " Changed interpretation request."
+                else:
+                    value["metadata"]["blackpod_correlation"]["symbol"] = "AAPL"
+                return value
+
+            with self.subTest(changed_field=changed_field), patch(
+                "blackpod_build_week.oracle_enrichment_workflow._build_wire_request",
+                side_effect=different_wire,
+            ), self.assertRaises(OracleEnrichmentStateConflictError):
+                run_oracle_enrichment(settings, client=BombClient(),
+                    config_loader=lambda **_: config)
+
+    def test_historical_pinned_live_success_is_read_only_idempotent(self) -> None:
+        self._assert_historical_live_no_op("mlx-community/test-live-model")
+
+    def test_historical_null_model_live_success_is_read_only_idempotent(self) -> None:
+        self._assert_historical_live_no_op(None)
+
+    def test_current_model_free_live_success_remains_read_only_idempotent(self) -> None:
+        completed, transport = self.execute_live()
+        settings = OracleEnrichmentSettings(
+            mission_id=completed.request.mission_id or "",
+            artifacts_root=self.base / "live-artifacts",
+        )
+        config = ModelDockConfig(base_url="http://127.0.0.1:8000", timeout_seconds=10)
+        repeated = run_oracle_enrichment(settings, client=BombClient(),
+            config_loader=lambda **_: config)
+        self.assertEqual(repeated.action, OracleEnrichmentAction.NO_OP_ALREADY_SUCCEEDED)
+        self.assertEqual(repeated.snapshot, completed.snapshot)
+        self.assertEqual(transport.calls, 1)
+        self.assertNotIn("model", json.loads(transport.requests[0]["body"]))
 
     def test_timeout_follows_strict_failure_policy_without_corrupting_facts(self) -> None:
         client = TimeoutClient()

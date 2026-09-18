@@ -65,7 +65,7 @@ class ModelDockConfigurationTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ModelDockConfigurationError):
                 load_modeldock_config(environ=environment)
 
-    def test_optional_selection_and_mlx_policy(self) -> None:
+    def test_optional_profile_and_mlx_policy_leave_model_selection_to_appliance(self) -> None:
         environment = self.valid_environment()
         environment.update(
             {
@@ -76,17 +76,21 @@ class ModelDockConfigurationTests(unittest.TestCase):
         )
         config = load_modeldock_config(environ=environment)
         self.assertEqual(config.profile, "oracle-narrative")
-        self.assertEqual(config.model, "mlx-community/test-model")
+        self.assertIsNone(config.model)
 
         environment[MODELDOCK_PROVIDER_ENV] = "ollama"
         with self.assertRaisesRegex(ModelDockConfigurationError, "mlx"):
             load_modeldock_config(environ=environment)
 
-    def test_model_may_not_be_an_absolute_path(self) -> None:
-        environment = self.valid_environment()
-        environment[MODELDOCK_MODEL_ENV] = "/Users/demo/model"
-        with self.assertRaises(ModelDockConfigurationError):
-            load_modeldock_config(environ=environment)
+    def test_legacy_model_environment_is_ignored_not_propagated(self) -> None:
+        for value in ("old-model", "/Users/demo/model", "sk-proj-private-value", ""):
+            environment = self.valid_environment()
+            environment[MODELDOCK_MODEL_ENV] = value
+            with self.subTest(value=value):
+                config = load_modeldock_config(environ=environment)
+                self.assertIsNone(config.model)
+                if value:
+                    self.assertNotIn(value, repr(config))
 
     def test_direct_construction_enforces_every_safety_invariant(self) -> None:
         valid = {
