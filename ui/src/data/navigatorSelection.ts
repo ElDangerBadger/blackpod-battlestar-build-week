@@ -3,7 +3,10 @@ import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import type { ArtifactReference } from "../contracts/presentation";
 import type { MissionViewModel } from "./viewModel";
 
-export type NavigatorCaptureSelection = Pick<NavigatorMarket, "symbol" | "timeframe" | "ma_period">;
+/** Local view handoff only; referenceMode is never persisted in mission data. */
+export type NavigatorCaptureSelection = Pick<NavigatorMarket, "symbol" | "timeframe" | "ma_period"> & {
+  referenceMode?: "CURRENT" | "SAVED";
+};
 
 export type NavigatorCaptureChoice = Readonly<{
   market: NavigatorMarket;

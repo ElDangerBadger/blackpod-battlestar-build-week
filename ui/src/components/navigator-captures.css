@@ -45,6 +45,10 @@
 .navigator-live-price button[aria-pressed="true"] { background: #604a24; }
 .navigator-live-price button:focus-visible { outline: 2px solid #e2c675; outline-offset: 2px; }
 .navigator-live-price p { margin: 0.3rem 0 0; overflow-wrap: anywhere; }
+.navigator-live-price__summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; }
+.navigator-live-price__summary details[open] { flex-basis: 100%; }
+.navigator-live-price summary { cursor: pointer; }
+.navigator-live-price summary:focus-visible { outline: 2px solid #e2c675; outline-offset: 2px; }
 
 .navigator-capture-controls {
   display: flex;

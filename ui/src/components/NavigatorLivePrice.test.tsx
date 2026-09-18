@@ -3,7 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NavigatorMarket } from "../contracts/cabinContext";
 import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import { NavigatorOceanBoundary } from "./NavigatorOceanBoundary";
-import type { NavigatorOceanViewProps } from "./navigator-ocean/NavigatorOceanView";
+import type { NavigatorOceanSceneProps } from "./navigator-ocean/NavigatorOceanScene";
+import { NavigatorOceanView, type NavigatorOceanViewProps } from "./navigator-ocean/NavigatorOceanView";
+
+const scene = vi.hoisted(() => ({ render: vi.fn<(props: NavigatorOceanSceneProps) => void>() }));
+
+// Exercise the actual boundary, live hook, and presentation controls without a
+// WebGL context. CameraRig's canvas interactions have their own focused tests.
+vi.mock("./navigator-ocean/NavigatorOceanScene", () => ({
+  NavigatorOceanScene: (props: NavigatorOceanSceneProps) => {
+    scene.render(props);
+    return <div data-testid="live-navigator-scene" />;
+  },
+}));
 
 class Stream {
   static instances: Stream[] = [];
@@ -11,8 +23,7 @@ class Stream {
   onerror: (() => void) | null = null;
   close = vi.fn();
   constructor(readonly url: string) { Stream.instances.push(this); }
-  emit(symbol = "AAPL", price = 330.12) {
-    const now = new Date().toISOString();
+  emit(symbol = "AAPL", price = 330.12, now = new Date().toISOString()) {
     this.onmessage?.({ data: JSON.stringify({ schema_version: "navigator.live_price.v1", symbol,
       provider: "alpaca", feed: "iex", status: "LIVE", price, trade_at: now, received_at: now,
       checked_at: now, message: "Read-only market data." }) } as MessageEvent);
@@ -37,7 +48,11 @@ const last = () => Stream.instances.at(-1)!;
 describe("Navigator ephemeral live-price presentation", () => {
   beforeEach(() => {
     Stream.instances = [];
+    scene.render.mockClear();
     vi.stubGlobal("EventSource", Stream);
+    // Keep the independent completed-bar reference pending in trade-stream
+    // tests; its refresh and source-selection behavior have dedicated coverage.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -60,6 +75,8 @@ describe("Navigator ephemeral live-price presentation", () => {
     const panel = screen.getByLabelText("Live Navigator market data");
     expect(within(panel).getByLabelText("Last received live trade")).toHaveTextContent("$330.12");
     expect(panel).toHaveTextContent("IEX: limited-exchange coverage");
+    expect(within(panel).getByRole("status")).toHaveTextContent("Receiving live trades.");
+    expect(panel.querySelector("details")).not.toHaveAttribute("open");
     expect(panel).toHaveTextContent("Trade:");
     expect(panel).toHaveTextContent("captured history and MA remain fixed");
     act(() => last().onerror?.());
@@ -116,5 +133,90 @@ describe("Navigator ephemeral live-price presentation", () => {
     expect(Stream.instances).toHaveLength(3);
     unmount();
     expect(last().close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps real camera, history, and symbol controls usable from initial LIVE through ticks and source toggles", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-18T16:00:10Z"));
+    const withHistory = (symbol: string): NavigatorMarket => {
+      const source = market(symbol);
+      const latest = source.points.at(-1)!;
+      const points = Array.from({ length: 180 }, (_, index) => ({
+        ...latest, t: latest.t - (179 - index) * 86_400,
+      }));
+      return { ...source, points, summary: { ...source.summary, bar_count: points.length } };
+    };
+    const original = withHistory("AAPL");
+    const spy = capture(withHistory("SPY"));
+    const inputs = JSON.stringify([original, spy]);
+    const currentScene = () => scene.render.mock.calls.at(-1)![0];
+    render(<NavigatorOceanBoundary {...liveProps} reducedMotion={false} data={original} variants={[spy]}
+      capabilityProbe={() => true} loadView={async () => ({ default: NavigatorOceanView })} />);
+    await screen.findByTestId("live-navigator-scene");
+
+    expect(screen.getByRole("button", { name: "Live market data" })).toHaveAttribute("aria-pressed", "true");
+    expect(currentScene().zoomT).toBe(0.08);
+    expect(currentScene().livePrice).toBeNull();
+    fireEvent.change(screen.getByRole("slider", { name: "Camera vantage" }), { target: { value: "0.88" } });
+    expect(currentScene().zoomT).toBe(0.88);
+    fireEvent.click(screen.getByRole("button", { name: "Chart view" }));
+    expect(currentScene().zoomT).toBe(1);
+    fireEvent.change(screen.getByRole("slider", { name: "Camera vantage" }), { target: { value: "0.43" } });
+    fireEvent.click(screen.getByRole("button", { name: "1M" }));
+    fireEvent.change(screen.getByRole("slider", { name: "Ship price / MA exaggeration" }), { target: { value: "1.75" } });
+    const historyStart = (screen.getByRole("slider", { name: "History start" }) as HTMLInputElement).value;
+    expect(Number(historyStart)).toBeGreaterThan(0);
+    const expectPresentation = () => {
+      expect(currentScene().zoomT).toBe(0.43);
+      expect(currentScene().oceanExaggeration).toBe(1.75);
+      expect(screen.getByRole("slider", { name: "Camera vantage" })).toHaveValue("0.43");
+      expect(screen.getByRole("button", { name: "1M" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("slider", { name: "History start" })).toHaveValue(historyStart);
+    };
+    const aaplProjection = currentScene().projection;
+    const aaplStream = last();
+    act(() => aaplStream.emit("AAPL", 330.12, "2026-09-18T16:00:01Z"));
+    expect(currentScene().livePrice).toMatchObject({ symbol: "AAPL", price: 330.12, status: "LIVE" });
+    expect(currentScene().projection).toBe(aaplProjection);
+    expectPresentation();
+
+    // Switch symbols before any Captured/Live toggle. A queued callback from the
+    // disposed stream must neither restore its price nor its previous symbol.
+    const delayedAaplMessage = aaplStream.onmessage!;
+    fireEvent.change(screen.getByRole("combobox", { name: "Navigator review symbol" }), { target: { value: "SPY" } });
+    expect(aaplStream.close).toHaveBeenCalledTimes(1);
+    expect(currentScene().data.symbol).toBe("SPY");
+    expect(currentScene().livePrice).toBeNull();
+    expect(last().url).toMatch(/\/SPY$/);
+    expectPresentation();
+    act(() => delayedAaplMessage({ data: JSON.stringify({
+      schema_version: "navigator.live_price.v1", symbol: "AAPL", provider: "alpaca", feed: "iex", status: "LIVE",
+      price: 999, trade_at: "2026-09-18T16:00:02Z", received_at: "2026-09-18T16:00:02Z",
+      checked_at: "2026-09-18T16:00:02Z", message: "Read-only market data.",
+    }) } as MessageEvent));
+    expect(currentScene().data.symbol).toBe("SPY");
+    expect(currentScene().livePrice).toBeNull();
+
+    const spyProjection = currentScene().projection;
+    const spyData = currentScene().data;
+    const spyStream = last();
+    act(() => spyStream.emit("SPY", 660.12, "2026-09-18T16:00:03Z"));
+    expect(currentScene().livePrice).toMatchObject({ symbol: "SPY", price: 660.12, status: "LIVE" });
+    expectPresentation();
+    fireEvent.click(screen.getByRole("button", { name: "Captured reference" }));
+    expect(spyStream.close).toHaveBeenCalledTimes(1);
+    expect(currentScene().livePrice).toBeNull();
+    expectPresentation();
+    fireEvent.click(screen.getByRole("button", { name: "Live market data" }));
+    expect(Stream.instances).toHaveLength(3);
+    expect(last().url).toMatch(/\/SPY$/);
+    expect(currentScene().livePrice).toMatchObject({ symbol: "SPY", price: 660.12, status: "CONNECTING" });
+    expectPresentation();
+    act(() => last().emit("SPY", 660.5, "2026-09-18T16:00:04Z"));
+    expect(currentScene().livePrice).toMatchObject({ symbol: "SPY", price: 660.5, status: "LIVE" });
+    expect(currentScene().data).toBe(spyData);
+    expect(currentScene().projection).toBe(spyProjection);
+    expect(screen.getByRole("combobox", { name: "Navigator review symbol" })).toHaveValue("SPY");
+    expectPresentation();
+    expect(JSON.stringify([original, spy])).toBe(inputs);
   });
 });

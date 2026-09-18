@@ -31,6 +31,8 @@ import {
 import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import { parseNavigatorCatalog } from "./validateNavigatorCatalog";
 import { parseNavigatorFleetCatalog } from "./validateNavigatorFleetCatalog";
+import type { OracleMarketBrief } from "../contracts/oracleMarketBrief";
+import { validateOracleMarketBrief } from "./validateOracleMarketBrief";
 
 /** Known evidence used by the five focused books. Paths are never guessed. */
 export const MISSION_EVIDENCE_NAMES = [
@@ -92,6 +94,7 @@ export interface MissionBundle {
   navigatorMarket: NavigatorMarket | null;
   navigatorVariants?: readonly NavigatorMarketVariant[];
   navigatorFleetVariants?: readonly NavigatorMarketVariant[];
+  oracleMarketBrief?: OracleMarketBrief | null;
   portfolio: PortfolioSnapshotV1 | null;
 }
 
@@ -253,6 +256,43 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   const source = new Uint8Array(bytes);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", source.buffer);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The optional model report has its own small bound, independent of market history. */
+async function fetchBriefJson(fetchImpl: typeof fetch, url: string): Promise<LoadedJson> {
+  const response = await fetchImpl(url, { cache: "no-store", redirect: "error", headers: { Accept: "application/json" } });
+  const declared = response.headers.get("content-length");
+  if (!response.ok || !response.body || (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > 256 * 1024))) {
+    await response.body?.cancel().catch(() => {});
+    throw new PresentationContractError("Oracle market brief could not be read within its size bound");
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = []; let size = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      size += result.value.byteLength;
+      if (size > 256 * 1024) throw new PresentationContractError("Oracle market brief exceeds its size bound");
+      chunks.push(result.value);
+    }
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  const bytes = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try { return { bytes, document: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) }; }
+  catch { throw new PresentationContractError("Oracle market brief is not valid UTF-8 JSON"); }
+}
+
+function briefPointer(document: unknown, pointer: string): unknown {
+  if (!pointer.startsWith("/") || /~(?![01])/.test(pointer)) throw new PresentationContractError("Invalid Oracle brief citation");
+  let value: unknown = document;
+  for (const part of pointer.slice(1).split("/")) {
+    const key = part.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (Array.isArray(value) && /^(0|[1-9][0-9]*)$/.test(key)) value = value[Number(key)];
+    else if (value && typeof value === "object" && Object.hasOwn(value, key)) value = (value as Record<string, unknown>)[key];
+    else throw new PresentationContractError("Oracle brief citation is not in supplied evidence");
+  }
+  return value;
 }
 
 async function verifyReference(loaded: LoadedJson, reference: ArtifactReference, label: string): Promise<void> {
@@ -525,6 +565,39 @@ export async function loadMissionBundle(
     }, options.signal));
   }
 
+  let oracleMarketBrief: OracleMarketBrief | null = null;
+  const expectedBrief = isLive && "oracle_market_brief" in manifest ? manifest.oracle_market_brief : undefined;
+  if (expectedBrief) {
+    const loadedBrief = await fetchBriefJson(fetchImpl, missionRelativeUrl(normalizedBase, expectedBrief.path));
+    await verifyReference(loadedBrief, expectedBrief, "Oracle market brief");
+    const brief = validateOracleMarketBrief(loadedBrief.document);
+    const correlation = brief.evidence;
+    if (correlation.mission_id !== summary.mission_id || correlation.request_id !== summary.request_id
+      || correlation.symbol !== summary.symbol || correlation.run_mode !== summary.run_mode
+      || brief.generated_at !== expectedBrief.observed_at || snapshot.stages.oracle.status !== "SUCCEEDED") {
+      throw new PresentationContractError("Oracle market brief conflicts with its mission or publication");
+    }
+    for (const [name, reference] of Object.entries(correlation.source_artifacts)) {
+      const recorded = evidence.get(name as MissionEvidenceName);
+      const indexed = artifactIndex.get(name);
+      if (recorded?.status !== "LOADED" || !recorded.document || !indexed
+        || (["name", "path", "sha256", "producer", "byte_size", "schema_version", "observed_at"] as const)
+          .some((key) => indexed[key] !== reference[key])) {
+        throw new PresentationContractError("Oracle market brief source differs from verified mission evidence");
+      }
+    }
+    for (const fact of correlation.facts) {
+      const actual = briefPointer(evidence.get(fact.source_artifact as MissionEvidenceName)?.document, fact.json_pointer);
+      if (JSON.stringify(actual) !== JSON.stringify(fact.value)) {
+        throw new PresentationContractError("Oracle market brief fact differs from verified source value");
+      }
+    }
+    if (correlation.as_of !== evidence.get("oracle_measurements")?.document?.as_of) {
+      throw new PresentationContractError("Oracle market brief snapshot time conflicts with source evidence");
+    }
+    oracleMarketBrief = brief;
+  }
+
   return {
     baseUrl: normalizedBase,
     summary,
@@ -536,6 +609,7 @@ export async function loadMissionBundle(
     ...supplements,
     navigatorVariants,
     navigatorFleetVariants,
+    oracleMarketBrief,
   };
 }
 

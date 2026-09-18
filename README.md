@@ -41,6 +41,10 @@ No `BATTLESTAR_PATH` or ModelDock service is needed to display an existing
 mission. Battlestar remains the canonical owner of its domain logic and
 Navigator renderer. Neither sibling repository is modified by the reader.
 
+When separately authorized, narrative producers call **ModelDock**, not a
+specific model. ModelDock owns model selection; `MODELDOCK_MODEL` is ignored
+for new LIVE calls. Returned model identity is recorded provenance only.
+
 ## What “live” means here
 
 The Cabin checks the explicitly selected mission every five seconds and
@@ -115,6 +119,9 @@ testing; they do not govern live-product acceptance. Browser setup and checks:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Captain's Cabin presentation and verification](docs/CAPTAINS_CABIN.md)
 - [Navigator V3 source mapping and update checks](docs/NAVIGATOR_V3_INTEGRATION.md)
+- [Sentry Research: frozen 20/60 comparison and closeout evidence](docs/SENTRY_RESEARCH_CABIN.md)
+- [Sentry scan results: isolated failures and recorded snapshot review](docs/SENTRY_SCAN_CABIN.md)
+- [Supplemental Oracle market brief: source-linked ModelDock commentary](docs/ORACLE_MARKET_BRIEF.md)
 - [Change history](docs/BUILD_WEEK_CHANGELOG.md)
 
 Historical material is retained, not the current startup path:

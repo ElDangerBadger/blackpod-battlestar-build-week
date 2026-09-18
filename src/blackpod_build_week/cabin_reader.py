@@ -63,6 +63,13 @@ from .navigator_live import (
     encode_event, unavailable_event,
 )
 from .sentry_reader import SentryReader
+from .sentry_research_reader import SentryResearchReader
+from .sentry_scan_reader import SentryScanReader
+from .navigator_reference_reader import NavigatorReferenceReader
+from .oracle_brief_reader import (
+    BRIEF_PATH, BRIEF_SCHEMA, MAX_BRIEF_BYTES, SOURCE_NAMES as BRIEF_SOURCE_NAMES,
+    validate_brief_presentation,
+)
 
 
 FEED_SCHEMA_VERSION = "blackpod.cabin_feed.v1"
@@ -332,6 +339,22 @@ class Publication:
     files: Mapping[str, bytes]
 
 
+def _capture_oracle_brief(loaded: LoadedMission, files: dict[str, bytes]) -> None:
+    root = loaded.paths.mission_root
+    if not _safe_path(root, BRIEF_PATH).exists():
+        return
+    if loaded.snapshot.stages["oracle"].status.value != "SUCCEEDED":
+        raise CabinReaderError("Oracle brief requires completed canonical Oracle evidence")
+    payload = _capture_file(root, BRIEF_PATH, files, max_bytes=MAX_BRIEF_BYTES)
+    references = {item.name: item for item in loaded.snapshot.artifacts if item.name in BRIEF_SOURCE_NAMES}
+    if set(references) != BRIEF_SOURCE_NAMES:
+        raise CabinReaderError("Oracle brief requires all canonical source artifacts")
+    documents = {name: parse_strict_json_object_bytes(files[reference.path]) for name, reference in references.items()}
+    validate_brief_presentation(parse_strict_json_object_bytes(payload),
+        mission_id=loaded.request.mission_id, request_id=loaded.request.request_id,
+        symbol=loaded.request.symbol, references=references, documents=documents)
+
+
 def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publication:
     """Capture and recheck one canonical revision; no partial publication escapes."""
 
@@ -355,6 +378,7 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
     _capture_context(loaded, files)
     _capture_catalog(loaded, files)
     _capture_fleet_catalog(loaded, files)
+    _capture_oracle_brief(loaded, files)
     if sum(map(len, files.values())) > MAX_PUBLICATION_BYTES:
         raise CabinReaderError("source exceeds the publication memory limit")
     projection = project_mission_presentation(loaded, files)
@@ -371,6 +395,8 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
         raise CabinReaderError("Navigator catalog appeared during capture")
     if (NAVIGATOR_FLEET_CATALOG_PATH in files) != _safe_path(root, NAVIGATOR_FLEET_CATALOG_PATH).exists():
         raise CabinReaderError("Navigator fleet catalog appeared during capture")
+    if (BRIEF_PATH in files) != _safe_path(root, BRIEF_PATH).exists():
+        raise CabinReaderError("Oracle brief appeared during capture")
     files.update(projection.files)
     snapshot = loaded.snapshot
     call = snapshot.stages["oracle"].modeldock_calls[-1] if snapshot.stages["oracle"].modeldock_calls else None
@@ -415,6 +441,12 @@ def capture_publication(store: ReadOnlyMissionStore, mission_id: str) -> Publica
         manifest["navigator_fleet_catalog"] = _reference(
             NAVIGATOR_FLEET_CATALOG_PATH, "navigator_fleet_catalog", NAVIGATOR_FLEET_CATALOG_SCHEMA,
             fleet_catalog.captured_at, files[NAVIGATOR_FLEET_CATALOG_PATH],
+        )
+    if BRIEF_PATH in files:
+        brief = parse_strict_json_object_bytes(files[BRIEF_PATH])
+        manifest["oracle_market_brief"] = _reference(
+            BRIEF_PATH, "oracle_market_brief", BRIEF_SCHEMA,
+            brief["generated_at"], files[BRIEF_PATH],
         )
     manifest_bytes = canonical_json_bytes(manifest)
     files[MANIFEST_PATH] = manifest_bytes
@@ -496,11 +528,17 @@ class CabinHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, reader: CabinReader, ui_root: Path, port: int = 5174, *, navigator_live_url: str | None = None,
-                 sentry_reader: SentryReader | None = None):
+                 sentry_reader: SentryReader | None = None,
+                 sentry_research_reader: SentryResearchReader | None = None,
+                 sentry_scan_reader: SentryScanReader | None = None,
+                 navigator_reference_root: Path | None = None):
         self.reader = reader
         self.sentry_reader = sentry_reader if sentry_reader is not None else SentryReader()
+        self.sentry_research_reader = sentry_research_reader if sentry_research_reader is not None else SentryResearchReader()
+        self.sentry_scan_reader = sentry_scan_reader if sentry_scan_reader is not None else SentryScanReader()
         self.ui_root = Path(ui_root)
         self.navigator_live = NavigatorLiveBridge(navigator_live_url) if navigator_live_url else None
+        self.navigator_reference = NavigatorReferenceReader(navigator_reference_root)
         self.live_slots = threading.BoundedSemaphore(8)
         super().__init__(("127.0.0.1", port), CabinRequestHandler)
 
@@ -611,7 +649,20 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
             if relative == "live/sentry/current.json":
                 self._send(200, canonical_json_bytes(self.server.sentry_reader.current()), "application/json")
                 return
+            if relative == "live/sentry/research.json":
+                self._send(200, canonical_json_bytes(self.server.sentry_research_reader.current()), "application/json")
+                return
+            if relative == "live/sentry/scan.json":
+                self._send(200, canonical_json_bytes(self.server.sentry_scan_reader.current()), "application/json")
+                return
             parts = PurePosixPath(relative).parts
+            if len(parts) == 7 and parts[:3] == ("live", "navigator", "reference") and _PUBLICATION_ID.fullmatch(parts[3]):
+                if not self.server.reader.permits_live_symbol(parts[3], parts[4]) or not re.fullmatch(r"20|50|100|200|250", parts[6]):
+                    self._error(404)
+                    return
+                result = self.server.navigator_reference.current(parts[4], parts[5], int(parts[6]))
+                self._send(200, canonical_json_bytes(result), "application/json")
+                return
             if len(parts) == 5 and parts[:3] == ("live", "navigator", "price") and _PUBLICATION_ID.fullmatch(parts[3]):
                 self._live_price(parts[3], parts[4])
                 return
@@ -652,21 +703,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--ui-root", type=Path, default=Path("ui/dist"))
     parser.add_argument("--port", type=int, default=5174)
     parser.add_argument("--navigator-live-url", help="Optional canonical Navigator loopback origin; enables only supplemental price reads.")
+    parser.add_argument("--navigator-reference-root", type=Path, help="Canonical versioned market-reference root; reads only, never refreshes providers.")
     parser.add_argument("--sentry-archive", type=Path, help="Explicit read-only canonical Sentry JSONL archive; no discovery or scans.")
     parser.add_argument("--sentry-source-kind", choices=("research", "recorded"))
     parser.add_argument("--sentry-source-label", help="Short visible provenance label; not a local path.")
     parser.add_argument("--sentry-canonical-root", type=Path, help="Explicit Battlestar checkout supplying the pure Sentry snapshot contract.")
+    parser.add_argument("--sentry-research-root", type=Path, help="Optional explicit frozen Calibration V2 research directory; no scans or discovery.")
+    parser.add_argument("--sentry-research-closeout-root", type=Path, help="Matching explicit Calibration V2 closeout directory; recorded state only.")
+    parser.add_argument("--sentry-scan-archive", type=Path, help="Optional explicit canonical offline scan JSON receipt; reads only, never starts a scan.")
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65535:
         parser.error("port must be between 1 and 65535")
     try:
         sentry_reader = SentryReader(arguments.sentry_archive, arguments.sentry_source_kind,
                                      arguments.sentry_source_label, arguments.sentry_canonical_root)
+        sentry_research_reader = SentryResearchReader(arguments.sentry_research_root, arguments.sentry_research_closeout_root)
+        sentry_scan_reader = SentryScanReader(arguments.sentry_scan_archive)
     except ValueError as exc:
         parser.error(str(exc))
     try:
         server = CabinHTTPServer(CabinReader(arguments.artifacts_root, arguments.mission_id), arguments.ui_root, arguments.port,
-                                 navigator_live_url=arguments.navigator_live_url, sentry_reader=sentry_reader)
+                                 navigator_live_url=arguments.navigator_live_url, sentry_reader=sentry_reader,
+                                 sentry_research_reader=sentry_research_reader, sentry_scan_reader=sentry_scan_reader,
+                                 navigator_reference_root=arguments.navigator_reference_root)
     except ValueError:
         parser.error("Navigator live URL must be an explicit loopback HTTP origin and port")
     print(f"Read-only Captain's Cabin: http://127.0.0.1:{server.server_port}/", flush=True)

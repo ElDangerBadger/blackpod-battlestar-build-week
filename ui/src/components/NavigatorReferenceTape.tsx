@@ -8,6 +8,10 @@ import {
 import { isMissionRelativePath } from "../data/validate";
 import type { MissionViewModel } from "../data/viewModel";
 import { NavigatorMarketProvenance } from "./NavigatorMarketProvenance";
+import { NavigatorCurrentReference } from "./NavigatorCurrentReference";
+import { useNavigatorReference } from "../data/useNavigatorReference";
+import { navigatorPublicationId } from "../data/liveNavigatorPrice";
+import type { NavigatorReferenceMode } from "../contracts/navigatorReference";
 
 function price(value: number | null, currency: string): string {
   if (value === null) return "Not supplied";
@@ -37,9 +41,10 @@ function captureReference(capture: NavigatorCaptureChoice, originalSymbol: strin
   return single || fleet ? reference : null;
 }
 
-export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator }: {
+export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator, presentationMode }: {
   mission: MissionViewModel;
   initialSymbol?: string | null;
+  presentationMode?: "LIVE" | "DEMO";
   onOpenNavigator: (symbol: string, selection: NavigatorCaptureSelection) => void;
 }) {
   const original = mission.market.navigatorMarket;
@@ -48,9 +53,20 @@ export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator
   const symbols = [...new Set([...(original ? [original.symbol] : []), ...fleet.rows.map((row) => row.symbol), ...captures.map((capture) => capture.market.symbol)])];
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(() => initialSymbol ?? original?.symbol ?? symbols[0] ?? null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [referenceMode, setReferenceMode] = useState<NavigatorReferenceMode>("CURRENT");
   const choices = captures.filter((capture) => capture.market.symbol === selectedSymbol);
   const exact = selectedKey ? choices.find((capture) => navigatorCaptureKey(capture.market) === selectedKey) : undefined;
-  const capture = exact ?? (selectedSymbol ? chooseNavigatorCapture(captures, selectedSymbol, original ?? undefined) : undefined);
+  const savedCapture = exact ?? (selectedSymbol ? chooseNavigatorCapture(captures, selectedSymbol, original ?? undefined) : undefined);
+  const publicationId = navigatorPublicationId(mission.baseUrl);
+  const referenceEnabled = presentationMode === "LIVE" && mission.status.runMode === "LIVE" && Boolean(publicationId);
+  const currentReference = useNavigatorReference({ publicationId, selection: savedCapture?.market ?? null,
+    enabled: referenceEnabled && referenceMode === "CURRENT" });
+  const currentSnapshot = referenceEnabled && referenceMode === "CURRENT" ? currentReference.snapshot : null;
+  const capture: NavigatorCaptureChoice | undefined = currentSnapshot ? {
+    market: currentSnapshot.market, capturedAt: currentSnapshot.captured_at,
+    sourceIdentity: `current reference · ${currentReference.status} · ${currentSnapshot.snapshot_id}`,
+    reference: null, navigatorGitRevision: null, original: false,
+  } : savedCapture;
   const market = capture?.market;
   const row = fleet.rows.find((item) => item.symbol === selectedSymbol);
   const latest = market?.points.at(-1);
@@ -62,6 +78,7 @@ export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator
   const numeric = (value: number | null) => value === null ? "Not recorded" : value.toLocaleString("en-US", { maximumFractionDigits: 4 });
 
   return <div className="navigator-reference-tape">
+    {referenceEnabled ? <NavigatorCurrentReference state={currentReference} mode={referenceMode} onModeChange={setReferenceMode} /> : null}
     {symbols.length || selectedSymbol ? <section className="reference-tape-selection" aria-label="Reference tape selection">
       <label>Review symbol
         <select aria-label="Reference tape symbol" value={selectedSymbol ?? ""} onChange={(event) => {
@@ -93,7 +110,7 @@ export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator
           </select>
         </label>
       </> : null}
-      {original ? <button type="button" disabled={capture?.original === true} onClick={() => { setSelectedSymbol(original.symbol); setSelectedKey(null); }}>Original mission reference</button> : null}
+      {original ? <button type="button" disabled={capture?.original === true && (!referenceEnabled || referenceMode === "SAVED")} onClick={() => { setSelectedSymbol(original.symbol); setSelectedKey(null); setReferenceMode("SAVED"); }}>Original mission reference</button> : null}
       <p role="status">
         {selectedKey && !exact ? "The selected capture is no longer available. " : ""}
         {market && capture ? `${market.symbol} · ${market.timeframe} · MA${market.ma_period} · captured ${time(capture.capturedAt)} · not streaming`
@@ -101,8 +118,8 @@ export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator
       </p>
     </section> : null}
     <p className="notice-lede">{market ? `${market.symbol} · ${market.name}` : selectedSymbol ? `${selectedSymbol} · recorded item details` : "No captured market reference is attached to this mission."}</p>
-    {market ? <p>{capture?.original ? "This is the mission's original captured price reference" : "This is the selected symbol's captured Navigator price reference"}—not a streaming quote, a holding, or a trade instruction. Selection changes this expanded detail view only; the mission record and original Cabin overview stay unchanged.</p> : <p>{selectedSymbol ? `No captured Navigator price or moving average is available for ${selectedSymbol}.` : "The mission record can still be read, but no price or moving average has been supplied for this tape."} No replacement values were created.</p>}
-    {market && hasNavigatorCapture(mission, market.symbol) ? <button type="button" onClick={() => onOpenNavigator(market.symbol, { symbol: market.symbol, timeframe: market.timeframe, ma_period: market.ma_period })}>Open full Navigator</button> : null}
+    {market ? <p>{currentSnapshot ? "This is the selected current completed-bar reference" : capture?.original ? "This is the mission's original captured price reference" : "This is the selected symbol's captured Navigator price reference"}—not a streaming quote, a holding, or a trade instruction. Selection changes this expanded detail view only; recorded mission results stay unchanged.</p> : <p>{selectedSymbol ? `No captured Navigator price or moving average is available for ${selectedSymbol}.` : "The mission record can still be read, but no price or moving average has been supplied for this tape."} No replacement values were created.</p>}
+    {market && hasNavigatorCapture(mission, market.symbol) ? <button type="button" onClick={() => onOpenNavigator(market.symbol, { symbol: market.symbol, timeframe: market.timeframe, ma_period: market.ma_period, ...(referenceEnabled ? { referenceMode } : {}) })}>Open full Navigator</button> : null}
     {market && !hasNavigatorCapture(mission, market.symbol) ? <p>The selected capture can be read here. Full Navigator is unavailable while the mission's base chart capture is missing.</p> : null}
     {market && capture ? <>
     <section aria-label="Price snapshot">
@@ -128,7 +145,7 @@ export function NavigatorReferenceTape({ mission, initialSymbol, onOpenNavigator
         <div><dt>History begins</dt><dd>{time(market.points[0]?.t ?? null)}</dd></div>
         <div><dt>Supplied observations</dt><dd>{market.points.length}</dd></div>
       </dl>
-      <p>A bar's timestamp identifies its interval. Capture time says when the response was saved. Opening this module does not refresh either timestamp.</p>
+      <p>A bar's timestamp identifies its interval. Capture time says when the response was saved. {currentSnapshot ? "Current-reference checks can replace this supplemental snapshot; they do not change the mission capture." : "Opening this module does not refresh either timestamp of the saved mission capture."}</p>
     </section>
     <section aria-label="Market reference limits">
       <h3>How to use this reference</h3>

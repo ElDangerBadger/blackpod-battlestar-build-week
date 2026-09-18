@@ -17,6 +17,8 @@ import { parsePresentationManifest } from "./validate";
 import { createMissionViewModel } from "./viewModel";
 import type { NavigatorMarket } from "../contracts/cabinContext";
 import type { NavigatorCatalogV1 } from "../contracts/navigatorCatalog";
+import { createOracleMarketBriefFixture, oracleMarketBriefSourceDocuments } from "../test/oracleMarketBriefFixture";
+import type { OracleMarketBrief } from "../contracts/oracleMarketBrief";
 
 const WHEN = "2026-09-15T19:00:00Z";
 
@@ -121,6 +123,94 @@ async function publication(
   });
   return { bundle, files, feed, fetchImpl: fetchImpl as typeof fetch & typeof fetchImpl };
 }
+
+async function briefPublication(change: (brief: OracleMarketBrief) => void = () => {}) {
+  const brief = createOracleMarketBriefFixture();
+  const documents = oracleMarketBriefSourceDocuments(brief);
+  documents.oracle_measurements.as_of = brief.evidence.as_of;
+  const sourceFiles = new Map<string, string>();
+  for (const [name, reference] of Object.entries(brief.evidence.source_artifacts)) {
+    const bytes = JSON.stringify(documents[name]);
+    reference.sha256 = await digest(bytes);
+    reference.byte_size = new TextEncoder().encode(bytes).byteLength;
+    sourceFiles.set(reference.path, bytes);
+  }
+  const result = await publication((bundle) => {
+    brief.evidence.mission_id = bundle.summary.mission_id;
+    brief.evidence.request_id = bundle.summary.request_id;
+    bundle.snapshot.artifacts.push(...structuredClone(Object.values(brief.evidence.source_artifacts)));
+  });
+  change(brief);
+  const bytes = JSON.stringify(brief);
+  result.bundle.manifest.oracle_market_brief = {
+    ...artifact("oracle_market_brief", "presentation/oracle_market_brief.json", brief.schema_version),
+    sha256: await digest(bytes), byte_size: new TextEncoder().encode(bytes).byteLength, observed_at: brief.generated_at,
+  };
+  for (const [path, source] of sourceFiles) result.files.set(path, source);
+  result.files.set("presentation/oracle_market_brief.json", bytes);
+  const manifestBytes = JSON.stringify(result.bundle.manifest);
+  result.files.set("presentation/manifest.json", manifestBytes);
+  result.feed.publication_id = await digest(manifestBytes);
+  result.feed.base_url = `revisions/${result.feed.publication_id}/`;
+  return { ...result, brief };
+}
+
+describe("optional source-bound Oracle market brief", () => {
+  it("loads verified commentary without changing old stage narrative identity", async () => {
+    const fixture = await briefPublication();
+    const bundle = await loadLiveMissionBundle(fixture.feed, { fetchImpl: fixture.fetchImpl });
+    expect(bundle.oracleMarketBrief).toEqual(fixture.brief);
+    expect(createMissionViewModel(bundle).oracleMarketBrief).toEqual(fixture.brief);
+    expect(bundle.summary.modeldock.status).toBe("NOT_RECORDED");
+    expect(fixture.fetchImpl.mock.calls.every(([url]) => String(url).startsWith("/live/revisions/"))).toBe(true);
+  });
+
+  it("does not discover or request a brief on historical missions without one", async () => {
+    const fixture = await publication();
+    const bundle = await loadLiveMissionBundle(fixture.feed, { fetchImpl: fixture.fetchImpl });
+    expect(bundle.oracleMarketBrief).toBeNull();
+    expect(fixture.fetchImpl.mock.calls.some(([url]) => String(url).includes("oracle_market_brief"))).toBe(false);
+  });
+
+  it.each([
+    ["different mission", (b: OracleMarketBrief) => { b.evidence.mission_id = "different-mission"; }],
+    ["different source", (b: OracleMarketBrief) => { b.evidence.source_artifacts.oracle_measurements.sha256 = "f".repeat(64); }],
+    ["changed value", (b: OracleMarketBrief) => { b.evidence.facts[0].value = .99; }],
+    ["changed type", (b: OracleMarketBrief) => { b.evidence.facts[0].value = ".25"; }],
+    ["missing pointer", (b: OracleMarketBrief) => { b.evidence.facts[0].json_pointer = "/missing"; }],
+    ["different snapshot time", (b: OracleMarketBrief) => { b.evidence.as_of = "2026-09-14T22:00:00Z"; }],
+  ])("rejects %s despite valid outer transport hash", async (_name, change) => {
+    const fixture = await briefPublication(change);
+    await expect(loadLiveMissionBundle(fixture.feed, { fetchImpl: fixture.fetchImpl })).rejects.toThrow(/Oracle market brief|Oracle brief/);
+  });
+
+  it("rejects tampered brief bytes and does not fall back to invented prose", async () => {
+    const fixture = await briefPublication();
+    fixture.files.set("presentation/oracle_market_brief.json", "{}");
+    await expect(loadLiveMissionBundle(fixture.feed, { fetchImpl: fixture.fetchImpl })).rejects.toThrow(/byte size|SHA-256/);
+  });
+
+  it("rejects unavailable cited evidence even in non-strict evidence mode", async () => {
+    const fixture = await briefPublication();
+    fixture.files.delete(fixture.brief.evidence.source_artifacts.oracle_measurements.path);
+    await expect(loadMissionBundle(`/live/${fixture.feed.base_url}`, {
+      fetchImpl: fixture.fetchImpl, manifestKind: "live", expectedManifestSha256: fixture.feed.publication_id,
+      strictEvidence: false,
+    })).rejects.toThrow(/source differs/);
+  });
+
+  it("rejects oversized streamed brief bytes", async () => {
+    const fixture = await briefPublication();
+    fixture.files.set("presentation/oracle_market_brief.json", " ".repeat(256 * 1024 + 1));
+    await expect(loadLiveMissionBundle(fixture.feed, { fetchImpl: fixture.fetchImpl })).rejects.toThrow(/size bound/);
+  });
+
+  it.each(["../escape.json", "presentation/not-the-brief.json", "https://example.invalid/brief.json"])("rejects unapproved brief path %s", async (path) => {
+    const fixture = await briefPublication();
+    fixture.bundle.manifest.oracle_market_brief!.path = path;
+    expect(() => parsePresentationManifest(fixture.bundle.manifest)).toThrow();
+  });
+});
 
 async function catalogPublication(
   changeCatalog: (catalog: NavigatorCatalogV1) => void = () => {},

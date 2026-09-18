@@ -1,5 +1,10 @@
 # Microcap Sentry observation ledger
 
+The Sentry dialog also contains a separate [Sentry Research tab](SENTRY_RESEARCH_CABIN.md)
+for the frozen generalized Calibration V2 findings. This page describes the
+unchanged Microcap tab. Genuine historical calibration evidence is **not** the
+synthetic `research` source kind used by the legacy Microcap archive.
+
 The real-universe classifier fix, recovery, and final canonical publication are
 complete: 5,136 usable histories, 23 explicit provider gaps, zero pending, and
 100 selected symbols in the validated September 16 package. Missing cap/float

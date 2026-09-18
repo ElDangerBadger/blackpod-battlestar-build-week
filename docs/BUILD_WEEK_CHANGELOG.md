@@ -6,6 +6,67 @@ remains unchanged; the September 16 Navigator registry and market-data exception
 below, along with the narrowly authorized Sentry classifier correction.
 The [product specification](PRODUCT_SPEC.md) now governs scope.
 
+## 2026-09-18 — Current Navigator reference checkpoint
+
+- Battlestar supplies immutable completed-bar references with matching canonical
+  moving averages, provenance, calendar checks, and explicit expiry. The Cabin
+  consumes verified local snapshots; original mission evidence stays unchanged.
+- Current/saved reference selection is separate from the Alpaca trade overlay.
+  The desk, expandable Tape, and ship view share the current-reference path;
+  unavailable updates remain explicit. Detailed provenance is expandable.
+- Reviewed the existing local camera-input correction and updated only its
+  destination hash/adaptation note; canonical renderer revision and source hash
+  remain pinned. Burst wheel events now accumulate before React commits.
+- Runtime histories, receipts, and compiled assets remain local/ignored. See
+  [current-reference operation](NAVIGATOR_CURRENT_REFERENCE.md).
+
+## 2026-09-18 — Supplemental Oracle Market Brief
+
+- Corrected LIVE routing ownership across the shared client, preflight, and
+  both Oracle producers: only ModelDock chooses the model. Requests omit
+  `model`, do not query its registry, and ignore old environment pins. Response
+  identity is recorded provenance, not a client-side model selection gate.
+  Frozen replay requests remain historical evidence. No additional inference
+  was run for this correction; the original failed attempt remains preserved.
+
+- Added an explicit one-shot producer consuming Battlestar's canonical evidence,
+  prompt, and validation contract through the existing local ModelDock client.
+- The Oracle narrative page can show an optional saved six-section market brief,
+  source-linked facts, separate market/model timestamps, and full provenance.
+- Old native prose and fact-selection contracts remain unchanged. No market
+  fetches, Council/Governor runs, Sentry integration, or execution changes.
+- See [operation and interpretation limits](ORACLE_MARKET_BRIEF.md).
+
+## 2026-09-18 — Failure-isolated research scan results
+
+- Battlestar adds an offline captured-snapshot scan orchestrator that reuses
+  existing measurements, frozen references, assessments, and bounded ranking.
+  Known per-symbol input failures become exclusion receipts; shared reference
+  corruption and unexpected scientific errors remain fatal. No rank padding.
+- Build Week adds an independent, explicitly configured Scan results tab and
+  bounded read-only endpoint. It displays supplied 20/60 selections, input
+  failures, ranking exclusions, unused slots, and provenance without scoring.
+- This is not a provider-refresh service or a repaired V2 prospective study.
+  Frozen study results, Microcap behavior, research statuses, downstream
+  boundaries, and execution authority are unchanged.
+- See [configuration, verification, and limitations](SENTRY_SCAN_CABIN.md).
+
+## 2026-09-17 — Frozen Sentry Research view in the Cabin
+
+- Added a separate Sentry Research tab alongside the unchanged Microcap ledger.
+  It shows Battlestar's accepted Calibration V2 development comparison, both
+  20/60-session perspectives, supplied historical contributor counts, fixed
+  cohort, and recorded prospective closeout. It does not select a winner.
+- The optional reader checks four bounded, hash-pinned checkpoint files and
+  returns a small presentation projection. Large study arrays and generated
+  artifacts remain local/ignored; no study, provider, or collector is run.
+- Source time and reader-check time remain distinct. The failed full-cohort
+  warmup, 23/1/32 symbol outcomes, zero of 60 prospective sessions, and
+  unresolved calendar evidence remain explicit archived findings.
+- General equity and ETF remain `RESEARCH_ONLY`. No canonical code, calibration
+  criteria, downstream integration, fleet contents, or execution authority
+  changed. See [configuration and interpretation](SENTRY_RESEARCH_CABIN.md).
+
 ## 2026-09-17 — Sentry history recovery and universe publication completed
 
 - Finished the saved September 16 request at the existing two-second pace:

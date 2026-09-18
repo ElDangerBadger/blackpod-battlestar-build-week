@@ -16,6 +16,9 @@ import type { NavigatorMarketVariant } from "../contracts/navigatorCatalog";
 import type { NavigatorCaptureSelection } from "../data/navigatorSelection";
 import { useLiveNavigatorPrice } from "../data/useLiveNavigatorPrice";
 import { liveNavigatorPriceUrl } from "../data/liveNavigatorPrice";
+import { useNavigatorReference } from "../data/useNavigatorReference";
+import { NavigatorCurrentReference } from "./NavigatorCurrentReference";
+import type { NavigatorReferenceMode } from "../contracts/navigatorReference";
 import "./navigator-captures.css";
 
 type OceanModule = { default: ComponentType<NavigatorOceanViewProps> };
@@ -94,6 +97,7 @@ export function NavigatorOceanBoundary({
   const [runtimeUnavailable, setRuntimeUnavailable] = useState(false);
   const [priceMode, setPriceMode] = useState<"LIVE" | "CAPTURED">("LIVE");
   const [paused, setPaused] = useState(false);
+  const [referenceMode, setReferenceMode] = useState<NavigatorReferenceMode>(() => initialCapture?.referenceMode ?? "CURRENT");
   const key = (market: NavigatorOceanViewProps["data"]) => `${market.symbol}:${market.timeframe}:${market.ma_period}`;
   const [selectedKey, setSelectedKey] = useState<string | null>(() => {
     if (initialCapture) {
@@ -109,7 +113,11 @@ export function NavigatorOceanBoundary({
   });
   const variant = variants.find((item) => key(item.market) === selectedKey);
   const capturedProps = variant ? { ...props, data: variant.market, capturedAt: variant.capturedAt } : props;
-  const selectedData = capturedProps.data;
+  const referenceEnabled = props.presentationMode === "LIVE" && props.runMode === "LIVE" && Boolean(livePublicationId);
+  const currentReference = useNavigatorReference({ publicationId: livePublicationId,
+    selection: capturedProps.data, enabled: referenceEnabled && referenceMode === "CURRENT" });
+  const currentSnapshot = referenceEnabled && referenceMode === "CURRENT" ? currentReference.snapshot : null;
+  const selectedData = currentSnapshot?.market ?? capturedProps.data;
   const liveAvailable = props.presentationMode === "LIVE" && props.runMode === "LIVE"
     && liveNavigatorPriceUrl(livePublicationId, selectedData.symbol) !== null;
   const live = useLiveNavigatorPrice({ publicationId: livePublicationId, symbol: selectedData.symbol,
@@ -117,7 +125,8 @@ export function NavigatorOceanBoundary({
   const livePrice = liveAvailable && priceMode === "LIVE" && live.quote?.price !== null && live.quote?.trade_at
     ? { symbol: selectedData.symbol, price: live.quote.price, tradeAt: live.quote.trade_at, feed: live.quote.feed,
       status: paused || live.status === "PAUSED" ? "UNAVAILABLE" as const : live.status } : undefined;
-  const selectedProps: NavigatorOceanViewProps = { ...capturedProps, livePrice };
+  const selectedProps: NavigatorOceanViewProps = { ...capturedProps, data: selectedData,
+    capturedAt: currentSnapshot?.captured_at ?? capturedProps.capturedAt, livePrice };
   const allChoices = [props.data, ...variants.map((item) => item.market)];
   const choices = allChoices.filter((item) => item.symbol === selectedData.symbol);
   const symbols = [...new Set([props.data.symbol, ...fleetSymbols, ...allChoices.map((item) => item.symbol)])];
@@ -138,10 +147,19 @@ export function NavigatorOceanBoundary({
     </OceanErrorBoundary>
   );
 
-  if (!variants.length && !fleetSymbols.length && selectedKey === null && !liveAvailable) return content;
+  if (!variants.length && !fleetSymbols.length && selectedKey === null && !liveAvailable && !referenceEnabled) return content;
+
+  const liveSummary = priceMode === "CAPTURED" ? "Reference only; live subscription stopped."
+    : paused || live.status === "PAUSED" ? "Paused; retained trade is not current."
+    : live.status === "LIVE" ? "Receiving live trades."
+    : live.status === "STALE" ? "Retained trade is not current."
+    : live.status === "UNAVAILABLE" ? "Feed unavailable; retained trade is not current."
+    : live.status === "WAITING" ? "Waiting for a recent trade; retained trade is not current."
+    : "Connecting; retained trade is not current.";
 
   return (
-    <div className={`navigator-capture-view${liveAvailable ? " navigator-capture-view--with-live" : ""}`}>
+    <div className={`navigator-capture-view${liveAvailable ? " navigator-capture-view--with-live" : ""}${referenceEnabled ? " navigator-capture-view--with-reference" : ""}`}>
+      {referenceEnabled ? <NavigatorCurrentReference state={currentReference} mode={referenceMode} onModeChange={setReferenceMode} /> : null}
       {liveAvailable ? <section className="navigator-live-price" aria-label="Live Navigator market data">
         <div className="navigator-live-price__controls">
           <strong>{selectedData.symbol} · {priceMode === "CAPTURED" ? "CAPTURED REFERENCE" : paused || live.status === "PAUSED" ? "UPDATES PAUSED" : live.status}</strong>
@@ -152,17 +170,21 @@ export function NavigatorOceanBoundary({
           {priceMode === "LIVE" ? <button type="button" onClick={() => setPaused((value) => !value)}>{paused ? "Resume live updates" : "Pause live updates"}</button> : null}
           {priceMode === "LIVE" && live.quote?.price !== null && live.quote?.price !== undefined ? <strong aria-label="Last received live trade">{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(live.quote.price)}</strong> : null}
         </div>
+        <div className="navigator-live-price__summary">
+        <p role="status">Alpaca · {(live.event?.feed ?? live.quote?.feed) === "iex" ? "IEX: limited-exchange coverage, not the full U.S. market" : (live.event?.feed ?? live.quote?.feed) === "sip" ? "SIP: consolidated U.S. market feed" : "feed awaiting confirmation"}. {liveSummary}</p>
+        <details><summary>Trade timing and reference limits</summary>
         {priceMode === "LIVE" ? <>
-          <p>Alpaca · {(live.event?.feed ?? live.quote?.feed) === "iex" ? "IEX: limited-exchange coverage, not the full U.S. market" : (live.event?.feed ?? live.quote?.feed) === "sip" ? "SIP: consolidated U.S. market feed" : "feed awaiting confirmation"}.</p>
           <p>Trade: {live.quote?.trade_at ?? "not received"} · received: {live.quote?.received_at ?? "not received"} · checked: {live.event?.checked_at ?? "not yet"}.</p>
-          <p role="status">{paused || live.status === "PAUSED" ? "Live updates paused; any displayed trade is retained, not current."
-            : live.status === "LIVE" ? "Receiving live trades. Ship price may move; captured history and MA remain fixed."
+          <p>{paused || live.status === "PAUSED" ? "Live updates paused; any displayed trade is retained, not current."
+            : live.status === "LIVE" ? "Receiving live trades. Ship price may move; history and MA use the separately selected reference source. The original captured history and MA remain fixed in the mission record."
             : live.status === "STALE" ? "Last trade is outdated; awaiting a newer trade. Retained price is not current."
             : live.status === "UNAVAILABLE" ? "Live feed disconnected or unavailable. Any retained price is not current; reconnecting when available."
             : live.status === "WAITING" ? "Connected; waiting for a recent trade. Markets may be closed or this feed may have no recent trades. Any retained price is not current."
             : "Connecting to the read-only live market-data feed. Any retained price is not current."}</p>
-        </> : <p>Showing saved market evidence only. Live subscription stopped; no live trade is applied to the ship.</p>}
-        <p>Live prices are separate, transient market context—not mission evidence. Captured chart history, intervals, and moving averages are unchanged; the SVG fallback stays captured.</p>
+        </> : <p>Showing the selected reference only. Live subscription stopped; no live trade is applied to the ship.</p>}
+        <p>Live prices are separate, transient market context—not mission evidence. History and moving averages use the reference source selected above; the SVG fallback shows that reference without applying live trades.</p>
+        </details>
+        </div>
       </section> : null}
       <section className="navigator-capture-controls" aria-label="Captured Navigator datasets">
         <label>Review symbol
@@ -208,14 +230,14 @@ export function NavigatorOceanBoundary({
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => setSelectedKey(null)} disabled={selectedKey === null}>Original mission capture</button>
+        <button type="button" onClick={() => { setSelectedKey(null); setReferenceMode("SAVED"); }} disabled={selectedKey === null && (!referenceEnabled || referenceMode === "SAVED")}>Original mission capture</button>
         <p role="status">
           {selectedKey !== null && !variant ? "Selected capture is no longer available; showing the original. " : ""}
           {selectedData.symbol} · {selectedData.timeframe} · MA{selectedData.ma_period} · captured {selectedProps.capturedAt ?? "time not recorded"}
-          {" · "}{variant?.sourceIdentity ?? sourceIdentity ?? "mission capture"} · not streaming
+          {" · "}{currentSnapshot ? `current reference · ${currentReference.status}` : variant?.sourceIdentity ?? sourceIdentity ?? "mission capture"} · not streaming
         </p>
-        {symbols.length > 1 ? <p>Chart selection only · recorded mission results and the Cabin overview stay unchanged. Only captured intervals and moving averages are available.</p> : null}
-        {variant ? <details>
+        {symbols.length > 1 ? <p>Chart selection only · recorded mission results stay unchanged. Current refresh is limited to the selected symbol, interval and moving average; saved captures remain available.</p> : null}
+        {variant && !currentSnapshot ? <details>
           <summary>Capture provenance</summary>
           <span>Navigator revision: {variant.navigatorGitRevision}</span>
           {variant.navigatorSourceSha256 ? <span>Backend source SHA-256: {variant.navigatorSourceSha256}{variant.navigatorWorktreeDirty ? " · includes uncommitted source changes" : ""}</span> : null}

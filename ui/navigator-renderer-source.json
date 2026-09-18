@@ -23,8 +23,8 @@
       "source": "scene/CameraRig2.tsx",
       "destination": "CameraRig.tsx",
       "source_sha256": "3d85defa02647b509adde4eb8e9388bb7f15399c05734d9429b00b2accb9200f",
-      "destination_sha256": "a53edc9fada451694f476b3e5a9b8c55e0287057cf4cb682f8ce4014fc2492e8",
-      "adaptation": "Host-owned zoom callbacks; canvas-scoped input"
+      "destination_sha256": "a08e8c7b3a62c3fd09e23870c5e3e7e7e13e02f744d77e01be613ad36ccd500e",
+      "adaptation": "Host-owned zoom callbacks; canvas-scoped input; synchronously accumulate wheel bursts and reset the zoom ref before notifying the host so initial LIVE rendering cannot lose intervening events"
     },
     {
       "source": "scene/Ocean2.tsx",

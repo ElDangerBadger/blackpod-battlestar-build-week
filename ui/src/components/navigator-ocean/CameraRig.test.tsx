@@ -21,9 +21,10 @@ function mountRig(initialZoom: number, initialReducedMotion = false) {
   const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 5000);
   camera.position.set(0, 6, -10);
   const invalidate = vi.fn();
+  const canvas = document.createElement("canvas");
   fiber.useThree.mockReturnValue({
     camera,
-    gl: { domElement: document.createElement("canvas") },
+    gl: { domElement: canvas },
     invalidate,
   });
   const onZoomChange = vi.fn();
@@ -43,6 +44,7 @@ function mountRig(initialZoom: number, initialReducedMotion = false) {
 
   return {
     camera,
+    canvas,
     invalidate,
     onViewChange,
     onZoomChange,
@@ -195,5 +197,38 @@ describe("CameraRig transitions", () => {
     expect(rig.values().at(-1)).toBe(1);
     expect(rig.camera.position.toArray()).toEqual([0, 3750, -820]);
     expect(rig.camera.fov).toBe(27);
+  });
+});
+
+describe("CameraRig wheel input", () => {
+  it("accumulates a wheel burst before React commits the next zoom prop", () => {
+    const rig = mountRig(0.08);
+    act(() => {
+      for (let index = 0; index < 5; index += 1) {
+        rig.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, cancelable: true }));
+      }
+    });
+    expect(rig.onZoomChange).toHaveBeenCalledTimes(5);
+    rig.onZoomChange.mock.calls.forEach(([value], index) => {
+      expect(value).toBeCloseTo(0.08 + (index + 1) * 0.08);
+    });
+  });
+
+  it("uses external camera changes as the next wheel origin and clamps both endpoints", () => {
+    const rig = mountRig(0.08);
+    rig.update(1);
+    rig.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    expect(rig.onZoomChange).toHaveBeenLastCalledWith(0.92);
+    rig.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -10000 }));
+    expect(rig.onZoomChange).toHaveBeenLastCalledWith(0);
+    rig.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 10000 }));
+    expect(rig.onZoomChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it("resets the wheel origin immediately on double-click before another prop commit", () => {
+    const rig = mountRig(0.8);
+    rig.canvas.dispatchEvent(new MouseEvent("dblclick"));
+    rig.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+    expect(rig.onZoomChange.mock.calls.map(([value]) => value)).toEqual([0, 0.08]);
   });
 });

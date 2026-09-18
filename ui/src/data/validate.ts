@@ -583,6 +583,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     ...(Object.hasOwn(item, "cabin_context") ? ["cabin_context"] : []),
     ...(Object.hasOwn(item, "navigator_catalog") ? ["navigator_catalog"] : []),
     ...(Object.hasOwn(item, "navigator_fleet_catalog") ? ["navigator_fleet_catalog"] : []),
+    ...(Object.hasOwn(item, "oracle_market_brief") ? ["oracle_market_brief"] : []),
   ], "presentation manifest");
   if (item.schema_version !== PRESENTATION_MANIFEST_SCHEMA) {
     throw new PresentationContractError("unsupported presentation manifest schema");
@@ -616,6 +617,14 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     || fleetCatalog.observed_at === null)) {
     throw new PresentationContractError("presentation manifest references an inconsistent LIVE Navigator fleet catalog");
   }
+  const oracleBrief = Object.hasOwn(item, "oracle_market_brief")
+    ? parseArtifactReference(item.oracle_market_brief, "oracle_market_brief") : undefined;
+  if (oracleBrief && (item.run_mode !== "LIVE" || oracleBrief.name !== "oracle_market_brief"
+    || oracleBrief.path !== "presentation/oracle_market_brief.json" || oracleBrief.schema_version !== "blackpod.oracle_market_brief.v1"
+    || oracleBrief.producer !== "harbormaster" || oracleBrief.byte_size === null || !Number.isSafeInteger(oracleBrief.byte_size)
+    || oracleBrief.byte_size < 1 || oracleBrief.byte_size > 256 * 1024 || oracleBrief.observed_at === null)) {
+    throw new PresentationContractError("presentation manifest references an inconsistent Oracle market brief");
+  }
   return {
     schema_version: PRESENTATION_MANIFEST_SCHEMA,
     mission_id: stringValue(item.mission_id, "mission_id"),
@@ -640,6 +649,7 @@ export function parsePresentationManifest(value: unknown): PresentationManifestV
     ...(cabinContext ? { cabin_context: cabinContext } : {}),
     ...(navigatorCatalog ? { navigator_catalog: navigatorCatalog } : {}),
     ...(fleetCatalog ? { navigator_fleet_catalog: fleetCatalog } : {}),
+    ...(oracleBrief ? { oracle_market_brief: oracleBrief } : {}),
   };
 }
 

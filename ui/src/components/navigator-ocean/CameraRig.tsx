@@ -101,10 +101,15 @@ export default function CameraRig({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      onZoomChange(clamp01(zoomRef.current + e.deltaY * 0.0008));
+      // Native wheel events can arrive in a burst before React commits the next
+      // zoom prop, especially while the initial scene is compiling. Accumulate
+      // immediately so those events do not all overwrite the same old target.
+      zoomRef.current = clamp01(zoomRef.current + e.deltaY * 0.0008);
+      onZoomChange(zoomRef.current);
       invalidate();
     };
     const onDblClick = () => {
+      zoomRef.current = 0;
       onZoomChange(0);
       targetAzimuth.current = 0;
       targetPan.current.set(0, 0, 0);

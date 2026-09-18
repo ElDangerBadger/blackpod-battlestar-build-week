@@ -35,7 +35,10 @@ product review; the reader does not combine missions into a portfolio result.
   price stream in Navigator's backend. All other canonical changes remain out
   of scope. See [Alpaca live market data](ALPACA_LIVE_MARKET.md).
 - ModelDock remains a separately operated narrative appliance. The reader does
-  not modify its repository, start it, or call it automatically.
+  not modify its repository, start it, or call it automatically. Authorized
+  producers ask the appliance for a capability/profile, never a particular
+  model. ModelDock owns selection; returned model identity is audit metadata
+  only. New LIVE requests omit `model` and never inspect its model registry.
 - The Cabin renders mission artifacts; it cannot create, resume, approve,
   reject, retry, or otherwise mutate a mission.
 - A mission's recorded Governor, operator, and Navigator states retain their
@@ -58,6 +61,31 @@ labels remain prominent; synthetic archives cannot become live detections or
 feed watchlist/Navigator handoffs. No scanner or producer is started by opening
 or refreshing the ledger. See [Sentry ledger](SENTRY_LEDGER.md) for configuration
 and validation boundaries.
+
+The separate [Sentry Research tab](SENTRY_RESEARCH_CABIN.md) presents the frozen
+generalized Calibration V2 development comparison, its unchanged 20/60-session
+perspectives, and recorded prospective closeout. It is genuine historical
+research, not the Microcap synthetic archive or a live detection feed. Equity
+and ETF remain `RESEARCH_ONLY`; no winner, current attention publication,
+fleet changes, or downstream handoff is produced by this presentation.
+
+The independent [Scan results tab](SENTRY_SCAN_CABIN.md) presents a recorded
+Battlestar operational research snapshot. Canonical scanning excludes unusable
+symbols before unchanged ranking, retaining reasons and allowing unused capacity.
+The Cabin does not scan, fetch, rerank, publish an attention universe, or alter
+the frozen prospective protocol. Equity and ETF remain `RESEARCH_ONLY`.
+
+### Supplemental Oracle Market Brief
+
+An explicitly invoked operator command may create a saved, source-linked local
+ModelDock brief using Battlestar's canonical evidence vocabulary and validation.
+The Cabin only reads this optional supplement; it never invokes the model.
+Recorded market time and generation time remain distinct. Citation/structure
+checks do not establish semantic correctness, and the report is clearly labeled
+non-authoritative. The existing native Oracle outputs and fact-selection
+narrative remain unchanged, as do Council inputs and execution authority.
+See [the brief runbook](ORACLE_MARKET_BRIEF.md). The canonical changes in this
+increment are limited to that additive pure module, tests, and documentation.
 
 ### Source selection and automatic refresh
 

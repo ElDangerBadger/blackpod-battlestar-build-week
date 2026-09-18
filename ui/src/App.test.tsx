@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { artifact, createMissionBundleFixture } from "./test/missionFixture";
+import { navigatorReferenceFixture, REFERENCE_NOW } from "./test/navigatorReferenceFixture";
 
 vi.mock("./data/loadMission", async (importOriginal) => {
   const original = await importOriginal<typeof import("./data/loadMission")>();
@@ -17,6 +18,8 @@ vi.mock("./data/liveMission", () => ({
 }));
 
 vi.mock("./data/useSentryFeed", () => ({ useSentryFeed: vi.fn() }));
+vi.mock("./data/useSentryResearchFeed", () => ({ useSentryResearchFeed: vi.fn() }));
+vi.mock("./data/useSentryScanFeed", () => ({ useSentryScanFeed: vi.fn() }));
 
 import App from "./App";
 import { CABIN_PANEL_TITLES } from "./components/CabinPanelDetails";
@@ -25,6 +28,8 @@ import { loadMissionBundle } from "./data/loadMission";
 import { loadLiveMissionBundle, loadLiveMissionFeed } from "./data/liveMission";
 import { LOCAL_WATCHLIST_KEY } from "./data/localWatchlist";
 import { useSentryFeed } from "./data/useSentryFeed";
+import { useSentryResearchFeed } from "./data/useSentryResearchFeed";
+import { useSentryScanFeed } from "./data/useSentryScanFeed";
 
 const mockedLoadMissionBundle = vi.mocked(loadMissionBundle);
 
@@ -185,6 +190,16 @@ describe("Captain's Cabin", () => {
       status: "NOT_CONFIGURED", feed: null, message: "No Sentry archive is configured.",
       refreshing: false, refresh: vi.fn(),
     });
+    vi.mocked(useSentryResearchFeed).mockReset();
+    vi.mocked(useSentryResearchFeed).mockReturnValue({
+      status: "NOT_CONFIGURED", feed: null, message: "No research checkpoint is configured.",
+      refreshing: false, refresh: vi.fn(),
+    });
+    vi.mocked(useSentryScanFeed).mockReset();
+    vi.mocked(useSentryScanFeed).mockReturnValue({
+      status: "NOT_CONFIGURED", feed: null, message: "No scan receipt is configured.",
+      refreshing: false, refresh: vi.fn(),
+    });
   });
 
   it("shows the canonical approval chain and SHADOW-only boundary", async () => {
@@ -266,6 +281,38 @@ describe("Captain's Cabin", () => {
     expect(screen.queryByRole("button", { name: "Demo" })).not.toBeInTheDocument();
     expect(mockedLoadMissionBundle).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Open Mission Brief", hidden: true })).toHaveAttribute("href", `${bundle.baseUrl}presentation/mission_brief.html`);
+  });
+
+  it("uses current reference for the Cabin tape and overview without replacing immutable mission evidence", async () => {
+    const bundle = liveMission();
+    bundle.baseUrl = `/live/revisions/${"a".repeat(64)}/`;
+    const before = JSON.stringify(bundle.navigatorMarket);
+    supplyLiveMission(bundle);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(REFERENCE_NOW));
+    const network = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(navigatorReferenceFixture())));
+    try {
+      render(<App />);
+      const tape = await screen.findByRole("button", { name: "Open Navigator reference tape" });
+      await waitFor(() => expect(tape).toHaveTextContent("CURRENT REFERENCE · READY"));
+      expect(tape).toHaveTextContent("$334.00");
+      const overview = screen.getByRole("figure", { name: "Navigator ship view for AAPL" });
+      expect(within(overview).getByText("$334.00")).toBeInTheDocument();
+      expect(network).toHaveBeenCalledTimes(1);
+      expect(network.mock.calls[0][0]).toBe(`/live/navigator/reference/${"a".repeat(64)}/AAPL/1d/250`);
+      fireEvent.click(tape);
+      const tapeDialog = screen.getByRole("dialog", { name: "Navigator reference tape" });
+      await waitFor(() => expect(tapeDialog).toHaveTextContent("CURRENT REFERENCE · READY"));
+      fireEvent.click(within(tapeDialog).getByRole("button", { name: "Saved reference" }));
+      fireEvent.click(within(tapeDialog).getByRole("button", { name: "Open full Navigator" }));
+      const navigatorDialog = screen.getByRole("dialog", { name: "Navigator Ship View" });
+      expect(navigatorDialog).toHaveTextContent("SAVED MISSION REFERENCE");
+      expect(within(navigatorDialog).getByRole("button", { name: "Saved reference" })).toHaveAttribute("aria-pressed", "true");
+      expect(within(navigatorDialog).getByRole("figure", { name: "Navigator ship view for AAPL" })).toHaveTextContent("$215.00");
+      expect(network).toHaveBeenCalledTimes(2);
+      expect(bundle.navigatorMarket!.summary.last_price).toBe(215);
+      expect(JSON.stringify(bundle.navigatorMarket)).toBe(before);
+      expect(screen.getByText("APPROVED · COMPLETE")).toBeInTheDocument();
+    } finally { network.mockRestore(); clock.mockRestore(); }
   });
 
   it("explains explicit source configuration instead of showing sample holdings", async () => {
@@ -373,7 +420,7 @@ describe("Captain's Cabin", () => {
   it.each([
     { trigger: "Open Oracle book", dialog: "Oracle", close: "Return to full cabin" },
     { trigger: "Focus mission warnings", dialog: "Mission warnings", close: "Return to bridge" },
-    { trigger: "Sentry Observations", dialog: "Microcap Sentry", close: "Return to bridge" },
+    { trigger: "Sentry Observations", dialog: "Sentry", close: "Return to bridge" },
     { trigger: "Open Navigator reference tape", dialog: "Navigator reference tape", close: "Return to bridge" },
     { trigger: "Focus Captain's Log", dialog: "Captain’s Log", close: "Return to bridge" },
     { trigger: "Open Shadow Plan details", dialog: "Navigator SHADOW plan", close: "Return to bridge" },
@@ -410,7 +457,7 @@ describe("Captain's Cabin", () => {
     fireEvent.click(screen.getByRole("button", { name: "Return to bridge" }));
     const sentry = screen.getByRole("button", { name: "Sentry Observations" });
     fireEvent.click(sentry);
-    expect(screen.getByRole("dialog", { name: "Microcap Sentry" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Sentry" })).toBeInTheDocument();
     expect(useSentryFeed).toHaveBeenLastCalledWith({ enabled: true });
     expect(screen.getByText("No Sentry archive is configured.")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
@@ -421,8 +468,59 @@ describe("Captain's Cabin", () => {
   it("does not enable independent Sentry polling during replay", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Sentry Observations" }));
-    expect(screen.getByRole("dialog", { name: "Microcap Sentry" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Sentry" })).toBeInTheDocument();
     expect(useSentryFeed).toHaveBeenLastCalledWith({ enabled: false });
+    fireEvent.click(screen.getByRole("tab", { name: "Sentry Research" }));
+    expect(useSentryResearchFeed).toHaveBeenLastCalledWith({ enabled: false });
+    expect(screen.getByRole("button", { name: "Refresh research records" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("tab", { name: "Scan results" }));
+    expect(useSentryScanFeed).toHaveBeenLastCalledWith({ enabled: false });
+    expect(screen.getByRole("button", { name: "Refresh scan records" })).toBeDisabled();
+  });
+
+  it("keeps Microcap the default and opens the separate research tab without mission or fleet writes", async () => {
+    const bundle = liveMission();
+    const original = JSON.stringify(bundle);
+    supplyLiveMission(bundle);
+    render(<App />);
+    const opener = await screen.findByRole("button", { name: "Sentry Observations" });
+    expect(useSentryResearchFeed).not.toHaveBeenCalled();
+    fireEvent.click(opener);
+    const microcap = screen.getByRole("tab", { name: "Microcap" });
+    const research = screen.getByRole("tab", { name: "Sentry Research" });
+    const scan = screen.getByRole("tab", { name: "Scan results" });
+    expect(microcap).toHaveAttribute("aria-selected", "true");
+    expect(useSentryResearchFeed).not.toHaveBeenCalled();
+    expect(useSentryScanFeed).not.toHaveBeenCalled();
+    fireEvent.click(research);
+    expect(research).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "Sentry Research" })).toBeInTheDocument();
+    expect(useSentryResearchFeed).toHaveBeenLastCalledWith({ enabled: true });
+    expect(screen.getByText("No research checkpoint is configured.")).toBeInTheDocument();
+    expect(screen.queryByText("No Sentry archive is configured.")).not.toBeInTheDocument();
+    fireEvent.keyDown(research, { key: "ArrowLeft" });
+    expect(microcap).toHaveFocus();
+    expect(microcap).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(microcap, { key: "End" });
+    expect(scan).toHaveFocus();
+    expect(scan).toHaveAttribute("aria-selected", "true");
+    expect(useSentryScanFeed).toHaveBeenLastCalledWith({ enabled: true });
+    expect(screen.getByRole("tabpanel", { name: "Scan results" })).toBeInTheDocument();
+    expect(screen.getByText("No scan receipt is configured.")).toBeInTheDocument();
+    fireEvent.keyDown(scan, { key: "ArrowRight" });
+    expect(microcap).toHaveFocus();
+    fireEvent.keyDown(microcap, { key: "ArrowLeft" });
+    expect(scan).toHaveFocus();
+    fireEvent.keyDown(scan, { key: "Home" });
+    expect(microcap).toHaveFocus();
+    fireEvent.click(research);
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(opener).toHaveFocus());
+    fireEvent.click(opener);
+    expect(screen.getByRole("tab", { name: "Microcap" })).toHaveAttribute("aria-selected", "true");
+    expect(loadLiveMissionBundle).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bundle)).toBe(original);
+    expect(window.localStorage.getItem(LOCAL_WATCHLIST_KEY)).toBeNull();
   });
 
   it.each<[string, CabinPanelId]>([
@@ -476,9 +574,9 @@ describe("Captain's Cabin", () => {
       publication_id: "a".repeat(64), base_url: `revisions/${"a".repeat(64)}/`,
     });
     vi.mocked(loadLiveMissionBundle).mockResolvedValue(bundle);
-    // Every capture is already in the verified bundle. Selection must not call
-    // a market provider, ModelDock, or any other fetch-based endpoint.
-    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected network request during chart review"));
+    // Pending optional current references must not hide saved captures. Only
+    // bounded, same-origin reference GETs are permitted; no providers or writes.
+    const network = vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise<Response>(() => {}));
     try {
       render(<App />);
       const opener = await screen.findByRole("button", { name });
@@ -538,7 +636,9 @@ describe("Captain's Cabin", () => {
       expect(loadLiveMissionFeed).toHaveBeenCalledOnce();
       expect(loadLiveMissionBundle).toHaveBeenCalledOnce();
       expect(mockedLoadMissionBundle).not.toHaveBeenCalled();
-      expect(network).not.toHaveBeenCalled();
+      expect(network).toHaveBeenCalled();
+      expect(network.mock.calls.every(([url, init]) => /^\/live\/navigator\/reference\/a{64}\/(AAPL|XLK|SPY)\/1d\/250$/.test(String(url))
+        && (init?.method ?? "GET") === "GET" && !init?.body)).toBe(true);
     } finally {
       network.mockRestore();
     }
@@ -551,7 +651,7 @@ describe("Captain's Cabin", () => {
     const before = serialize();
     const savedWatchlist = JSON.stringify({ version: 1, symbols: ["MSFT"] });
     window.localStorage.setItem(LOCAL_WATCHLIST_KEY, savedWatchlist);
-    const network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected fetch during captured reference review"));
+    const network = vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise<Response>(() => {}));
     const storageWrite = vi.spyOn(Storage.prototype, "setItem");
     try {
       render(<App />);
@@ -597,7 +697,9 @@ describe("Captain's Cabin", () => {
       expect(serialize()).toBe(before);
       expect(window.localStorage.getItem(LOCAL_WATCHLIST_KEY)).toBe(savedWatchlist);
       expect(storageWrite).not.toHaveBeenCalled();
-      expect(network).not.toHaveBeenCalled();
+      expect(network).toHaveBeenCalled();
+      expect(network.mock.calls.every(([url, init]) => /^\/live\/navigator\/reference\/a{64}\/(AAPL|XLK|SPY)\/(1h|1d)\/(20|250)$/.test(String(url))
+        && (init?.method ?? "GET") === "GET" && !init?.body)).toBe(true);
       expect(loadLiveMissionFeed).toHaveBeenCalledOnce();
       expect(loadLiveMissionBundle).toHaveBeenCalledOnce();
     } finally {

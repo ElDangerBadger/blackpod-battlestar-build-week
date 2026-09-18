@@ -100,7 +100,7 @@ describe("NavigatorOceanView local presentation controls", () => {
       expect(currentScene().oceanExaggeration).toBe(2);
       expectCapturedFacts(source);
     }
-    expect(screen.getByText(/saved history, MA and sea state do not update/)).toBeInTheDocument();
+    expect(screen.getByText(/Live trades do not change the reference history, MA or sea state; current-reference refreshes are separate/)).toBeInTheDocument();
     expect(JSON.stringify(source)).toBe(original);
     expect(fetch).not.toHaveBeenCalled();
   });

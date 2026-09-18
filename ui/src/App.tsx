@@ -15,12 +15,13 @@ import { CaptainsLogDetails } from "./components/CaptainsLogDetails";
 import { CabinPanelDetails, CABIN_PANEL_TITLES } from "./components/CabinPanelDetails";
 import type { CabinPanelId } from "./components/cabinPanelTypes";
 import { ShadowPlanDetails } from "./components/ShadowPlanDetails";
-import { SentryLedger } from "./components/SentryLedger";
+import { SentryPanel } from "./components/SentryPanel";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
 import { MissionWarnings } from "./components/MissionWarnings";
 import { NavigatorReferenceTape } from "./components/NavigatorReferenceTape";
 import { NavigatorOceanBoundary } from "./components/NavigatorOceanBoundary";
+import { useNavigatorReference } from "./data/useNavigatorReference";
 import { useReducedMotion } from "./components/navigator-ocean/useReducedMotion";
 import { ReplayControls } from "./components/ReplayControls";
 import { StatusPanel } from "./components/StatusPanel";
@@ -156,6 +157,16 @@ function MissionCabin({
     if (!mission.market.navigatorMarket) return null;
     return mission.market.navigatorMarket;
   }, [mission.market.navigatorMarket]);
+  const overviewReference = useNavigatorReference({ publicationId: live ? navigatorPublicationId(mission.baseUrl) : null,
+    selection: shipData, enabled: presentationMode === "LIVE" && mission.status.runMode === "LIVE" && !shipFocused && notice !== "reference-tape" });
+  const overviewSnapshot = presentationMode === "LIVE" ? overviewReference.snapshot : null;
+  const overviewMarket = overviewSnapshot ? {
+    ...mission.market, navigatorMarket: overviewSnapshot.market, companyName: overviewSnapshot.market.name,
+    timeframe: overviewSnapshot.timeframe, currency: overviewSnapshot.market.currency,
+    latestCompletedBar: new Date(overviewSnapshot.latest_bar_at * 1000).toISOString(),
+    capturedAt: overviewSnapshot.captured_at, sourceIdentity: `current reference ${overviewSnapshot.snapshot_id}`,
+    marketStatus: `CURRENT REFERENCE · ${overviewReference.status}`, artifactReference: null,
+  } : mission.market;
   const modalOpen = Boolean(selectedBook || notice || (shipFocused && shipData));
   const chartVariants = useMemo(() => navigatorVariants(mission), [mission]);
   const chartFleetSymbols = useMemo(() => createRecordedFleetOverview(mission).rows.map((row) => row.symbol), [mission]);
@@ -278,7 +289,7 @@ function MissionCabin({
             setNotice("mission-warnings");
           }}
         />}
-        marketConditions={<MarketConditions symbol={mission.status.symbol} market={mission.market}
+        marketConditions={<MarketConditions symbol={mission.status.symbol} market={overviewMarket}
           expanded={notice === "reference-tape"} onFocus={() => openReferenceTape()} />}
         captainsLog={<CaptainsLog
           entries={mission.captainsLog}
@@ -289,7 +300,7 @@ function MissionCabin({
           missionId={mission.status.missionId}
           snapshotCount={mission.status.snapshotCount}
           revision={mission.status.snapshotCount}
-          shipData={shipData}
+          shipData={overviewSnapshot?.market ?? shipData}
           triggerRef={shipTriggerRef}
           expanded={shipFocused}
           onOpenShip={() => {
@@ -377,7 +388,7 @@ function LiveEvidenceControls({ live, mission }: { live: LiveMissionState & { re
       <span title={`Reader checked: ${live.checkedAt ?? "not yet"}. Browser last verified: ${live.verifiedAt ?? "not yet"}. ${live.message}`}>
         Mission recorded <time dateTime={mission.status.observedAt}>{mission.status.observedAt}</time>
       </span>
-      <span>Chart: {mission.market.capturedAt ? `captured ${mission.market.capturedAt.slice(0, 10)}` : "not configured"} · not streaming</span>
+      <span>Mission reference: {mission.market.capturedAt ? `captured ${mission.market.capturedAt.slice(0, 10)}` : "not configured"} · not streaming</span>
     </aside>
   </>;
 }
@@ -508,7 +519,7 @@ function CabinNotice({ notice, mission, presentationMode, onClose, onOpenNavigat
   }
   if (notice === "reference-tape") {
     return <Notice key="reference-tape" title="Navigator reference tape" onClose={onClose}>
-      <NavigatorReferenceTape mission={mission} initialSymbol={tapeInitialSymbol} onOpenNavigator={onOpenNavigator} />
+      <NavigatorReferenceTape mission={mission} initialSymbol={tapeInitialSymbol} onOpenNavigator={onOpenNavigator} presentationMode={presentationMode} />
     </Notice>;
   }
   if (notice === "logbook") {
@@ -519,8 +530,8 @@ function CabinNotice({ notice, mission, presentationMode, onClose, onOpenNavigat
     );
   }
   if (notice === "sentry") {
-    return <Notice title="Microcap Sentry" eyebrow="Independent observation ledger · read-only" onClose={onClose}>
-      <SentryLedger enabled={presentationMode === "LIVE" && mission.status.runMode === "LIVE"}
+    return <Notice title="Sentry" eyebrow="Independent observation & research ledgers · read-only" onClose={onClose}>
+      <SentryPanel enabled={presentationMode === "LIVE" && mission.status.runMode === "LIVE"}
         mission={mission} onOpenNavigator={onOpenNavigator} />
     </Notice>;
   }

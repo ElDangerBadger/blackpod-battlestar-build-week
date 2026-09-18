@@ -211,6 +211,8 @@ export interface PresentationManifestV1 extends Omit<DemoManifestV1,
   navigator_catalog?: ArtifactReference;
   /** Optional multi-symbol captures bound to canonical observed fleet evidence. */
   navigator_fleet_catalog?: ArtifactReference;
+  /** Optional non-authoritative model interpretation bound to Oracle sources. */
+  oracle_market_brief?: ArtifactReference;
 }
 
 export type MissionManifest = DemoManifestV1 | PresentationManifestV1;

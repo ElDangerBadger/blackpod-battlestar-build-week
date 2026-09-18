@@ -14,11 +14,20 @@ CABIN_MISSION_ID ?=
 CABIN_LIVE_PORT ?= 5174
 NAVIGATOR_LIVE_URL ?=
 NAVIGATOR_LIVE_PORT ?= 8001
+NAVIGATOR_REFERENCE_ROOT ?=
+NAVIGATOR_REFERENCE_CALENDAR ?=
+NAVIGATOR_REFERENCE_CALENDAR_CAPTURE_ROOT ?=
+NAVIGATOR_REFERENCE_SYMBOLS ?=
+NAVIGATOR_REFERENCE_TIMEFRAMES ?= 1h,1d,1wk
+NAVIGATOR_REFERENCE_MA_PERIODS ?= 20,50,100,200,250
 ALPACA_DATA_FEED ?= iex
 SENTRY_ARCHIVE ?=
 SENTRY_SOURCE_KIND ?=
 SENTRY_SOURCE_LABEL ?=
 SENTRY_CANONICAL_ROOT ?=
+SENTRY_RESEARCH_ROOT ?=
+SENTRY_RESEARCH_CLOSEOUT_ROOT ?=
+SENTRY_SCAN_ARCHIVE ?=
 CABIN_READER := $(PYTHON) -m blackpod_build_week.cabin_reader
 CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
 	$(if $(strip $(CABIN_ARTIFACTS_ROOT)),--artifacts-root "$(CABIN_ARTIFACTS_ROOT)",) \
@@ -27,9 +36,19 @@ CABIN_READER_ARGS = --ui-root "$(UI_DIR)/dist" --port "$(CABIN_LIVE_PORT)" \
 ifneq ($(strip $(NAVIGATOR_LIVE_URL)),)
 CABIN_READER_ARGS += --navigator-live-url "$(NAVIGATOR_LIVE_URL)"
 endif
+ifneq ($(strip $(NAVIGATOR_REFERENCE_ROOT)),)
+CABIN_READER_ARGS += --navigator-reference-root "$(NAVIGATOR_REFERENCE_ROOT)"
+endif
 ifneq ($(strip $(SENTRY_ARCHIVE)$(SENTRY_SOURCE_KIND)$(SENTRY_SOURCE_LABEL)$(SENTRY_CANONICAL_ROOT)),)
 CABIN_READER_ARGS += --sentry-archive "$(SENTRY_ARCHIVE)" --sentry-source-kind "$(SENTRY_SOURCE_KIND)" \
 	--sentry-source-label "$(SENTRY_SOURCE_LABEL)" --sentry-canonical-root "$(SENTRY_CANONICAL_ROOT)"
+endif
+ifneq ($(strip $(SENTRY_RESEARCH_ROOT)$(SENTRY_RESEARCH_CLOSEOUT_ROOT)),)
+CABIN_READER_ARGS += $(if $(strip $(SENTRY_RESEARCH_ROOT)),--sentry-research-root "$(SENTRY_RESEARCH_ROOT)",) \
+	$(if $(strip $(SENTRY_RESEARCH_CLOSEOUT_ROOT)),--sentry-research-closeout-root "$(SENTRY_RESEARCH_CLOSEOUT_ROOT)",)
+endif
+ifneq ($(strip $(SENTRY_SCAN_ARCHIVE)),)
+CABIN_READER_ARGS += --sentry-scan-archive "$(SENTRY_SCAN_ARCHIVE)"
 endif
 CABIN_SOURCE ?= $(JUDGE_ROOT)/approved/missions/$(JUDGE_MISSION_ID)
 CABIN_DEMO_SOURCE ?= $(CABIN_SOURCE)
@@ -104,7 +123,8 @@ CABIN_PORTFOLIO_ARGUMENT = $(if $(strip $(PORTFOLIO_JSON)),--portfolio-json "$(P
 	cabin-build cabin-test cabin-capture-demo cabin-capture-live cabin-prepare-demo \
 	cabin-prepare-live cabin-freeze-live-demo cabin-dev-demo cabin-dev-live \
 	cabin-build-demo cabin-build-live cabin-e2e navigator-check navigator-check-upstream \
-	cabin-live cabin-reader cabin-build-replay cabin-dev-replay navigator-live
+	cabin-live cabin-reader cabin-build-replay cabin-dev-replay navigator-live \
+	navigator-reference-calendar navigator-reference-refresh navigator-reference-watch navigator-reference-status require-reference-inputs
 
 help:
 	@echo "BlackPod Battlestar — live read-only Captain's Cabin"
@@ -113,7 +133,12 @@ help:
 	@echo "  make cabin-reader          Start the read-only reader without rebuilding"
 	@echo "  make navigator-live        Start canonical Alpaca market-data streaming (BATTLESTAR_PATH required)"
 	@echo "    Add NAVIGATOR_LIVE_URL=http://127.0.0.1:8001 to cabin-live/cabin-reader"
+	@echo "  make navigator-reference-refresh/watch  Capture/maintain canonical completed-bar references (explicit inputs required)"
+	@echo "  make navigator-reference-status         Inspect references without provider calls"
+	@echo "    Add NAVIGATOR_REFERENCE_ROOT=/path/to/reference-artifacts to cabin-live/cabin-reader"
 	@echo "  Optional Sentry archive: SENTRY_ARCHIVE, SENTRY_SOURCE_KIND, SENTRY_SOURCE_LABEL, SENTRY_CANONICAL_ROOT"
+	@echo "  Optional frozen Sentry V2 research: SENTRY_RESEARCH_ROOT, SENTRY_RESEARCH_CLOSEOUT_ROOT"
+	@echo "  Optional saved research scan: SENTRY_SCAN_ARCHIVE=/absolute/path/to/scan.json"
 	@echo "  make cabin-dev             Start Vite; proxies /live to the reader on port 5174"
 	@echo "  make cabin-build           Build product assets only; no replay data"
 	@echo "  make cabin-build-replay    Explicit historical regression build (includes fixtures)"
@@ -339,6 +364,35 @@ navigator-live: require-battlestar
 		BPN_CACHE_DIR="$(BUILD_WEEK_ROOT)/artifacts/navigator-live-cache" \
 		$(PYTHON) -m uvicorn src.main:app --app-dir "$(BATTLESTAR_PATH)/blackpod-navigator-3/backend" \
 		--host 127.0.0.1 --port "$(NAVIGATOR_LIVE_PORT)" --no-access-log --timeout-graceful-shutdown 5
+
+# Canonical producer owns market acquisition and indicator calculations. The
+# Cabin only reads its configured artifact directory; no browser write route.
+REFERENCE_ENV = PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$(BATTLESTAR_PATH):$(BATTLESTAR_PATH)/blackpod-navigator-3/backend"
+REFERENCE_ARGS = --root "$(NAVIGATOR_REFERENCE_ROOT)" --calendar "$(NAVIGATOR_REFERENCE_CALENDAR)" \
+	--calendar-capture-root "$(NAVIGATOR_REFERENCE_CALENDAR_CAPTURE_ROOT)" \
+	--symbols "$(NAVIGATOR_REFERENCE_SYMBOLS)" --timeframes "$(NAVIGATOR_REFERENCE_TIMEFRAMES)" \
+	--ma-periods "$(NAVIGATOR_REFERENCE_MA_PERIODS)"
+
+require-reference-inputs: require-battlestar
+	@test -n "$(NAVIGATOR_REFERENCE_ROOT)" -a -n "$(NAVIGATOR_REFERENCE_CALENDAR)" \
+		-a -n "$(NAVIGATOR_REFERENCE_CALENDAR_CAPTURE_ROOT)" -a -n "$(NAVIGATOR_REFERENCE_SYMBOLS)" || \
+		{ echo "Explicit reference root, calendar, calendar capture root, and symbol list are required." >&2; exit 2; }
+
+navigator-reference-calendar: require-battlestar
+	@test -n "$(NAVIGATOR_REFERENCE_CALENDAR)" -a -n "$(NAVIGATOR_REFERENCE_CALENDAR_CAPTURE_ROOT)" || \
+		{ echo "Explicit reference calendar output and existing calendar capture root are required." >&2; exit 2; }
+	$(REFERENCE_ENV) $(PYTHON) -B -m src.reference_freshness \
+		--capture-root "$(NAVIGATOR_REFERENCE_CALENDAR_CAPTURE_ROOT)" --output "$(NAVIGATOR_REFERENCE_CALENDAR)"
+
+navigator-reference-refresh: require-reference-inputs
+	$(REFERENCE_ENV) $(PYTHON) -B -m src.reference_capture once $(REFERENCE_ARGS)
+
+navigator-reference-watch: require-reference-inputs
+	$(REFERENCE_ENV) $(PYTHON) -B -m src.reference_capture watch $(REFERENCE_ARGS)
+
+navigator-reference-status: require-battlestar
+	@test -n "$(NAVIGATOR_REFERENCE_ROOT)" || { echo "NAVIGATOR_REFERENCE_ROOT is required." >&2; exit 2; }
+	$(REFERENCE_ENV) $(PYTHON) -B -m src.reference_capture status --root "$(NAVIGATOR_REFERENCE_ROOT)"
 
 cabin-dev-replay: cabin-prepare
 	$(NPM) --prefix "$(UI_DIR)" run dev

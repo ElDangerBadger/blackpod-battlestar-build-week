@@ -1,0 +1,15 @@
+.sentry-scan .scan-window { border: 1px solid #a38452; padding: .8rem; margin: 1rem 0; background: rgb(255 240 204 / 15%); }
+.sentry-scan .scan-window h4 { margin: .2rem 0; }
+.sentry-scan .scan-candidates { min-width: 35rem; }
+.sentry-scan .scan-candidates th[scope="row"] { width: 21%; }
+.sentry-scan .scan-candidates :is(small, td > code) { display: block; margin-top: .25rem; }
+.sentry-scan .scan-candidates small { font-weight: 400; }
+.sentry-scan .scan-entry-details summary { cursor: pointer; font-size: .9em; }
+.sentry-scan .scan-entry-details .research-facts > div { grid-template-columns: 1fr; gap: .2rem; }
+.sentry-scan .scan-codes { padding-left: 1.2rem; margin: .5rem 0; }
+.sentry-scan .scan-codes li { margin: .25rem 0; }
+.sentry-scan code { overflow-wrap: anywhere; font-size: .84em; }
+.sentry-scan .scan-file code { display: block; margin-top: .25rem; }
+.sentry-scan h5 { font-size: .96em; margin: .8rem 0 .25rem; }
+.sentry-scan .scan-exclusions { list-style: none; padding: 0; }
+.sentry-scan .scan-exclusions > li { padding: .6rem; border-bottom: 1px dotted #ae8b55; }

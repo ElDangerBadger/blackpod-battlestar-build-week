@@ -71,6 +71,12 @@ rebuilding the UI alone does not replace an already-running Python process.
 Already supported new artifact publications are picked up by normal polling.
 Saved Navigator fleet captures require no running provider or ModelDock service.
 
+For current completed-bar references, configure the separately operated
+canonical reference worker and add `NAVIGATOR_REFERENCE_ROOT` to the reader.
+See [current Navigator references](NAVIGATOR_CURRENT_REFERENCE.md) for the
+calendar, refresh/watch/status commands and the distinction from saved mission
+evidence and Alpaca live trades. The reader itself still performs no acquisition.
+
 ### Optional Microcap Sentry ledger
 
 Sentry is a separate saved-observation source, not part of the selected mission.
@@ -183,7 +189,10 @@ recorded REPLAY prompt bytes. No fallback narrative replaces model output.
 
 To perform another authorized producer run, select **new** mission/request IDs
 and explicit no-trade policy/context inputs, use `mission-run --with-modeldock
---through GOVERNOR`, and supply the pinned local model configuration. This is
+--through GOVERNOR`, and supply the local ModelDock endpoint/deadline. ModelDock
+owns model selection: LIVE requests omit `model`, never inspect its registry,
+and ignore inherited `MODELDOCK_MODEL`. Returned model identity is provenance
+only. The existing local-service, non-mocked evidence policy remains. This is
 a separate producer operation, not Cabin startup. Do not overwrite past runs,
 weaken validation, or change the mandate merely to obtain a green display.
 

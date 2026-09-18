@@ -1,0 +1,11 @@
+.navigator-current-reference { padding: .5rem .7rem; border: 1px solid #816737; border-radius: .2rem; background: #302518; color: #ead296; font-size: .82rem; }
+.navigator-current-reference [role="group"] { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; }
+.navigator-current-reference button { color: inherit; border: 1px solid #97763c; background: transparent; padding: .3rem .5rem; cursor: pointer; font: inherit; }
+.navigator-current-reference button[aria-pressed="true"] { background: #604a22; }
+.navigator-current-reference p { margin: .35rem 0 0; overflow-wrap: anywhere; }
+.navigator-current-reference details { margin-top: .25rem; }
+.navigator-current-reference summary { cursor: pointer; }
+.navigator-current-reference summary:focus-visible { outline: 2px solid #e2c675; outline-offset: 2px; }
+.navigator-current-reference { max-height: 9rem; overflow-y: auto; }
+.navigator-capture-view--with-reference { grid-template-rows: auto auto minmax(0, 1fr); }
+.navigator-capture-view--with-reference.navigator-capture-view--with-live { grid-template-rows: auto auto auto minmax(0, 1fr); }

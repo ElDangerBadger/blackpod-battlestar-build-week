@@ -130,6 +130,7 @@ export interface RevisionViewModel {
 }
 
 export interface MissionViewModel {
+  oracleMarketBrief?: import("../contracts/oracleMarketBrief").OracleMarketBrief | null;
   title: string;
   subtitle: string;
   status: MissionStatusViewModel;
@@ -192,6 +193,7 @@ export function createMissionViewModel(bundle: MissionBundle): MissionViewModel 
 
   return {
     title: summary.display_title,
+    oracleMarketBrief: bundle.oracleMarketBrief ?? null,
     subtitle: summary.subtitle,
     status: {
       missionId: summary.mission_id,

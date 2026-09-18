@@ -17,7 +17,7 @@ export function HowToRead({ maPeriod, livePrice, children }: HowToReadProps) {
         <li><i className="legend-ma" aria-hidden="true" />Yellow bearing: supplied MA{maPeriod}.</li>
         <li><i className="legend-sea" aria-hidden="true" />Sea state: supplied volatility class.</li>
       </ul>
-      {livePrice ? <p>Cyan marker: separate last-trade overlay at the captured history edge, not a new bar. The saved history, MA and sea state do not update. {livePrice.feed === "iex" ? "IEX covers one exchange, not the consolidated market." : "SIP uses the consolidated market feed."} {livePrice.status !== "LIVE" ? "The last received trade is retained but stale; it is not a current quote." : "Prices change only when actual trades arrive."}</p> : null}
+      {livePrice ? <p>Cyan marker: separate last-trade overlay at the captured history edge, not a new bar. Live trades do not change the reference history, MA or sea state; current-reference refreshes are separate. {livePrice.feed === "iex" ? "IEX covers one exchange, not the consolidated market." : "SIP uses the consolidated market feed."} {livePrice.status !== "LIVE" ? "The last received trade is retained but stale; it is not a current quote." : "Prices change only when actual trades arrive."}</p> : null}
       <p>Wake color compares each supplied close with its supplied MA. It is presentation context, not a trade signal.</p>
       {children}
     </aside>
