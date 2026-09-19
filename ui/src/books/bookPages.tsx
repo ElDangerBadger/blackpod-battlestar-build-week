@@ -208,7 +208,7 @@ function oraclePages(viewModel: MissionViewModel): BookPage[] {
         ]} />
         <p className="book-note">These are validation-fleet measurements, not security-specific trade signals.</p>
       </>,
-      evidencePaths: evidencePaths(viewModel, ["oracle_measurements"]),
+      evidencePaths: evidencePaths(viewModel, ["oracle_measurements", "oracle_normalized_snapshot", "oracle_measurement_diagnostics"]),
     },
     {
       id: "oracle-diagnostics",
@@ -228,7 +228,7 @@ function oraclePages(viewModel: MissionViewModel): BookPage[] {
           ["Coverage", getBoolean(readiness?.coverage_ok) === undefined ? undefined : getBoolean(readiness?.coverage_ok) ? "Pass" : "Fail"],
         ]} />
       </>,
-      evidencePaths: evidencePaths(viewModel, ["oracle_measurement_diagnostics", "oracle_readiness_report"]),
+      evidencePaths: evidencePaths(viewModel, ["oracle_measurement_diagnostics", "oracle_readiness_report", "oracle_measurements", "oracle_normalized_snapshot"]),
     },
     {
       id: "oracle-modeldock",

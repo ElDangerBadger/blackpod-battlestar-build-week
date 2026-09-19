@@ -1,10 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JsonObject } from "../contracts/presentation";
 import type { MissionBundle, MissionEvidenceName } from "../data/loadMission";
 import { createMissionViewModel } from "../data/viewModel";
 import { artifact, createMissionBundleFixture } from "../test/missionFixture";
+import { createOracleMarketBriefFixture } from "../test/oracleMarketBriefFixture";
 import { buildBookDefinitions } from "./bookPages";
 import { ModelDockNarrativeDetails, OracleMarketNarrative } from "./OracleNarrative";
 
@@ -78,6 +79,58 @@ afterEach(() => {
 });
 
 describe("visible native Oracle narrative", () => {
+  it("leads with accepted market prose and keeps the original native narrative in a closed disclosure", () => {
+    const { bundle, native, report, model } = fixture();
+    const before = JSON.stringify({ native, report, model });
+    const viewModel = createMissionViewModel(bundle);
+    const brief = createOracleMarketBriefFixture();
+    viewModel.oracleMarketBrief = brief;
+    const { container } = render(<OracleMarketNarrative viewModel={viewModel} />);
+    const acceptedProse = screen.getByText(brief.report.sections[0].paragraphs[0].text);
+    expect(acceptedProse).toBeVisible();
+    const original = screen.getByText("Original Oracle narrative").closest("details")!;
+    expect(original).not.toHaveAttribute("open");
+    expect(screen.getByText(PROSE.breadth_commentary)).not.toBeVisible();
+    expect(acceptedProse.compareDocumentPosition(original) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.textContent!.indexOf(brief.report.headline.text)).toBeLessThan(container.textContent!.indexOf("Original Oracle narrative"));
+    fireEvent.click(screen.getByText("Original Oracle narrative"));
+    expect(original).toHaveAttribute("open");
+    for (const prose of Object.values(PROSE)) expect(screen.getByText(prose)).toBeVisible();
+    expect(screen.getByText(/No usable earlier measurement comparison/)).toBeVisible();
+    expect(JSON.stringify({ native, report, model })).toBe(before);
+  });
+
+  it("opens the assessment with accepted narrative, not a duplicate headline or Oracle explainer", () => {
+    const { bundle, report } = fixture();
+    const viewModel = createMissionViewModel(bundle);
+    const brief = createOracleMarketBriefFixture();
+    viewModel.oracleMarketBrief = brief;
+    // The canonical headline may match the model headline; it must not be repeated above the brief.
+    report.headline = brief.report.headline.text;
+    const book = buildBookDefinitions(viewModel).find((entry) => entry.id === "oracle")!;
+    const { container } = render(<>{book.pages[0].content}</>);
+    const reading = within(screen.getByRole("region", { name: "Plain-language reading" }));
+    expect(reading.getAllByText(brief.report.headline.text)).toHaveLength(1);
+    expect(screen.getByText(brief.report.sections[0].paragraphs[0].text)).toBeVisible();
+    expect(container.querySelector(".ledger-briefing")?.firstElementChild).toHaveClass("oracle-market-brief");
+    const explanation = screen.getByText(/Oracle describes the measured market universe/);
+    expect(explanation.closest("details")).not.toHaveAttribute("open");
+    expect(explanation).not.toBeVisible();
+    expect(container.querySelector(".ledger-briefing > .ledger-boundary")).toBeNull();
+  });
+
+  it("places native market commentary before method and missing-brief notices when no accepted brief exists", () => {
+    const { bundle } = fixture();
+    const { container } = render(<OracleMarketNarrative viewModel={createMissionViewModel(bundle)} />);
+    const prose = screen.getByText(PROSE.breadth_commentary);
+    expect(prose).toBeVisible();
+    expect(prose.closest("details")).toBeNull();
+    for (const note of [screen.getByText(/Source: Oracle report/), screen.getByText(/No verified longer-form ModelDock market brief/)]) {
+      expect(prose.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(container.querySelector("details")).toBeNull();
+  });
+
   it("shows current-shaped report commentary, summary, timing and limitations without changing source documents", () => {
     const { bundle, native, report, model } = fixture();
     const before = JSON.stringify({ native, report, model });

@@ -4,6 +4,7 @@ import { getEvidence, getEvidenceDocument, type MissionViewModel, type StageBook
 import { getNumber, getString, getStringArray } from "../data/validate";
 import { explainMissionWarning } from "../components/MissionWarnings";
 import { ModelDockNarrativeDetails, OracleMarketNarrative } from "./OracleNarrative";
+import { OracleDiagnostics, OracleOverview } from "./OracleOverview";
 
 type Briefing = { headline: string; explanation: string; points?: readonly [string, string][]; limit?: string };
 
@@ -136,17 +137,21 @@ export function withLedgerBriefing(viewModel: MissionViewModel, bookId: StageBoo
   const stage = viewModel.stages[bookId];
   return <>
     <section className="ledger-briefing" aria-label="Plain-language reading">
-      <p className="ledger-takeaway">{briefing.headline}</p>
-      <p>{briefing.explanation}</p>
-      {pageId === "oracle-assessment" ? <OracleMarketNarrative viewModel={viewModel} /> : null}
+      {pageId === "oracle-assessment" ? <OracleMarketNarrative viewModel={viewModel} /> : <>
+        <p className="ledger-takeaway">{briefing.headline}</p>
+        <p>{briefing.explanation}</p>
+      </>}
       {briefing.points ? <dl className="ledger-meaning-list">{briefing.points.map(([label, text]) => <div key={label}><dt>{label}</dt><dd>{text}</dd></div>)}</dl> : null}
+      {pageId === "oracle-measurements" ? <OracleOverview viewModel={viewModel} /> : null}
+      {pageId === "oracle-diagnostics" ? <OracleDiagnostics viewModel={viewModel} /> : null}
       {pageId === "oracle-modeldock" ? <ModelDockNarrativeDetails viewModel={viewModel} /> : null}
-      {briefing.limit ? <p className="ledger-boundary"><strong>Keep in mind:</strong> {briefing.limit}</p> : null}
+      {briefing.limit && pageId !== "oracle-assessment" ? <p className="ledger-boundary"><strong>Keep in mind:</strong> {briefing.limit}</p> : null}
     </section>
     <details className="ledger-recorded-details">
       <summary>Recorded details · exact values</summary>
       <div>
         <p className="ledger-recorded-status">Process status: <code>{stage.technicalStatus}</code> · Native result: <code>{stage.nativeState ?? "Not recorded"}</code> · Display state: <code>{stage.displayState}</code></p>
+        {pageId === "oracle-assessment" ? <p className="book-note">{briefing.explanation} {briefing.limit}</p> : null}
         {recordedContent}
       </div>
     </details>

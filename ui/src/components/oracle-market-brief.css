@@ -1,18 +1,14 @@
 .oracle-market-brief {
-  margin: 1.2em 0 1.7em;
+  margin: 0 0 1.2em;
   padding-bottom: 1.3em;
   border-bottom: 2px solid rgb(111 74 123 / 35%);
   overflow-wrap: anywhere;
 }
-.oracle-market-brief .market-brief-kicker {
-  color: #63437a;
-  font-size: 0.78em;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
 .oracle-market-brief h4 { color: #614075; margin: 0.35em 0 0.5em; font-size: 1.3em; }
-.oracle-market-brief .market-brief-headline { font-size: 1.2em; line-height: 1.4; font-weight: 700; margin: 0.5em 0; }
+.oracle-market-brief .market-brief-headline { color: #39200f; font-size: 1.2em; line-height: 1.4; font-weight: 700; margin: 0 0 0.4em; }
+.oracle-market-brief .market-brief-context { margin: 0 0 1em; font-size: 0.78em; line-height: 1.5; color: #624733; }
+.oracle-market-brief .market-brief-overview { max-width: 72ch; }
+.oracle-market-brief .market-brief-overview p { margin: 0 0 0.85em; line-height: 1.65; white-space: pre-wrap; }
 .oracle-market-brief .market-brief-boundary {
   margin: 0.8em 0 1em;
   padding: 0.6em 0.85em;

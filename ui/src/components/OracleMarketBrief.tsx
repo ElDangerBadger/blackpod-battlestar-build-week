@@ -7,13 +7,14 @@ import { getEvidence, type MissionViewModel } from "../data/viewModel";
 import "./oracle-market-brief.css";
 
 const TITLES: Record<OracleBriefSectionId, string> = {
-  participation: "Participation · how broadly the move is shared",
-  leadership: "Leadership · where movement is concentrated",
-  rotation: "Rotation · the balance between groups",
-  risk: "Risk posture · what the recorded structure suggests",
-  watchpoints: "What to watch in the evidence",
-  limits: "Limits and uncertainty",
+  participation: "Participation",
+  leadership: "Leadership",
+  rotation: "Sector balance",
+  risk: "Risk posture",
+  watchpoints: "What to watch",
+  limits: "Limits to this reading",
 };
+const OVERVIEW_SECTIONS = new Set<OracleBriefSectionId>(["participation", "leadership", "rotation", "risk"]);
 const REFERENCE_FIELDS = ["name", "path", "sha256", "producer", "byte_size", "schema_version", "observed_at"] as const;
 const recordedTime = (value: string) => new Intl.DateTimeFormat("en-US", {
   year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC", timeZoneName: "short",
@@ -47,27 +48,38 @@ export function OracleMarketBrief({ brief, viewModel }: { brief: Brief; viewMode
       return <li key={factId}>{fact ? link(fact) : "Cited fact unavailable"}</li>;
     })}
   </ul>;
-  return <section className="oracle-market-brief" aria-labelledby={`${id}-title`}>
+  return <section className="oracle-market-brief" aria-label="Oracle’s market brief">
     <header>
-      <span className="market-brief-kicker">ModelDock interpretation · captured Oracle evidence</span>
-      <h4 id={`${id}-title`}>Oracle’s market brief</h4>
-      <p className="market-brief-headline">{brief.report.headline.text}</p>
-      {citations(brief.report.headline)}
+      <h4 className="market-brief-headline">{brief.report.headline.text}</h4>
+      <p className="market-brief-context">ModelDock interpretation · Snapshot <time dateTime={brief.evidence.as_of} title={brief.evidence.as_of}>{recordedTime(brief.evidence.as_of)}</time> · Not a live update or trading permission.</p>
     </header>
-    <p className="market-brief-boundary">Supplemental model commentary—not authoritative Oracle analysis, a current market update, or permission to act. Structure, citations, and guardrails were checked; that does not verify that every interpretation follows from its sources. Canonical measurements remain authoritative.</p>
-    <dl className="market-brief-clock">
-      <div><dt>Recorded market snapshot</dt><dd><time dateTime={brief.evidence.as_of} title={brief.evidence.as_of}>{recordedTime(brief.evidence.as_of)}</time></dd></div>
-      <div><dt>Brief generated</dt><dd><time dateTime={brief.generated_at} title={brief.generated_at}>{recordedTime(brief.generated_at)}</time></dd></div>
-    </dl>
-    {brief.report.sections.map((section) => <section className="market-brief-section" key={section.section_id} aria-labelledby={`${id}-${section.section_id}`}>
+    {/* Verbatim accepted paragraphs in their recorded order, not browser synthesis. */}
+    <div className="market-brief-overview" role="region" aria-label="Recorded market overview">
+      {brief.report.sections.filter((section) => OVERVIEW_SECTIONS.has(section.section_id)).map((section) =>
+        <div key={section.section_id} data-overview-section={section.section_id}>
+          {section.paragraphs.map((paragraph, index) => <p key={index}>{paragraph.text}</p>)}
+        </div>)}
+    </div>
+    {brief.report.sections.filter((section) => !OVERVIEW_SECTIONS.has(section.section_id)).map((section) => <section className="market-brief-section" key={section.section_id} aria-labelledby={`${id}-${section.section_id}`}>
       <h5 id={`${id}-${section.section_id}`}>{TITLES[section.section_id]}</h5>
-      {section.paragraphs.map((paragraph, index) => <div key={index}><p>{paragraph.text}</p>{citations(paragraph)}</div>)}
+      {section.paragraphs.map((paragraph, index) => <p key={index}>{paragraph.text}</p>)}
     </section>)}
     {brief.evidence.warnings.length || brief.evidence.blockers.length ? <aside aria-label="Canonical brief warnings and blockers">
       <h5>Recorded coverage and caveats</h5>
       {brief.evidence.warnings.length ? <><p>Canonical warnings</p><ul className="market-brief-recorded-limits">{brief.evidence.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></> : null}
       {brief.evidence.blockers.length ? <><p>Canonical blockers</p><ul className="market-brief-recorded-limits">{brief.evidence.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></> : null}
     </aside> : null}
+    <details>
+      <summary>Sources for this reading</summary>
+      <h5>Headline</h5>
+      {citations(brief.report.headline)}
+      {brief.report.sections.map((section) => <div key={section.section_id}>
+        <h5>{TITLES[section.section_id]}</h5>
+        {section.paragraphs.map((paragraph, index) => <div key={index}>
+          <p>Paragraph {index + 1}</p>{citations(paragraph)}
+        </div>)}
+      </div>)}
+    </details>
     <details>
       <summary>Evidence behind this brief · {facts.size} recorded facts</summary>
       <p>Exact supplied values and their canonical meanings—not fresh browser calculations. A citation identifies evidence; it does not independently prove the model’s interpretation.</p>
@@ -79,6 +91,10 @@ export function OracleMarketBrief({ brief, viewModel }: { brief: Brief; viewMode
     </details>
     <details>
       <summary>Model provenance and limits</summary>
+      <p className="market-brief-boundary">Supplemental model commentary—not authoritative Oracle analysis, a current market update, or permission to act. Structure, citations, and guardrails were checked; that does not verify that every interpretation follows from its sources. Canonical measurements remain authoritative.</p>
+      <dl className="market-brief-clock">
+        <div><dt>Brief generated</dt><dd><time dateTime={brief.generated_at} title={brief.generated_at}>{recordedTime(brief.generated_at)}</time></dd></div>
+      </dl>
       <p>Recorded real ModelDock inference. Opening this page does not call the model, fetch prices, or verify the model’s present availability. This report concerns its supplied proxy universe, not a selected Navigator symbol.</p>
       <dl className="market-brief-provenance">
         <dt>Provider</dt><dd>{brief.provenance.provider}</dd><dt>Model</dt><dd>{brief.provenance.model}</dd>

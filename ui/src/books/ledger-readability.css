@@ -144,6 +144,101 @@
   font-size: 0.95em;
 }
 
+.readable-ledger .oracle-overview {
+  margin-block: 1.2em;
+  overflow-wrap: anywhere;
+}
+
+.readable-ledger .oracle-overview h4 {
+  color: #573b23;
+  font-size: 1.1em;
+  margin-block: 1.2em 0.5em;
+}
+
+.readable-ledger .oracle-measurement-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8em;
+}
+
+.readable-ledger .oracle-measurement-cards > div {
+  display: block;
+  border: 1px solid rgb(96 58 29 / 30%);
+  background: rgb(255 244 205 / 16%);
+  padding: 0.8em;
+}
+
+.readable-ledger .oracle-measurement-cards dt {
+  font-weight: 700;
+}
+
+.readable-ledger .oracle-measurement-cards dd {
+  margin: 0;
+}
+
+.readable-ledger .oracle-measurement-value {
+  display: block;
+  font-size: 1.35em;
+  font-variant-numeric: tabular-nums;
+  margin-block: 0.2em;
+}
+
+.readable-ledger .oracle-measurement-cards p {
+  margin-block: 0.3em;
+  font-size: 0.9em;
+}
+
+.readable-ledger .oracle-overview-limits {
+  padding-left: 0.8em;
+  border-left: 3px solid #8b6030;
+}
+
+.readable-ledger .oracle-table-scroll {
+  overflow-x: auto;
+  margin-block: 1em;
+}
+
+.readable-ledger .oracle-observation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.readable-ledger .oracle-observation-table caption {
+  text-align: left;
+  font-size: 1.1em;
+  font-weight: 700;
+  padding-block: 0.4em;
+}
+
+.readable-ledger .oracle-observation-table th,
+.readable-ledger .oracle-observation-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.65em 0.5em;
+  border-bottom: 1px solid rgb(96 58 29 / 25%);
+}
+
+.readable-ledger .oracle-observation-table tbody th {
+  white-space: nowrap;
+}
+
+.readable-ledger .oracle-observation-table ul {
+  margin: 0;
+  padding-left: 1em;
+}
+
+.readable-ledger .oracle-source-identities {
+  font-size: 0.85em;
+}
+
+@media (max-width: 600px) {
+  .readable-ledger .oracle-measurement-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .readable-ledger .evidence-links {
   line-height: 1.5;
   font-size: 0.85em;

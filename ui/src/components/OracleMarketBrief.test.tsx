@@ -22,20 +22,43 @@ beforeEach(() => { fetchSpy.mockReset(); vi.stubGlobal("fetch", fetchSpy); });
 afterEach(() => { expect(fetchSpy).not.toHaveBeenCalled(); vi.unstubAllGlobals(); });
 
 describe("source-linked supplemental Oracle market brief", () => {
-  it("shows the real report in six readable sections with source citations and distinct clocks", () => {
+  it("leads with the unchanged market reading and keeps citations and generation details available", () => {
     const { brief, viewModel } = fixture(), original = JSON.stringify(brief);
     render(<OracleMarketBrief brief={brief} viewModel={viewModel} />);
-    expect(screen.getByRole("heading", { name: "Oracle’s market brief" })).toBeVisible();
-    expect(screen.getByText(brief.report.headline.text)).toBeVisible();
+    expect(screen.getByRole("region", { name: "Oracle’s market brief" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: brief.report.headline.text })).toBeVisible();
     for (const section of brief.report.sections) expect(screen.getByText(section.paragraphs[0].text)).toBeVisible();
     expect(screen.getByTitle(brief.evidence.as_of)).toHaveAttribute("dateTime", brief.evidence.as_of);
     expect(screen.getByTitle(brief.generated_at)).toHaveAttribute("dateTime", brief.generated_at);
-    expect(screen.getByText(/does not verify that every interpretation/)).toBeVisible();
+    expect(screen.getByText(/Not a live update or trading permission/)).toBeVisible();
+    expect(screen.getByText(/does not verify that every interpretation/)).not.toBeVisible();
+    fireEvent.click(screen.getByText("Sources for this reading"));
     const citations = screen.getAllByRole("link", { name: "Positive participation" });
     expect(citations[0]).toHaveAttribute("href", expect.stringContaining("oracle/oracle_measurements.json"));
     expect(citations[0]).toHaveAttribute("rel", "noreferrer");
     expect(JSON.stringify(brief)).toBe(original);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("places all market paragraphs before methodological detail without inventing a summary", () => {
+    const { brief, viewModel } = fixture();
+    brief.report.sections[0].paragraphs.push({ text: "Another supplied paragraph, preserved exactly.", fact_ids: [brief.evidence.facts[0].fact_id] });
+    const original = JSON.stringify(brief);
+    const { container } = render(<OracleMarketBrief brief={brief} viewModel={viewModel} />);
+    const overview = screen.getByRole("region", { name: "Recorded market overview" });
+    const paragraphs = within(overview).getAllByText((_, element) => element?.tagName === "P");
+    expect(paragraphs.map((paragraph) => paragraph.textContent)).toEqual(
+      brief.report.sections.slice(0, 4).flatMap((section) => section.paragraphs.map((paragraph) => paragraph.text)),
+    );
+    expect(overview.closest("details")).toBeNull();
+    const sources = screen.getByText("Sources for this reading").closest("details")!;
+    const provenance = screen.getByText("Model provenance and limits").closest("details")!;
+    expect(sources).not.toHaveAttribute("open");
+    expect(provenance).not.toHaveAttribute("open");
+    expect(overview.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(overview.compareDocumentPosition(provenance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll(".market-brief-headline")).toHaveLength(1);
+    expect(JSON.stringify(brief)).toBe(original);
   });
 
   it("discloses exact source values, model provenance, and missing revision honestly", () => {
@@ -57,6 +80,7 @@ describe("source-linked supplemental Oracle market brief", () => {
     if (mode === "status") viewModel.evidence = new Map(viewModel.evidence).set(name, { ...viewModel.evidence.get(name)!, status: "UNAVAILABLE" });
     if (mode === "unsafe path") brief.evidence.source_artifacts[name].path = "oracle/%2e%2e/secret.json";
     render(<OracleMarketBrief brief={brief} viewModel={viewModel} />);
+    fireEvent.click(screen.getByText("Sources for this reading"));
     expect(screen.queryByRole("link", { name: "Positive participation" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Positive participation · source link unavailable").length).toBeGreaterThan(0);
   });
@@ -87,7 +111,7 @@ describe("source-linked supplemental Oracle market brief", () => {
     expect(text.indexOf(brief.report.headline.text)).toBeLessThan(text.indexOf("Oracle market narrative"));
     viewModel.oracleMarketBrief = null;
     rerender(<OracleMarketNarrative viewModel={viewModel} />);
-    expect(screen.queryByRole("heading", { name: "Oracle’s market brief" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Oracle’s market brief" })).not.toBeInTheDocument();
     expect(screen.getByText(/No verified longer-form ModelDock market brief/)).toBeVisible();
     expect(screen.getByRole("heading", { name: "Oracle market narrative" })).toBeVisible();
   });

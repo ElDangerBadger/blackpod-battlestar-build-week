@@ -60,11 +60,15 @@ export function OracleMarketNarrative({ viewModel }: { viewModel: MissionViewMod
     ?? getString((fromReport || summaryOnly ? report : native)?.generated_at);
   const reportSummary = getString(source?.summary) ?? (summaryOnly || undefined);
 
-  return <>
-    {viewModel.oracleMarketBrief ? <OracleMarketBrief brief={viewModel.oracleMarketBrief} viewModel={viewModel} />
-      : <p className="book-note">No verified longer-form ModelDock market brief is attached to this mission. The recorded native narrative remains below.</p>}
-    <section className="oracle-recorded-narrative" aria-label="Recorded Oracle market narrative">
+  const recordedNarrative = <section className="oracle-recorded-narrative" aria-label="Recorded Oracle market narrative">
     <h4>Oracle market narrative</h4>
+    {source ? <div className="oracle-commentary">
+      {COMMENTARY.map(([key, label]) => <section key={key}>
+        <h5>{label}</h5>
+        <p>{getString(source[key]) ?? "No commentary recorded for this topic in the selected source."}</p>
+      </section>)}
+    </div> : null}
+    {reportSummary ? <div className="oracle-narrative-summary"><h5>Recorded summary</h5><p>{reportSummary}</p></div> : null}
     <p className="oracle-narrative-source">
       {fromReport ? "Source: Oracle report · embedded narrative."
         : source ? "Source: Oracle narrative artifact."
@@ -73,16 +77,20 @@ export function OracleMarketNarrative({ viewModel }: { viewModel: MissionViewMod
       {asOf && (source || summaryOnly) ? <> Market snapshot: <time dateTime={asOf} title={asOf}>{recordedTime(asOf)}</time>.</> : null}
     </p>
     {mismatch && !fromReport ? <p role="status">The separate Oracle narrative does not match the report’s recorded identifiers and is not shown.</p> : null}
-    {source ? <div className="oracle-commentary">
-      {COMMENTARY.map(([key, label]) => <section key={key}>
-        <h5>{label}</h5>
-        <p>{getString(source[key]) ?? "No commentary recorded for this topic in the selected source."}</p>
-      </section>)}
-    </div> : null}
-    {reportSummary ? <div className="oracle-narrative-summary"><h5>Recorded summary</h5><p>{reportSummary}</p></div> : null}
     <NarrativeWarnings documents={[report, source, !mismatch ? native : undefined]} />
     <p className="book-note">Recorded Oracle wording, not a new analysis or a streaming market update. It describes the measured fleet, not whichever symbol is open in Navigator. {viewModel.oracleMarketBrief ? "The supplemental market brief above is separate from this native wording; earlier ModelDock details remain on page 4." : "ModelDock commentary is separately labeled on page 4."}</p>
-  </section></>;
+  </section>;
+
+  return viewModel.oracleMarketBrief ? <>
+    <OracleMarketBrief brief={viewModel.oracleMarketBrief} viewModel={viewModel} />
+    <details className="ledger-recorded-details">
+      <summary>Original Oracle narrative</summary>
+      {recordedNarrative}
+    </details>
+  </> : <>
+    {recordedNarrative}
+    <p className="book-note">No verified longer-form ModelDock market brief is attached to this mission. The recorded native narrative is shown above.</p>
+  </>;
 }
 
 /** The accepted model's explanation and cited statements stay distinct from Oracle authority. */
