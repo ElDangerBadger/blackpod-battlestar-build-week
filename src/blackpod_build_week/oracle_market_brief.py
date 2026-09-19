@@ -12,6 +12,7 @@ import argparse
 import ast
 import math
 import os
+import re
 import sys
 import types
 import uuid
@@ -25,11 +26,14 @@ from .contracts.mission_request import parse_strict_json_object_bytes
 from .hashing import canonical_json_bytes, sha256_bytes
 from .modeldock_client import ModelDockClient, ModelDockClientError, ModelDockCallResult
 from .modeldock_config import load_modeldock_config
+from .narrative_diagnostics import CanonicalBriefValidationError
 from .oracle_enrichment_workflow import ORACLE_EVIDENCE_ARTIFACTS
 
 
 BRIEF_PATH = "presentation/oracle_market_brief.json"
 ATTEMPT_PATH = "presentation/oracle_market_brief_attempt"
+REVIEWED_RETRY_PREFIX = "presentation/oracle_market_brief_retry_"
+REVIEWED_REVISION_PREFIX = "presentation/oracle_market_brief_revision_"
 CANONICAL_MODULE_PATH = "blackpod/advisors/oracle_market_brief.py"
 MAX_BRIEF_BYTES = 256 * 1024
 MAX_MODULE_BYTES = 256 * 1024
@@ -84,7 +88,7 @@ def load_canonical_brief_module(root: Path) -> tuple[types.ModuleType, str]:
         finally:
             sys.modules.pop(name, None)
         if any(not callable(getattr(module, method, None)) for method in (
-            "build_evidence", "build_prompt", "validate_draft", "seal_brief", "validate_brief",
+            "build_evidence", "build_prompt", "build_output_schema", "validate_draft", "seal_brief", "validate_brief",
         )):
             raise OracleMarketBriefError("canonical brief API is unavailable")
         return module, sha256_bytes(source)
@@ -154,6 +158,18 @@ def _modeldock_failure_diagnostics(error: ModelDockClientError) -> dict[str, Any
     return diagnostics
 
 
+def _validate_draft_with_diagnostics(module: types.ModuleType, value: Any, evidence: dict) -> dict:
+    """Leave acceptance canonical; project only known rejection diagnostics.
+
+    Loaded contract modules have distinct runtime error classes. Match the
+    actual class from the trusted module, never a model-supplied class name.
+    """
+    try:
+        return module.validate_draft(value, evidence)
+    except module.OracleMarketBriefError as error:
+        raise CanonicalBriefValidationError(error) from None
+
+
 def _open_presentation(root: Path) -> int:
     """Create only the additive presentation directory, without following links."""
     descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -185,11 +201,127 @@ def _existing_brief(root: Path, module: types.ModuleType, evidence: dict) -> dic
         raise OracleMarketBriefError("existing market brief is invalid or source-mismatched; refusing overwrite") from None
 
 
+def _reviewed_failure(root: Path, digest: str, mission_id: str, evidence_id: str) -> dict:
+    """Bind an explicitly reviewed retry to unchanged failed-attempt evidence.
+
+    This is not a retry loop or a reset. One new immutable reservation is keyed
+    by the original failure hash, so repeated commands cannot duplicate a call.
+    Unfinished intents and failed retries cannot use this original-attempt path.
+    """
+    from .cabin_reader import _read_file
+
+    try:
+        failure_bytes = _read_file(root, f"{ATTEMPT_PATH}/failure.json", max_bytes=MAX_BRIEF_BYTES)
+        failure = parse_strict_json_object_bytes(failure_bytes)
+        intent_bytes = _read_file(root, f"{ATTEMPT_PATH}/intent.json", max_bytes=MAX_BRIEF_BYTES)
+        intent = parse_strict_json_object_bytes(intent_bytes)
+        request = _read_file(root, f"{ATTEMPT_PATH}/request.json", max_bytes=MAX_EVIDENCE_BYTES)
+        if (
+            sha256_bytes(failure_bytes) != digest
+            or failure.get("schema_version") != "blackpod.oracle_market_brief_failure.v1"
+            or failure.get("status") != "FAILED_NO_AUTOMATIC_RETRY"
+            or failure.get("brief_published") is not False
+            or failure.get("mission_id") != mission_id or failure.get("evidence_id") != evidence_id
+            or intent.get("schema_version") != "blackpod.oracle_market_brief_intent.v1"
+            or intent.get("mission_id") != mission_id or intent.get("evidence_id") != evidence_id
+            or intent.get("status") != "RESERVED_NO_AUTOMATIC_RETRY"
+            or intent.get("presentation_only") is not True
+            or failure.get("request_sha256") != sha256_bytes(request)
+            or intent.get("request_sha256") != failure.get("request_sha256")
+        ):
+            raise ValueError("reviewed failure does not match")
+    except Exception:
+        raise OracleMarketBriefError("reviewed retry requires the exact intact original failure, request and intent for this evidence") from None
+    return {"failure_path": f"{ATTEMPT_PATH}/failure.json", "failure_sha256": digest,
+            "request_sha256": failure["request_sha256"], "intent_sha256": sha256_bytes(intent_bytes)}
+
+
+def _saved_prompt(request_bytes: bytes) -> str:
+    """Recognize only the two historical canonical prompt wire formats."""
+    request = parse_strict_json_object_bytes(request_bytes)
+    if "prompt" in request and "messages" not in request:
+        prompt = request["prompt"]
+    elif "messages" in request and "prompt" not in request:
+        messages = request["messages"]
+        if (
+            not isinstance(messages, list) or len(messages) != 1
+            or not isinstance(messages[0], dict)
+            or set(messages[0]) != {"role", "content"}
+            or messages[0]["role"] != "user"
+        ):
+            raise ValueError("unrecognized canonical prompt shape")
+        prompt = messages[0]["content"]
+    else:
+        raise ValueError("unrecognized canonical prompt shape")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("missing canonical prompt")
+    return prompt
+
+
+def _reviewed_request_revision(
+    root: Path, original: dict, mission_id: str, evidence_id: str,
+    prompt: str, request_sha256: str,
+) -> dict:
+    """Allow one explicitly invoked, changed-prompt reservation per request.
+
+    The predecessor must be the completed failed original reviewed retry, not
+    an unfinished intent or another revision. Original and retry evidence are
+    never deleted/reset; their exact bytes are rechecked before publication.
+    Merely changing a timeout/token budget cannot unlock a new attempt.
+    """
+    from .cabin_reader import _read_file
+
+    retry_path = REVIEWED_RETRY_PREFIX + original["failure_sha256"]
+    try:
+        failure_bytes = _read_file(root, f"{retry_path}/failure.json", max_bytes=MAX_BRIEF_BYTES)
+        failure = parse_strict_json_object_bytes(failure_bytes)
+        intent_bytes = _read_file(root, f"{retry_path}/intent.json", max_bytes=MAX_BRIEF_BYTES)
+        intent = parse_strict_json_object_bytes(intent_bytes)
+        request_bytes = _read_file(root, f"{retry_path}/request.json", max_bytes=MAX_EVIDENCE_BYTES)
+        original_bytes = _read_file(root, f"{ATTEMPT_PATH}/request.json", max_bytes=MAX_EVIDENCE_BYTES)
+        if (
+            failure.get("schema_version") != "blackpod.oracle_market_brief_failure.v1"
+            or failure.get("status") != "FAILED_NO_AUTOMATIC_RETRY"
+            or failure.get("brief_published") is not False
+            or failure.get("mission_id") != mission_id or failure.get("evidence_id") != evidence_id
+            or intent.get("schema_version") != "blackpod.oracle_market_brief_intent.v1"
+            or intent.get("status") != "RESERVED_NO_AUTOMATIC_RETRY"
+            or intent.get("presentation_only") is not True
+            or intent.get("mission_id") != mission_id or intent.get("evidence_id") != evidence_id
+            or failure.get("reviewed_retry_of") != original or intent.get("reviewed_retry_of") != original
+            or "reviewed_request_revision" in intent or "reviewed_request_revision" in failure
+            or failure.get("request_sha256") != sha256_bytes(request_bytes)
+            or intent.get("request_sha256") != failure.get("request_sha256")
+            or sha256_bytes(original_bytes) != original["request_sha256"]
+        ):
+            raise ValueError("predecessor does not match")
+        original_prompt = _saved_prompt(original_bytes)
+        previous_prompt = _saved_prompt(request_bytes)
+    except Exception:
+        raise OracleMarketBriefError("request revision requires the intact failed reviewed retry for the same original evidence") from None
+    if prompt in (original_prompt, previous_prompt):
+        raise OracleMarketBriefError("request revision requires a changed canonical prompt, not only request settings")
+    return {
+        "failure_path": f"{retry_path}/failure.json",
+        "failure_sha256": sha256_bytes(failure_bytes),
+        "intent_sha256": sha256_bytes(intent_bytes),
+        "request_sha256": sha256_bytes(request_bytes),
+        "previous_prompt_sha256": sha256_bytes(previous_prompt.encode("utf-8")),
+        "revised_prompt_sha256": sha256_bytes(prompt.encode("utf-8")),
+        "revision_id": sha256_bytes(canonical_json_bytes({
+            "original_failure_sha256": original["failure_sha256"],
+            "request_sha256": request_sha256,
+        })),
+    }
+
+
 def generate_market_brief(
     *, artifacts_root: Path, mission_id: str,
     environ: Mapping[str, str] | None = None,
     client: Any | None = None,
     max_tokens: int = 3072,
+    reviewed_retry_of: str | None = None,
+    reviewed_request_revision: bool = False,
 ) -> OracleMarketBriefResult:
     """Ask ModelDock for one bounded supplement, or validate an existing one.
 
@@ -200,6 +332,12 @@ def generate_market_brief(
 
     if type(max_tokens) is not int or not 512 <= max_tokens <= 4096:
         raise OracleMarketBriefError("max_tokens must be an integer from 512 to 4096")
+    if type(reviewed_request_revision) is not bool or (reviewed_request_revision and reviewed_retry_of is None):
+        raise OracleMarketBriefError("reviewed_request_revision must be a boolean and requires reviewed_retry_of")
+    if reviewed_retry_of is not None and (
+        not isinstance(reviewed_retry_of, str) or re.fullmatch(r"[0-9a-f]{64}", reviewed_retry_of) is None
+    ):
+        raise OracleMarketBriefError("reviewed_retry_of must be the original failure's lowercase SHA-256")
     environment = os.environ if environ is None else environ
     configured = environment.get("BATTLESTAR_PATH", "").strip()
     if not configured:
@@ -225,41 +363,57 @@ def generate_market_brief(
     existing = _existing_brief(root, module, evidence)
     if existing is not None:
         return OracleMarketBriefResult("ALREADY_CAPTURED", root / BRIEF_PATH, existing)
+    retry_record = None if reviewed_retry_of is None else _reviewed_failure(
+        root, reviewed_retry_of, mission_id, evidence["evidence_id"],
+    )
     config = load_modeldock_config(environ=environment)
     prompt = module.build_prompt(evidence)
     wire = {
         "profile": config.profile,
-        "capabilities": ["text"], "response_format": {"type": "json"},
+        "capabilities": ["text"],
+        "response_format": {"type": "json_schema", "schema": module.build_output_schema(evidence)},
         "timeout": max(1, math.ceil(config.timeout_seconds)),
         "metadata": {"blackpod_correlation": {
             "mission_id": loaded.request.mission_id, "request_id": loaded.request.request_id,
             "symbol": loaded.request.symbol, "run_mode": "LIVE",
         }},
-        "prompt": prompt, "max_tokens": max_tokens,
+        # Semantic input lets ModelDock own all native chat-template details.
+        # The canonical instructions/evidence bytes themselves remain unchanged.
+        "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
     }
     request_bytes = canonical_json_bytes(wire)
+    revision_record = _reviewed_request_revision(
+        root, retry_record, mission_id, evidence["evidence_id"], prompt, sha256_bytes(request_bytes),
+    ) if reviewed_request_revision else None
+    if revision_record is not None:
+        attempt_path = REVIEWED_REVISION_PREFIX + revision_record["revision_id"]
+    else:
+        attempt_path = ATTEMPT_PATH if reviewed_retry_of is None else REVIEWED_RETRY_PREFIX + reviewed_retry_of
+    attempt_name = Path(attempt_path).name
     presentation = _open_presentation(root)
     attempt: int | None = None
     published = False
     try:
         try:
-            os.mkdir("oracle_market_brief_attempt", mode=0o700, dir_fd=presentation)
+            os.mkdir(attempt_name, mode=0o700, dir_fd=presentation)
             os.fsync(presentation)
         except FileExistsError:
             raise OracleMarketBriefError("a market brief attempt is already reserved; no automatic retry is permitted") from None
-        attempt = os.open("oracle_market_brief_attempt", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=presentation)
+        attempt = os.open(attempt_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=presentation)
         _write_exclusive(attempt, "intent.json", canonical_json_bytes({
             "schema_version": "blackpod.oracle_market_brief_intent.v1",
             "mission_id": mission_id, "request_sha256": sha256_bytes(request_bytes),
             "evidence_id": evidence["evidence_id"],
             "canonical_module_sha256": module_sha256,
             "status": "RESERVED_NO_AUTOMATIC_RETRY", "presentation_only": True,
+            **({"reviewed_retry_of": retry_record} if retry_record is not None else {}),
+            **({"reviewed_request_revision": revision_record} if revision_record is not None else {}),
         }))
         _write_exclusive(attempt, "request.json", request_bytes)
         result = (client or ModelDockClient(config)).generate_text(
             wire, mission_id=loaded.request.mission_id, request_id=loaded.request.request_id,
             symbol=loaded.request.symbol, run_mode=RunMode.LIVE,
-            content_validator=lambda value: module.validate_draft(value, evidence),
+            content_validator=lambda value: _validate_draft_with_diagnostics(module, value, evidence),
             content_requires_correlation=False,
         )
         if (
@@ -270,6 +424,19 @@ def generate_market_brief(
         ):
             raise OracleMarketBriefError("ModelDock result conflicts with the reserved request")
         # Recheck even injected executors: the producer owns final acceptance.
+        if (
+            not isinstance(result.safe_response, Mapping)
+            or result.safe_response_bytes != canonical_json_bytes(dict(result.safe_response))
+        ):
+            raise OracleMarketBriefError("ModelDock result projection conflicts with its persisted response")
+        metadata = result.safe_response.get("metadata")
+        acknowledgement = metadata.get("structured_output") if isinstance(metadata, Mapping) else None
+        if (
+            not isinstance(acknowledgement, Mapping)
+            or acknowledgement.get("mode") != "json_schema"
+            or acknowledgement.get("validated") is not True
+        ):
+            raise OracleMarketBriefError("ModelDock result lacks confirmed schema-constrained generation and validation")
         draft = module.validate_draft(result.parsed_content, evidence)
         provenance = {
             "provider": result.provider, "model": result.model,
@@ -289,6 +456,14 @@ def generate_market_brief(
             raise OracleMarketBriefError("mission evidence changed during inference; no brief published")
         if sha256_bytes(_read_file(Path(configured), CANONICAL_MODULE_PATH, max_bytes=MAX_MODULE_BYTES)) != module_sha256:
             raise OracleMarketBriefError("canonical brief module changed during inference")
+        if reviewed_retry_of is not None:
+            if _reviewed_failure(root, reviewed_retry_of, mission_id, evidence["evidence_id"]) != retry_record:
+                raise OracleMarketBriefError("original failed-attempt evidence changed during the reviewed retry")
+        if revision_record is not None:
+            if _reviewed_request_revision(
+                root, retry_record, mission_id, evidence["evidence_id"], prompt, sha256_bytes(request_bytes),
+            ) != revision_record:
+                raise OracleMarketBriefError("failed reviewed-retry evidence changed during the request revision")
         _write_exclusive(attempt, "response.json", result.safe_response_bytes)
         _write_exclusive(attempt, "provenance.json", canonical_json_bytes(provenance))
         _write_exclusive(attempt, "validated_brief.json", brief_bytes)
@@ -308,6 +483,8 @@ def generate_market_brief(
                 "request_sha256": sha256_bytes(request_bytes),
                 "evidence_id": evidence["evidence_id"], "brief_published": published,
                 "modeldock_failure": diagnostics,
+                **({"reviewed_retry_of": retry_record} if retry_record is not None else {}),
+                **({"reviewed_request_revision": revision_record} if revision_record is not None else {}),
             }
             try:
                 _write_exclusive(attempt, "failure.json", canonical_json_bytes(failure))
@@ -332,9 +509,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--artifacts-root", type=Path, required=True)
     parser.add_argument("--mission-id", required=True)
     parser.add_argument("--max-tokens", type=int, default=3072)
+    parser.add_argument("--reviewed-retry-of", help="Explicitly reviewed original failure SHA-256; reserves one separate attempt without replacing history")
+    parser.add_argument("--reviewed-request-revision", action="store_true", help="With --reviewed-retry-of, explicitly reserve a changed canonical prompt after its failed reviewed retry; does not reset history or retry automatically")
     args = parser.parse_args(argv)
     try:
-        result = generate_market_brief(artifacts_root=args.artifacts_root, mission_id=args.mission_id, max_tokens=args.max_tokens)
+        result = generate_market_brief(artifacts_root=args.artifacts_root, mission_id=args.mission_id,
+                                      max_tokens=args.max_tokens, reviewed_retry_of=args.reviewed_retry_of,
+                                      reviewed_request_revision=args.reviewed_request_revision)
     except Exception as exc:
         message = str(exc) if isinstance(exc, OracleMarketBriefError) else "market brief invocation failed validation"
         print(message, file=sys.stderr)

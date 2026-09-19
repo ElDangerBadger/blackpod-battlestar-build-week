@@ -38,6 +38,35 @@ provenance, content, and bounded output are still checked. The existing local
 MLX response policy remains; this change does not authorize cloud providers.
 Default output budget is 3,072 tokens.
 
+The richer brief now sends the unchanged canonical prompt as a semantic
+`messages: [{role: "user", content: ...}]` request. ModelDock owns native chat
+formatting. This avoids treating an instruction-following brief as raw text
+continuation and requires no model/engine/template knowledge in the client.
+The brief now also sends the canonical `build_output_schema(evidence)` as
+`response_format: {"type": "json_schema", "schema": ...}`. ModelDock must enforce
+that schema while decoding and validate the completed JSON. The client requires
+`metadata.structured_output: {"mode": "json_schema", "validated": true}` before
+accepting the response, so an older appliance cannot silently ignore the option.
+The producer independently rechecks that acknowledgement before publication,
+including when an injected executor supplies the result.
+Unavailable constrained decoding fails the attempt; no prompt-only fallback or
+automatic retry is permitted. Deploy a ModelDock version with this capability
+before authorizing a live attempt.
+
+The schema requires the exact root, section, headline and paragraph keys,
+bounded strings/arrays, the draft version and allowed section/citation IDs.
+Canonical validation still checks section order, distinct citations, evidence
+alignment and prose/domain rules; schema conformance does not establish truth.
+All existing validators, evidence rechecks and publication gates remain active.
+Legacy enrichment/preflight requests and frozen REPLAY inputs keep their
+original `response_format: {"type": "json"}` behavior.
+
+Implementation and fixture tests do not authorize a live acceptance run.
+Existing failed attempts remain reserved, including the reviewed request
+revision. Obtain explicit authorization for one concrete invocation using saved
+evidence and the existing reviewed workflow; do not remove reservations, refresh
+evidence or change the prompt merely to unlock another call.
+
 The same routing boundary applies to the legacy Oracle enrichment producer and
 deep ModelDock preflight. Preflight's historical model-registry status fields
 are `null` (intentionally not checked), not readiness gates. Frozen replay packs
@@ -55,6 +84,42 @@ Do not delete that reservation to force a retry. Investigate the recorded
 failure and obtain authorization for a separately reviewed attempt. Invalid
 existing output is never overwritten. Source bytes and the canonical module
 hash are rechecked before exclusive atomic publication.
+
+For an explicitly authorized retry of the **original failed attempt**, add
+`--reviewed-retry-of <SHA256-of-original-failure.json>` to the same command.
+The producer requires intact, matching failure/request/intent evidence and
+reserves `presentation/oracle_market_brief_retry_<SHA256>/` exclusively.
+The original directory is untouched. The retry records its lineage and rechecks
+the original attempt before publication. A repeated command cannot issue a
+second request; even a failed retry remains reserved. There is no retry loop,
+failure-receipt deletion, schema relaxation, or recursive retry of retries.
+An accepted brief still uses the single canonical `oracle_market_brief.json`
+publication path, and subsequent invocations simply verify that existing brief.
+
+When that reviewed retry has also failed, a separately authorized canonical
+prompt correction may use `--reviewed-request-revision` together with the same
+`--reviewed-retry-of <original-failure-SHA256>`. This requires both completed,
+intact failed attempts and the same evidence. The new canonical prompt must
+differ from both previous prompts; changing only a token budget or timeout
+does not qualify. An exclusive request-hash-keyed
+`presentation/oracle_market_brief_revision_<hash>/` preserves the lineage and
+prevents duplicate calls for the same request. Both predecessor histories are
+rechecked before publication. This is an explicit invocation, not an automatic
+or recursive retry mechanism; another failure must not trigger another call.
+
+The current Battlestar prompt explicitly separates the input evidence schema
+from the required output schema, supplies exact JSON object shapes and the
+available citation vocabulary, and scopes qualitative-prose restrictions to
+`text` fields. Its invalid replacement placeholders cannot pass validation as
+a canned report. Evidence, output contracts and safety validators are unchanged.
+
+Failures include only bounded, non-content diagnostics. JSON syntax failures
+report line/column and decoded-character offset without retaining the rejected
+text. Recognized canonical brief failures report fixed rule/field labels (for
+example, `prose_guardrail` for a compound prose-policy rejection); they do
+not expose the offending text or claim a narrower cause than the canonical
+validator established. Unknown errors remain unclassified. These diagnostics
+do not remove reasoning blocks, repair JSON, relax checks, or authorize retries.
 
 ## Read-only consumption
 
@@ -140,6 +205,18 @@ an explicit missing-brief note. No current market data or downstream stage was
 run. A new inference requires a separately reviewed attempt and authorization.
 Automated component/contract tests cover the richer report; the browser check
 covers the real missing-supplement state, not a successful live-generated brief.
+
+A later, separately authorized fresh September 18 mission used appliance-owned
+routing correctly. Its single brief attempt returned malformed narrative JSON
+and was preserved without retry; native Oracle/Council/Governor execution
+succeeded. See the [fresh-run operator record](LIVE_ANALYSIS_RUN_20260918.md)
+for that distinct attempt, diagnostics, and current application source.
+
+The [narration integration follow-up](ORACLE_NARRATION_INTEGRATION.md) switched
+the richer brief to ModelDock's supported semantic-chat input and added an
+explicit hash-bound reviewed retry. Its one authorized saved-evidence call also
+failed JSON parsing; no brief or automatic retry was published. This remains an
+unresolved output-contract/acceptance issue, not a missing canonical Oracle port.
 
 Final focused validation: 142 Battlestar tests (34 subtests), 162 Build Week
 backend tests (200 subtests), and all 1,029 UI tests passed. The UI production

@@ -10,6 +10,7 @@ from typing import Any
 from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes
 from blackpod_build_week.modeldock_client import (
     HttpResponse,
+    MODELDOCK_MAX_PROMPT_BYTES,
     ModelDockClient,
     ModelDockClientError,
     UrlLibTransport,
@@ -86,6 +87,12 @@ def request_payload(run_mode: str = "LIVE") -> dict[str, Any]:
     }
     if run_mode == "REPLAY":
         payload["model"] = MODEL
+    return payload
+
+
+def messages_payload(run_mode: str = "LIVE") -> dict[str, Any]:
+    payload = request_payload(run_mode)
+    payload["messages"] = [{"role": "user", "content": payload.pop("prompt")}]
     return payload
 
 
@@ -199,6 +206,64 @@ class ModelDockClientTests(unittest.TestCase):
         self.assertEqual(transport.last_request["timeout_seconds"], 9.875)
         self.assertNotIn("model", json.loads(transport.last_request["body"]))
         self.assertNotIn("Authorization", transport.last_request["headers"])
+
+    def test_structured_request_and_acknowledgement_preserve_schema_and_validator(self) -> None:
+        payload = messages_payload()
+        schema = {"type": "object", "properties": {"summary": {"type": "string"}}}
+        payload["response_format"] = {"type": "json_schema", "schema": schema}
+        before = copy.deepcopy(payload)
+        envelope = response_envelope()
+        envelope["metadata"]["structured_output"] = {"mode": "json_schema", "validated": True}
+        transport = FakeTransport(http_response(envelope))
+        result = self.invoke(transport, payload=payload)
+        self.assertEqual(json.loads(transport.last_request["body"])["response_format"], payload["response_format"])
+        self.assertEqual(payload, before)
+        self.assertEqual(result.parsed_content, narrative())
+        self.assertEqual(result.safe_response["metadata"]["structured_output"], {"mode": "json_schema", "validated": True})
+        self.assertEqual(transport.calls, 1)
+
+    def test_structured_request_rejects_missing_or_invalid_acknowledgement(self) -> None:
+        payload = messages_payload()
+        payload["response_format"] = {"type": "json_schema", "schema": {"type": "object"}}
+        for acknowledgement in (None, {}, {"mode": "json", "validated": True}, {"mode": "json_schema", "validated": False}, {"mode": "json_schema", "validated": 1}):
+            with self.subTest(acknowledgement=acknowledgement):
+                envelope = response_envelope()
+                envelope["metadata"]["structured_output"] = acknowledgement
+                transport = FakeTransport(http_response(envelope))
+                self.assert_code("response_structured_output_unconfirmed", transport, payload=payload)
+                self.assertEqual(transport.calls, 1)
+
+    def test_structured_transport_rejects_bad_format_and_frozen_replay_changes(self) -> None:
+        for response_format in ({"type": "json_schema"}, {"type": "json_schema", "schema": None}, {"type": "json_schema", "schema": []}, {"type": "json_schema", "schema": {}, "strict": True}):
+            with self.subTest(response_format=response_format):
+                payload = messages_payload()
+                payload["response_format"] = response_format
+                transport = FakeTransport(http_response(response_envelope()))
+                self.assert_code("request_format_invalid", transport, payload=payload)
+                self.assertEqual(transport.calls, 0)
+        payload = request_payload("REPLAY")
+        payload["response_format"] = {"type": "json_schema", "schema": {"type": "object"}}
+        transport = FakeTransport(http_response(response_envelope(run_mode="REPLAY", mocked=True)))
+        self.assert_code("request_structured_live_only", transport, payload=payload, run_mode="REPLAY")
+        self.assertEqual(transport.calls, 0)
+
+    def test_structured_acknowledgement_cannot_bypass_strict_json_or_semantic_validation(self) -> None:
+        payload = messages_payload()
+        payload["response_format"] = {"type": "json_schema", "schema": {"type": "object"}}
+        envelope = response_envelope()
+        envelope["metadata"]["structured_output"] = {"mode": "json_schema", "validated": True}
+        envelope["content"] = "```json\n" + json.dumps(narrative()) + "\n```"
+        self.assert_code("response_malformed_json", FakeTransport(http_response(envelope)), payload=payload)
+        envelope["content"] = json.dumps(narrative())
+        transport = FakeTransport(http_response(envelope))
+        def reject(value):
+            raise ValueError("private rejected content")
+        with self.assertRaises(ModelDockClientError) as caught:
+            self.client(transport).generate_text(payload, mission_id=MISSION_ID, request_id=REQUEST_ID,
+                symbol=SYMBOL, run_mode="LIVE", content_validator=reject)
+        self.assertEqual(caught.exception.code, "narrative_schema_invalid")
+        self.assertNotIn("private rejected content", str(caught.exception))
+        self.assertEqual(transport.calls, 1)
 
     def test_current_mlx_vlm_text_engine_is_a_real_supported_response(self) -> None:
         transport = FakeTransport(http_response(response_envelope(engine="mlx-vlm")))
@@ -314,6 +379,48 @@ class ModelDockClientTests(unittest.TestCase):
                 content_validator=lambda value: value,
             )
         self.assertEqual(caught.exception.code, "request_correlation_mismatch")
+
+    def test_json_failure_coordinates_never_retain_rejected_content(self) -> None:
+        secret = "PRIVATE_PROSE_SENTINEL"
+        cases = (
+            f"<think>{secret}</think>" + json.dumps(narrative()),
+            "```json\n" + json.dumps(narrative()) + "\n```",
+            '{"text":"é ' + secret + '\",\n"unfinished":',
+            '{"text":"' + secret,
+        )
+        for content in cases:
+            with self.subTest(prefix=content[:1]):
+                try:
+                    json.loads(content)
+                except json.JSONDecodeError as expected:
+                    coordinates = (
+                        f"line={expected.lineno}; column={expected.colno}; "
+                        f"character_offset={expected.pos}"
+                    )
+                else:
+                    self.fail("fixture must remain malformed")
+                envelope = response_envelope()
+                envelope["content"] = content
+                transport = FakeTransport(http_response(envelope))
+                with self.assertRaises(ModelDockClientError) as caught:
+                    self.invoke(transport, payload=messages_payload())
+                failure = caught.exception.failure.to_dict()
+                self.assertEqual(failure["code"], "response_malformed_json")
+                self.assertIn(coordinates, failure["message"])
+                self.assertNotIn(secret, json.dumps(failure))
+                self.assertNotIn("content", failure["safe_response"])
+                self.assertEqual(transport.calls, 1)
+
+    def test_outer_json_failure_reports_coordinates_without_response_body(self) -> None:
+        body = b'{\n"untrusted":"PRIVATE_PROSE_SENTINEL",\n"incomplete":'
+        transport = FakeTransport(HttpResponse(200, {}, body))
+        with self.assertRaises(ModelDockClientError) as caught:
+            self.invoke(transport)
+        failure = caught.exception.failure.to_dict()
+        self.assertEqual(failure["code"], "response_malformed_json")
+        self.assertIn("line=3; column=14; character_offset=", failure["message"])
+        self.assertNotIn("PRIVATE_PROSE_SENTINEL", json.dumps(failure))
+        self.assertIsNone(failure["safe_response"])
 
     def test_validator_failure_is_sanitized(self) -> None:
         transport = FakeTransport(http_response(response_envelope()))
@@ -551,6 +658,157 @@ class ModelDockClientTests(unittest.TestCase):
         transport = FakeTransport(http_response(response_envelope(run_mode="REPLAY", mocked=True)))
         self.assert_code("request_model_mismatch", transport, run_mode="REPLAY", payload=payload)
         self.assertEqual(transport.calls, 0)
+
+    def test_live_semantic_messages_preserve_content_roles_and_single_appliance_call(self) -> None:
+        payload = messages_payload()
+        payload["messages"] = [
+            {"role": "system", "content": "Use only supplied evidence."},
+            {"role": "user", "content": "  Recorded facts — no extra data.\n"},
+            {"role": "assistant", "content": "Earlier recorded context."},
+            {"role": "user", "content": "Return source-linked narrative JSON."},
+        ]
+        before = copy.deepcopy(payload)
+        transport = FakeTransport(http_response(response_envelope()))
+        result = self.invoke(transport, payload=payload)
+
+        self.assertEqual(payload, before)
+        self.assertEqual(result.request_bytes, canonical_json_bytes(before))
+        self.assertEqual(result.request_sha256, sha256_bytes(canonical_json_bytes(before)))
+        self.assertEqual(json.loads(transport.last_request["body"])["messages"], before["messages"])
+        self.assertNotIn("prompt", json.loads(result.request_bytes))
+        self.assertNotIn("model", json.loads(result.request_bytes))
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(transport.last_request["url"], "http://127.0.0.1:8000/text/generate")
+        self.assertEqual(result.parsed_content, narrative())
+
+    def test_messages_do_not_change_existing_live_or_replay_prompt_bytes(self) -> None:
+        for mode in ("LIVE", "REPLAY"):
+            with self.subTest(mode=mode):
+                payload = request_payload(mode)
+                expected = canonical_json_bytes(payload)
+                transport = FakeTransport(http_response(response_envelope(run_mode=mode, mocked=mode == "REPLAY")))
+                result = self.invoke(transport, run_mode=mode, payload=payload)
+                self.assertEqual(result.request_bytes, expected)
+                self.assertEqual(transport.last_request["body"], expected)
+
+    def test_prompt_and_messages_are_mutually_exclusive_even_when_one_is_blank(self) -> None:
+        for prompt in ("plain prompt", "", None):
+            with self.subTest(prompt=prompt):
+                payload = messages_payload()
+                payload["prompt"] = prompt
+                transport = FakeTransport(http_response(response_envelope()))
+                self.assert_code("request_schema", transport, payload=payload)
+                self.assertEqual(transport.calls, 0)
+        payload = request_payload()
+        del payload["prompt"]
+        transport = FakeTransport(http_response(response_envelope()))
+        self.assert_code("request_schema", transport, payload=payload)
+        self.assertEqual(transport.calls, 0)
+
+    def test_invalid_message_inputs_fail_before_network_without_reflecting_content(self) -> None:
+        invalid = (
+            None, [], "user message", ({"role": "user", "content": "text"},),
+            [{"role": "user", "content": "text"}] * 33,
+            [None], ["text"], [{}], [{"role": "user"}], [{"content": "text"}],
+            [{"role": "tool", "content": "text"}], [{"role": "developer", "content": "text"}],
+            [{"role": "USER", "content": "text"}], [{"role": ["user"], "content": "text"}],
+            [{"role": "user", "content": None}], [{"role": "user", "content": ""}],
+            [{"role": "user", "content": " \n\t "}], [{"role": "user", "content": 1}],
+            [{"role": "user", "content": [{"type": "text", "text": "text"}]}],
+            [{"role": "user", "content": "private prompt contents", "name": "speaker"}],
+            [{"role": "assistant", "content": "text", "tool_calls": []}],
+            [{"role": "user", "content": "text", "model": MODEL}],
+        )
+        for messages in invalid:
+            with self.subTest(messages=messages):
+                payload = messages_payload()
+                payload["messages"] = messages
+                transport = FakeTransport(http_response(response_envelope()))
+                with self.assertRaises(ModelDockClientError) as caught:
+                    self.invoke(transport, payload=payload)
+                self.assertEqual(caught.exception.code, "request_messages_invalid")
+                self.assertNotIn("private prompt contents", str(caught.exception))
+                self.assertEqual(transport.calls, 0)
+
+    def test_messages_limit_is_combined_utf8_content_bytes_and_inclusive(self) -> None:
+        payload = messages_payload()
+        payload["messages"] = [
+            {"role": "system", "content": "é" * (MODELDOCK_MAX_PROMPT_BYTES // 4)},
+            {"role": "user", "content": "é" * (MODELDOCK_MAX_PROMPT_BYTES // 4)},
+        ]
+        transport = FakeTransport(http_response(response_envelope()))
+        self.invoke(transport, payload=payload)
+        self.assertEqual(transport.calls, 1)
+
+        payload["messages"][1]["content"] += "x"
+        transport = FakeTransport(http_response(response_envelope()))
+        self.assert_code("request_messages_oversized", transport, payload=payload)
+        self.assertEqual(transport.calls, 0)
+
+        payload["messages"] = [{"role": "user", "content": "x" * (MODELDOCK_MAX_PROMPT_BYTES + 1)}]
+        transport = FakeTransport(http_response(response_envelope()))
+        self.assert_code("request_messages_oversized", transport, payload=payload)
+        self.assertEqual(transport.calls, 0)
+
+    def test_messages_accept_exactly_32_messages(self) -> None:
+        payload = messages_payload()
+        payload["messages"] = [{"role": "user", "content": str(index)} for index in range(32)]
+        transport = FakeTransport(http_response(response_envelope()))
+        self.invoke(transport, payload=payload)
+        self.assertEqual(transport.calls, 1)
+
+    def test_replay_messages_are_not_a_replacement_for_frozen_prompt_input(self) -> None:
+        transport = FakeTransport(http_response(response_envelope(run_mode="REPLAY", mocked=True)))
+        self.assert_code("request_messages_live_only", transport, run_mode="REPLAY", payload=messages_payload("REPLAY"))
+        self.assertEqual(transport.calls, 0)
+
+    def test_messages_do_not_enable_model_overrides_or_tool_fields(self) -> None:
+        for field, value, code in (
+            ("model", MODEL, "live_model_override_forbidden"),
+            ("model", None, "live_model_override_forbidden"),
+            ("tools", [], "request_schema"),
+            ("tool_choice", "auto", "request_schema"),
+            ("chat_template", "custom", "request_schema"),
+            ("enable_thinking", False, "request_schema"),
+        ):
+            with self.subTest(field=field, value=value):
+                payload = messages_payload()
+                payload[field] = value
+                transport = FakeTransport(http_response(response_envelope()))
+                self.assert_code(code, transport, payload=payload)
+                self.assertEqual(transport.calls, 0)
+
+    def test_messages_preserve_response_correlation_and_json_validation(self) -> None:
+        bad_correlation = response_envelope()
+        bad_correlation["metadata"]["blackpod_correlation"]["symbol"] = "OTHER"
+        self.assert_code("response_correlation_mismatch", FakeTransport(http_response(bad_correlation)), payload=messages_payload())
+        bad_narrative = response_envelope()
+        bad_narrative["content"] = json.dumps({**narrative(), "symbol": "OTHER"})
+        self.assert_code("narrative_correlation_mismatch", FakeTransport(http_response(bad_narrative)), payload=messages_payload())
+        for content in ("<think>reasoning</think>" + json.dumps(narrative()), "```json\n" + json.dumps(narrative()) + "\n```"):
+            with self.subTest(content=content):
+                envelope = response_envelope()
+                envelope["content"] = content
+                transport = FakeTransport(http_response(envelope))
+                self.assert_code("response_malformed_json", transport, payload=messages_payload())
+                self.assertEqual(transport.calls, 1)
+
+    def test_messages_still_require_callers_content_safety_validator(self) -> None:
+        transport = FakeTransport(http_response(response_envelope()))
+        observed: list[dict[str, Any]] = []
+
+        def reject(value):
+            observed.append(dict(value))
+            raise ValueError("Rejected unsafe source claims")
+
+        with self.assertRaises(ModelDockClientError) as caught:
+            self.client(transport).generate_text(
+                messages_payload(), mission_id=MISSION_ID, request_id=REQUEST_ID, symbol=SYMBOL,
+                run_mode="LIVE", content_validator=reject,
+            )
+        self.assertEqual(caught.exception.code, "narrative_schema_invalid")
+        self.assertEqual(observed, [narrative()])
+        self.assertEqual(transport.calls, 1)
 
 
 if __name__ == "__main__":

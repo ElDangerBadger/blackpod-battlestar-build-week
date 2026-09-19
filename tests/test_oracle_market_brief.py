@@ -5,25 +5,31 @@ from __future__ import annotations
 import json
 import io
 import os
+import shutil
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from contextlib import redirect_stderr
+from types import SimpleNamespace
+from contextlib import contextmanager, redirect_stderr
 from unittest.mock import patch
 
 from blackpod_build_week.battlestar_config import BattlestarConfig
 from blackpod_build_week.contracts import MissionRequest
-from blackpod_build_week.hashing import canonical_json_bytes
+from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes
 from blackpod_build_week.mission_store import MissionStore
 from blackpod_build_week.modeldock_client import (
     HttpResponse, ModelDockClient, ModelDockClientError, ModelDockFailure,
 )
 from blackpod_build_week.modeldock_config import ModelDockConfig
+from blackpod_build_week.narrative_diagnostics import (
+    CanonicalBriefValidationError, narrative_validation_message,
+)
 from blackpod_build_week.oracle_market_brief import (
-    ATTEMPT_PATH, BRIEF_PATH, CANONICAL_MODULE_PATH, OracleMarketBriefError,
+    ATTEMPT_PATH, BRIEF_PATH, CANONICAL_MODULE_PATH, REVIEWED_RETRY_PREFIX, REVIEWED_REVISION_PREFIX, OracleMarketBriefError,
     generate_market_brief, load_canonical_brief_module, load_mission_evidence,
-    main,
+    main, _validate_draft_with_diagnostics,
 )
 from blackpod_build_week.oracle_workflow import OracleRunSettings, run_oracle
 from test_oracle_enrichment_workflow import EvidenceOracleAdapter, OBSERVED_AT, oracle_documents
@@ -68,12 +74,13 @@ def synthetic_draft():
 
 
 class BriefTransport:
-    def __init__(self, *, draft=None, error=None, on_generate=None, model=MODEL):
+    def __init__(self, *, draft=None, error=None, on_generate=None, model=MODEL, structured_confirmed=True):
         self.draft = synthetic_draft() if draft is None else draft
         self.error = error
         self.on_generate = on_generate
         self.requests = []
         self.model = model
+        self.structured_confirmed = structured_confirmed
 
     @property
     def generations(self):
@@ -94,6 +101,7 @@ class BriefTransport:
                 "provider": "mlx", "model": self.model, "content": json.dumps(self.draft),
                 "data": {"engine": "mlx-lm", "model_path": "/private/model/snapshots/test-revision", "profile": "default"},
                 "metadata": {"blackpod_correlation": wire["metadata"]["blackpod_correlation"],
+                    **({"structured_output": {"mode": "json_schema", "validated": True}} if self.structured_confirmed else {}),
                     "requested_max_tokens": wire["max_tokens"], "effective_max_tokens": wire["max_tokens"],
                     "generated_token_count": 500, "stop_reason": "completed_or_eos", "generation_options": {"temperature": 0.0}},
                 "trace_id": "trace-brief-test", "mocked": False,
@@ -102,6 +110,24 @@ class BriefTransport:
 
 
 class CanonicalBriefLoaderTests(unittest.TestCase):
+    def test_draft_adapter_catches_the_loaded_error_class_not_its_name(self):
+        canonical_error = type("OracleMarketBriefError", (ValueError,), {})
+        lookalike_error = type("OracleMarketBriefError", (ValueError,), {})
+        validator = SimpleNamespace(OracleMarketBriefError=canonical_error)
+        for error in (canonical_error("unsupported draft schema"), lookalike_error("unsupported draft schema")):
+            with self.subTest(is_actual_class=type(error) is canonical_error):
+                def reject(*_, error=error):
+                    raise error
+                validator.validate_draft = reject
+                if type(error) is canonical_error:
+                    with self.assertRaises(CanonicalBriefValidationError) as caught:
+                        _validate_draft_with_diagnostics(validator, {}, {})
+                    self.assertIn("rule=schema_version; field=schema_version", narrative_validation_message(caught.exception))
+                else:
+                    with self.assertRaises(lookalike_error) as caught:
+                        _validate_draft_with_diagnostics(validator, {}, {})
+                    self.assertIs(caught.exception, error)
+
     def test_requires_explicit_canonical_root(self):
         with self.assertRaisesRegex(OracleMarketBriefError, "explicitly"):
             generate_market_brief(artifacts_root=Path("missing"), mission_id="mission-test", environ={})
@@ -134,6 +160,25 @@ class CanonicalBriefLoaderTests(unittest.TestCase):
         for budget in (True, 0, 511, 4097, "3072"):
             with self.subTest(budget=budget), self.assertRaisesRegex(OracleMarketBriefError, "max_tokens"):
                 generate_market_brief(artifacts_root=Path("missing"), mission_id="mission-test", max_tokens=budget)
+
+    def test_retry_hash_checked_before_any_io(self):
+        for digest in (True, "", "a" * 63, "A" * 64, "../attempt", 123):
+            with self.subTest(digest=digest), self.assertRaisesRegex(OracleMarketBriefError, "lowercase SHA-256"):
+                generate_market_brief(artifacts_root=Path("missing"), mission_id="mission-test", reviewed_retry_of=digest)
+
+    def test_revision_requires_explicit_reviewed_retry_and_boolean_before_io(self):
+        for flag, digest in ((True, None), (1, "a" * 64), ("true", "a" * 64), (None, None)):
+            with self.subTest(flag=flag), self.assertRaisesRegex(OracleMarketBriefError, "requires reviewed_retry_of"):
+                generate_market_brief(artifacts_root=Path("missing"), mission_id="mission-test",
+                    reviewed_retry_of=digest, reviewed_request_revision=flag)
+
+    def test_cli_forwards_explicit_request_revision_flag(self):
+        with patch("blackpod_build_week.oracle_market_brief.generate_market_brief", side_effect=OracleMarketBriefError("test-only failure")) as generate, redirect_stderr(io.StringIO()):
+            status = main(["--artifacts-root", "missing", "--mission-id", "mission-test",
+                "--reviewed-retry-of", "a" * 64, "--reviewed-request-revision"])
+        self.assertEqual(status, 1)
+        self.assertEqual(generate.call_args.kwargs["reviewed_retry_of"], "a" * 64)
+        self.assertIs(generate.call_args.kwargs["reviewed_request_revision"], True)
 
     def test_cli_surfaces_only_the_safe_failure_reason(self):
         safe = "market brief capture failed [timeout]: ModelDock request exceeded its client-side deadline. Attempt preserved without automatic retry."
@@ -201,13 +246,101 @@ class OracleMarketBriefTests(unittest.TestCase):
         module, digest = load_canonical_brief_module(Path(CANONICAL_ROOT))
         evidence = module.build_evidence(mission_id=self.request.mission_id, request_id=self.request.request_id,
             symbol="AAPL", run_mode="LIVE", sources=load_mission_evidence(self.loaded))
+        wire = json.loads(transport.requests[0]["body"])
+        self.assertNotIn("prompt", wire)
+        self.assertEqual(wire["messages"], [{"role": "user", "content": module.build_prompt(evidence)}])
+        self.assertEqual(wire["response_format"], {"type": "json_schema", "schema": module.build_output_schema(evidence)})
         self.assertEqual(module.validate_brief(result.brief, evidence), result.brief)
         self.assertEqual(result.brief["provenance"]["canonical_module_sha256"], digest)
         self.assertEqual(result.path.read_bytes(), canonical_json_bytes(result.brief))
         response = (self.root / ATTEMPT_PATH / "response.json").read_text()
         self.assertNotIn("/private/model", response)
+        self.assertEqual(json.loads(response)["metadata"]["structured_output"], {"mode": "json_schema", "validated": True})
         self.assert_original_unchanged()
         self.assertFalse(self.store.load_mission(self.request.mission_id).snapshot.stages["oracle"].modeldock_calls)
+
+    def test_older_appliance_cannot_silently_downgrade_structured_generation(self):
+        transport = BriefTransport(structured_confirmed=False)
+        with self.assertRaisesRegex(OracleMarketBriefError, "response_structured_output_unconfirmed"):
+            self.invoke(transport)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        failure = json.loads((self.root / ATTEMPT_PATH / "failure.json").read_bytes())
+        self.assertFalse(failure["brief_published"])
+        self.assertEqual(failure["modeldock_failure"]["code"], "response_structured_output_unconfirmed")
+        with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+            self.invoke(transport)
+        self.assertEqual(transport.generations, 1)
+        self.assert_original_unchanged()
+
+    def test_injected_executor_cannot_bypass_structured_acknowledgement(self):
+        invalid_metadata = (
+            None, [], {}, {"structured_output": None}, {"structured_output": []},
+            {"structured_output": {}},
+            {"structured_output": {"mode": "json", "validated": True}},
+            *({"structured_output": {"mode": "json_schema", "validated": value}}
+              for value in (None, False, 0, 1, "true")),
+        )
+        for index, metadata in enumerate(invalid_metadata):
+            with self.subTest(metadata=metadata):
+                artifacts = self.base / f"injected-artifacts-{index}"
+                shutil.copytree(self.artifacts, artifacts)
+                root = artifacts / self.root.relative_to(self.artifacts.resolve())
+                transport = BriefTransport()
+                validated_client = ModelDockClient(self.config, transport=transport,
+                    now=lambda: datetime(2026, 7, 19, 12, tzinfo=UTC), monotonic=lambda: 0.0)
+
+                def generate(*args, **kwargs):
+                    result = validated_client.generate_text(*args, **kwargs)
+                    response = {**result.safe_response, "metadata": metadata}
+                    return replace(result, safe_response=response,
+                        safe_response_bytes=canonical_json_bytes(response))
+
+                executor = SimpleNamespace(generate_text=generate)
+                with self.assertRaisesRegex(OracleMarketBriefError, "lacks confirmed schema-constrained"):
+                    generate_market_brief(artifacts_root=artifacts, mission_id=self.request.mission_id,
+                        environ=self.env, client=executor)
+                self.assertEqual(transport.generations, 1)
+                self.assertFalse((root / BRIEF_PATH).exists())
+                self.assertFalse((root / ATTEMPT_PATH / "validated_brief.json").exists())
+                failure = json.loads((root / ATTEMPT_PATH / "failure.json").read_bytes())
+                self.assertEqual(failure["code"], "CAPTURE_FAILED")
+                self.assertIs(failure["brief_published"], False)
+                with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                    generate_market_brief(artifacts_root=artifacts, mission_id=self.request.mission_id,
+                        environ=self.env, client=executor)
+                self.assertEqual(transport.generations, 1)
+                for relative, original in self.original.items():
+                    self.assertEqual((root / relative).read_bytes(), original, relative)
+        self.assert_original_unchanged()
+
+    def test_injected_executor_cannot_omit_acknowledgement_from_persisted_response(self):
+        transport = BriefTransport()
+        validated_client = ModelDockClient(self.config, transport=transport,
+            now=lambda: datetime(2026, 7, 19, 12, tzinfo=UTC), monotonic=lambda: 0.0)
+
+        def generate(*args, **kwargs):
+            result = validated_client.generate_text(*args, **kwargs)
+            metadata = dict(result.safe_response["metadata"])
+            metadata.pop("structured_output")
+            persisted = {**result.safe_response, "metadata": metadata}
+            return replace(result, safe_response_bytes=canonical_json_bytes(persisted))
+
+        executor = SimpleNamespace(generate_text=generate)
+        with self.assertRaisesRegex(OracleMarketBriefError, "projection conflicts"):
+            generate_market_brief(artifacts_root=self.artifacts, mission_id=self.request.mission_id,
+                environ=self.env, client=executor)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        self.assertFalse((self.root / ATTEMPT_PATH / "response.json").exists())
+        failure = json.loads((self.root / ATTEMPT_PATH / "failure.json").read_bytes())
+        self.assertEqual(failure["code"], "CAPTURE_FAILED")
+        self.assertIs(failure["brief_published"], False)
+        with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+            generate_market_brief(artifacts_root=self.artifacts, mission_id=self.request.mission_id,
+                environ=self.env, client=executor)
+        self.assertEqual(transport.generations, 1)
+        self.assert_original_unchanged()
 
     def test_idempotent_existing_brief_requires_no_model_config_or_call(self):
         first, _ = self.invoke()
@@ -238,8 +371,9 @@ class OracleMarketBriefTests(unittest.TestCase):
         self.assertNotIn("Buy AAPL", failure)
         diagnostics = json.loads(failure)["modeldock_failure"]
         self.assertEqual(diagnostics["code"], "narrative_schema_invalid")
-        self.assertEqual(diagnostics["error_type"], "OracleMarketBriefError")
+        self.assertEqual(diagnostics["error_type"], "CanonicalBriefValidationError")
         self.assertIn("versioned contract validation", diagnostics["message"])
+        self.assertIn("rule=prose_guardrail; field=brief_text", diagnostics["message"])
         self.assertIsInstance(diagnostics["latency_ms"], float)
         self.assertEqual(diagnostics["started_at"], diagnostics["observed_at"])
         self.assertEqual(len(diagnostics["raw_response_sha256"]), 64)
@@ -254,6 +388,54 @@ class OracleMarketBriefTests(unittest.TestCase):
         self.assertEqual(again.requests, [])
         self.assertEqual((self.root / ATTEMPT_PATH / "failure.json").read_bytes(), before)
         self.assert_original_unchanged()
+
+    def assert_draft_failure_rule(self, draft, rule, field):
+        transport = BriefTransport(draft=draft)
+        with self.assertRaisesRegex(OracleMarketBriefError, "narrative_schema_invalid"):
+            self.invoke(transport)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        failure = json.loads((self.root / ATTEMPT_PATH / "failure.json").read_bytes())
+        diagnostics = failure["modeldock_failure"]
+        self.assertEqual(diagnostics["code"], "narrative_schema_invalid")
+        self.assertEqual(diagnostics["error_type"], "CanonicalBriefValidationError")
+        self.assertEqual(diagnostics["message"],
+            "ModelDock narrative failed its versioned contract validation "
+            f"(rule={rule}; field={field}).")
+        self.assertNotIn("content", diagnostics["safe_response"])
+        self.assert_original_unchanged()
+
+    def test_real_canonical_brief_structure_rejection_is_diagnostic_only(self):
+        draft = synthetic_draft()
+        draft["untrusted-model-authored-field"] = "/private/secret-value"
+        self.assert_draft_failure_rule(draft, "fields_mismatch", "brief")
+        failure = (self.root / ATTEMPT_PATH / "failure.json").read_text()
+        self.assertNotIn("untrusted-model-authored-field", failure)
+        self.assertNotIn("/private/secret-value", failure)
+
+    def test_real_canonical_brief_citation_rejection_is_diagnostic_only(self):
+        draft = synthetic_draft()
+        draft["headline"]["fact_ids"] = ["untrusted-model-authored-fact"]
+        self.assert_draft_failure_rule(draft, "required_known_citations", "fact_citations")
+        self.assertNotIn("untrusted-model-authored-fact", (self.root / ATTEMPT_PATH / "failure.json").read_text())
+
+    def test_real_canonical_brief_section_rejection_is_diagnostic_only(self):
+        draft = synthetic_draft()
+        draft["sections"].reverse()
+        self.assert_draft_failure_rule(draft, "section_order_or_paragraph_count", "sections")
+
+    def test_real_canonical_brief_plain_text_rejection_keeps_compound_reason(self):
+        draft = synthetic_draft()
+        draft["headline"]["text"] = " "
+        self.assert_draft_failure_rule(draft, "bounded_plain_text", "brief_text")
+
+    def test_unknown_canonical_rejection_is_unclassified_without_exception_text(self):
+        module, digest = load_canonical_brief_module(Path(CANONICAL_ROOT))
+        private_text = "/private/unrecognized-canonical-rejection"
+        with patch("blackpod_build_week.oracle_market_brief.load_canonical_brief_module", return_value=(module, digest)), \
+             patch.object(module, "validate_draft", side_effect=module.OracleMarketBriefError(private_text)):
+            self.assert_draft_failure_rule(synthetic_draft(), "unclassified", "narrative")
+        self.assertNotIn(private_text, (self.root / ATTEMPT_PATH / "failure.json").read_text())
 
     def test_timeout_has_sanitized_failure_and_durable_reservation(self):
         with self.assertRaisesRegex(OracleMarketBriefError, r"\[timeout\].*client-side deadline"):
@@ -285,6 +467,315 @@ class OracleMarketBriefTests(unittest.TestCase):
         self.assertEqual(result.action, "CAPTURED")
         self.assertEqual(first.generations, 1)
         self.assertEqual(second.requests, [])
+
+    def original_failure(self):
+        with self.assertRaises(OracleMarketBriefError):
+            self.invoke(BriefTransport(error=TimeoutError("test-only timeout")))
+        files = {path.name: path.read_bytes() for path in (self.root / ATTEMPT_PATH).iterdir()}
+        return sha256_bytes(files["failure.json"]), files
+
+    def test_reviewed_retry_is_separate_hash_bound_and_preserves_failed_attempt(self):
+        digest, before = self.original_failure()
+        result, transport = self.invoke(reviewed_retry_of=digest)
+        self.assertEqual(result.action, "CAPTURED")
+        self.assertEqual(transport.generations, 1)
+        for name, payload in before.items():
+            self.assertEqual((self.root / ATTEMPT_PATH / name).read_bytes(), payload)
+        retry = self.root / (REVIEWED_RETRY_PREFIX + digest)
+        intent = json.loads((retry / "intent.json").read_bytes())
+        self.assertEqual(intent["reviewed_retry_of"]["failure_sha256"], digest)
+        self.assertEqual(intent["reviewed_retry_of"]["failure_path"], ATTEMPT_PATH + "/failure.json")
+        self.assertEqual((retry / "validated_brief.json").read_bytes(), result.path.read_bytes())
+        self.assert_original_unchanged()
+        repeated, second = self.invoke(reviewed_retry_of=digest, environ={"BATTLESTAR_PATH": CANONICAL_ROOT})
+        self.assertEqual(repeated.action, "ALREADY_CAPTURED")
+        self.assertEqual(second.requests, [])
+
+    def test_failed_reviewed_retry_cannot_be_repeated(self):
+        digest, before = self.original_failure()
+        with self.assertRaises(OracleMarketBriefError):
+            self.invoke(BriefTransport(error=TimeoutError("test-only retry failure")), reviewed_retry_of=digest)
+        retry = self.root / (REVIEWED_RETRY_PREFIX + digest)
+        failure = (retry / "failure.json").read_bytes()
+        self.assertEqual(json.loads(failure)["reviewed_retry_of"]["failure_sha256"], digest)
+        transport = BriefTransport()
+        with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+            self.invoke(transport, reviewed_retry_of=digest)
+        self.assertEqual(transport.requests, [])
+        self.assertEqual((retry / "failure.json").read_bytes(), failure)
+        self.assertEqual((self.root / ATTEMPT_PATH / "failure.json").read_bytes(), before["failure.json"])
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+
+    def test_reviewed_retry_requires_exact_failed_evidence_before_call(self):
+        digest, _ = self.original_failure()
+        for mutation in ("hash", "request", "intent", "failure"):
+            with self.subTest(mutation=mutation):
+                originals = {path: path.read_bytes() for path in (self.root / ATTEMPT_PATH).iterdir()}
+                if mutation != "hash":
+                    (self.root / ATTEMPT_PATH / f"{mutation}.json").write_bytes(b"{}")
+                transport = BriefTransport()
+                with self.assertRaisesRegex(OracleMarketBriefError, "exact intact original failure"):
+                    self.invoke(transport, reviewed_retry_of="f" * 64 if mutation == "hash" else digest)
+                self.assertEqual(transport.requests, [])
+                self.assertFalse((self.root / (REVIEWED_RETRY_PREFIX + digest)).exists())
+                for path, data in originals.items():
+                    path.write_bytes(data)
+
+    def test_reviewed_retry_rejects_missing_failure(self):
+        transport = BriefTransport()
+        with self.assertRaisesRegex(OracleMarketBriefError, "exact intact original failure"):
+            self.invoke(transport, reviewed_retry_of="a" * 64)
+        self.assertEqual(transport.requests, [])
+
+    def test_reviewed_retry_cannot_follow_directory_symlink(self):
+        digest, _ = self.original_failure()
+        elsewhere = self.base / "retry-elsewhere"
+        elsewhere.mkdir()
+        (self.root / (REVIEWED_RETRY_PREFIX + digest)).symlink_to(elsewhere, target_is_directory=True)
+        transport = BriefTransport()
+        with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+            self.invoke(transport, reviewed_retry_of=digest)
+        self.assertEqual(transport.requests, [])
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def test_reviewed_retry_race_cannot_duplicate_generation(self):
+        digest, _ = self.original_failure()
+        second = BriefTransport()
+        def concurrent():
+            with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                self.invoke(second, reviewed_retry_of=digest)
+        _, first = self.invoke(BriefTransport(on_generate=concurrent), reviewed_retry_of=digest)
+        self.assertEqual(first.generations, 1)
+        self.assertEqual(second.requests, [])
+
+    def test_original_failure_changed_during_retry_prevents_publication(self):
+        digest, _ = self.original_failure()
+        transport = BriefTransport(on_generate=lambda: (self.root / ATTEMPT_PATH / "failure.json").write_bytes(b"{}"))
+        with self.assertRaisesRegex(OracleMarketBriefError, "exact intact original failure"):
+            self.invoke(transport, reviewed_retry_of=digest)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+
+    def test_original_intent_bytes_changed_during_retry_prevents_publication(self):
+        digest, _ = self.original_failure()
+        def change_intent():
+            path = self.root / ATTEMPT_PATH / "intent.json"
+            path.write_bytes(path.read_bytes() + b"\n")
+        transport = BriefTransport(on_generate=change_intent)
+        with self.assertRaisesRegex(OracleMarketBriefError, "evidence changed"):
+            self.invoke(transport, reviewed_retry_of=digest)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+
+    @contextmanager
+    def revised_prompt(self):
+        module, digest = load_canonical_brief_module(Path(CANONICAL_ROOT))
+        build_prompt = module.build_prompt
+        with patch("blackpod_build_week.oracle_market_brief.load_canonical_brief_module", return_value=(module, digest)), \
+             patch.object(module, "build_prompt", side_effect=lambda evidence: build_prompt(evidence) + "\nTest-only revised canonical instructions."):
+            yield
+
+    def failed_reviewed_retry(self, *, legacy_original=False):
+        digest, _ = self.original_failure()
+        if legacy_original:
+            original = self.root / ATTEMPT_PATH
+            request = json.loads((original / "request.json").read_bytes())
+            request["prompt"] = request.pop("messages")[0]["content"]
+            request_bytes = canonical_json_bytes(request)
+            (original / "request.json").write_bytes(request_bytes)
+            for filename in ("intent.json", "failure.json"):
+                record = json.loads((original / filename).read_bytes())
+                record["request_sha256"] = sha256_bytes(request_bytes)
+                (original / filename).write_bytes(canonical_json_bytes(record))
+            digest = sha256_bytes((original / "failure.json").read_bytes())
+        with self.assertRaises(OracleMarketBriefError):
+            self.invoke(BriefTransport(error=TimeoutError("test-only retry failure")), reviewed_retry_of=digest)
+        before = {path.relative_to(self.root): path.read_bytes()
+            for directory in (self.root / ATTEMPT_PATH, self.root / (REVIEWED_RETRY_PREFIX + digest))
+            for path in directory.iterdir()}
+        return digest, before
+
+    def assert_attempts_preserved(self, before):
+        for relative, content in before.items():
+            self.assertEqual((self.root / relative).read_bytes(), content, relative)
+        self.assert_original_unchanged()
+
+    def test_reviewed_revision_is_request_bound_and_preserves_both_failed_attempts(self):
+        digest, before = self.failed_reviewed_retry(legacy_original=True)
+        with self.revised_prompt():
+            result, transport = self.invoke(reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(result.action, "CAPTURED")
+        self.assertEqual(transport.generations, 1)
+        request_bytes = transport.requests[0]["body"]
+        revision_id = sha256_bytes(canonical_json_bytes({
+            "original_failure_sha256": digest, "request_sha256": sha256_bytes(request_bytes)}))
+        revision = self.root / (REVIEWED_REVISION_PREFIX + revision_id)
+        intent = json.loads((revision / "intent.json").read_bytes())
+        lineage = intent["reviewed_request_revision"]
+        self.assertEqual(lineage["revision_id"], revision_id)
+        self.assertEqual(lineage["failure_sha256"], sha256_bytes(before[Path(REVIEWED_RETRY_PREFIX + digest) / "failure.json"]))
+        self.assertEqual(lineage["intent_sha256"], sha256_bytes(before[Path(REVIEWED_RETRY_PREFIX + digest) / "intent.json"]))
+        self.assertNotEqual(lineage["previous_prompt_sha256"], lineage["revised_prompt_sha256"])
+        self.assertEqual((revision / "validated_brief.json").read_bytes(), result.path.read_bytes())
+        self.assert_attempts_preserved(before)
+        repeated, second = self.invoke(reviewed_retry_of=digest, reviewed_request_revision=True,
+            environ={"BATTLESTAR_PATH": CANONICAL_ROOT})
+        self.assertEqual(repeated.action, "ALREADY_CAPTURED")
+        self.assertEqual(second.requests, [])
+
+    def test_reviewed_revision_rejects_unchanged_prompt_even_with_changed_budget(self):
+        digest, before = self.failed_reviewed_retry()
+        transport = BriefTransport()
+        with self.assertRaisesRegex(OracleMarketBriefError, "changed canonical prompt"):
+            self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True, max_tokens=4096)
+        self.assertEqual(transport.requests, [])
+        self.assertEqual(list((self.root / "presentation").glob("oracle_market_brief_revision_*")), [])
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_requires_failed_retry_not_original_failure_alone(self):
+        digest, before = self.original_failure()
+        transport = BriefTransport()
+        with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "intact failed reviewed retry"):
+            self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.requests, [])
+        for name, payload in before.items():
+            self.assertEqual((self.root / ATTEMPT_PATH / name).read_bytes(), payload)
+
+    def test_reviewed_revision_failure_never_publishes_or_repeats(self):
+        digest, before = self.failed_reviewed_retry()
+        draft = synthetic_draft()
+        draft["headline"]["text"] = "Buy AAPL now"
+        transport = BriefTransport(draft=draft)
+        with self.revised_prompt():
+            with self.assertRaisesRegex(OracleMarketBriefError, "narrative_schema_invalid"):
+                self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+            revision, = (self.root / "presentation").glob("oracle_market_brief_revision_*")
+            reserved = {path.name: path.read_bytes() for path in revision.iterdir()}
+            second = BriefTransport()
+            with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                self.invoke(second, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.generations, 1)
+        self.assertEqual(second.requests, [])
+        self.assertEqual({path.name: path.read_bytes() for path in revision.iterdir()}, reserved)
+        self.assertNotIn("Buy AAPL", reserved["failure.json"].decode())
+        self.assertIn("reviewed_request_revision", json.loads(reserved["failure.json"]))
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_race_cannot_duplicate_generation(self):
+        digest, before = self.failed_reviewed_retry()
+        second = BriefTransport()
+        def concurrent():
+            with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                self.invoke(second, reviewed_retry_of=digest, reviewed_request_revision=True)
+        with self.revised_prompt():
+            result, first = self.invoke(BriefTransport(on_generate=concurrent),
+                reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(result.action, "CAPTURED")
+        self.assertEqual(first.generations, 1)
+        self.assertEqual(second.requests, [])
+        self.assert_attempts_preserved(before)
+
+    def test_interrupted_revision_keeps_reservation_and_never_repeats(self):
+        digest, before = self.failed_reviewed_retry()
+        transport = BriefTransport(error=KeyboardInterrupt())
+        second = BriefTransport()
+        with self.revised_prompt():
+            with self.assertRaises(KeyboardInterrupt):
+                self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+            with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                self.invoke(second, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.generations, 1)
+        self.assertEqual(second.requests, [])
+        revision, = (self.root / "presentation").glob("oracle_market_brief_revision_*")
+        self.assertTrue((revision / "intent.json").is_file())
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_cannot_follow_reservation_symlink(self):
+        digest, before = self.failed_reviewed_retry()
+        with self.revised_prompt():
+            with self.assertRaises(OracleMarketBriefError):
+                self.invoke(BriefTransport(error=TimeoutError("test-only revision failure")),
+                    reviewed_retry_of=digest, reviewed_request_revision=True)
+            revision, = (self.root / "presentation").glob("oracle_market_brief_revision_*")
+            elsewhere = self.base / "revision-elsewhere"
+            revision.rename(elsewhere)
+            revision.symlink_to(elsewhere, target_is_directory=True)
+            saved = {path.name: path.read_bytes() for path in elsewhere.iterdir()}
+            transport = BriefTransport()
+            with self.assertRaisesRegex(OracleMarketBriefError, "already reserved"):
+                self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.requests, [])
+        self.assertEqual({path.name: path.read_bytes() for path in elsewhere.iterdir()}, saved)
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_requires_completed_retry_receipt(self):
+        digest, before = self.failed_reviewed_retry()
+        retry = self.root / (REVIEWED_RETRY_PREFIX + digest)
+        # Represent a durable reservation interrupted before any failure receipt.
+        (retry / "failure.json").unlink()
+        transport = BriefTransport()
+        with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "intact failed reviewed retry"):
+            self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.requests, [])
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+        self.assertEqual((self.root / ATTEMPT_PATH / "failure.json").read_bytes(), before[Path(ATTEMPT_PATH) / "failure.json"])
+
+    def test_reviewed_revision_rejects_damaged_predecessor_without_call(self):
+        digest, before = self.failed_reviewed_retry()
+        retry = self.root / (REVIEWED_RETRY_PREFIX + digest)
+        for filename in ("failure.json", "intent.json", "request.json"):
+            with self.subTest(filename=filename):
+                original = (retry / filename).read_bytes()
+                (retry / filename).write_bytes(b"{}")
+                transport = BriefTransport()
+                with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "intact failed reviewed retry"):
+                    self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+                self.assertEqual(transport.requests, [])
+                self.assertEqual(list((self.root / "presentation").glob("oracle_market_brief_revision_*")), [])
+                (retry / filename).write_bytes(original)
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_rejects_changed_predecessor_evidence_and_lineage(self):
+        digest, before = self.failed_reviewed_retry()
+        retry = self.root / (REVIEWED_RETRY_PREFIX + digest)
+        for key, value in (("evidence_id", "changed"), ("brief_published", True),
+                           ("reviewed_retry_of", {}), ("reviewed_request_revision", {})):
+            with self.subTest(key=key):
+                path = retry / "failure.json"
+                original = path.read_bytes()
+                record = json.loads(original)
+                record[key] = value
+                path.write_bytes(canonical_json_bytes(record))
+                transport = BriefTransport()
+                with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "intact failed reviewed retry"):
+                    self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+                self.assertEqual(transport.requests, [])
+                path.write_bytes(original)
+        self.assert_attempts_preserved(before)
+
+    def test_reviewed_revision_predecessor_bytes_changed_during_call_blocks_publication(self):
+        digest, _ = self.failed_reviewed_retry()
+        path = self.root / (REVIEWED_RETRY_PREFIX + digest) / "failure.json"
+        def tamper():
+            path.write_bytes(path.read_bytes() + b"\n")
+        transport = BriefTransport(on_generate=tamper)
+        with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "evidence changed"):
+            self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
+
+    def test_reviewed_revision_original_bytes_changed_during_call_blocks_publication(self):
+        digest, _ = self.failed_reviewed_retry()
+        path = self.root / ATTEMPT_PATH / "intent.json"
+        def tamper():
+            path.write_bytes(path.read_bytes() + b"\n")
+        transport = BriefTransport(on_generate=tamper)
+        with self.revised_prompt(), self.assertRaisesRegex(OracleMarketBriefError, "evidence changed"):
+            self.invoke(transport, reviewed_retry_of=digest, reviewed_request_revision=True)
+        self.assertEqual(transport.generations, 1)
+        self.assertFalse((self.root / BRIEF_PATH).exists())
 
     def test_source_tamper_before_generation_fails_without_request(self):
         reference = next(item for item in self.loaded.snapshot.artifacts if item.name == "oracle_measurements")

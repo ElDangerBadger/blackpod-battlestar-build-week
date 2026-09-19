@@ -56,11 +56,12 @@ _REQUEST_FIELDS = frozenset(
         "timeout",
         "metadata",
         "prompt",
+        "messages",
         "max_tokens",
     }
 )
 _REQUIRED_REQUEST_FIELDS = frozenset(
-    {"profile", "capabilities", "response_format", "timeout", "metadata", "prompt"}
+    {"profile", "capabilities", "response_format", "timeout", "metadata"}
 )
 _CORRELATION_FIELDS = frozenset(
     {"mission_id", "request_id", "symbol", "run_mode"}
@@ -73,6 +74,7 @@ _SECRET_LIKE = re.compile(
     r"|(?:^|[._:@/+\-])(?:hf_|ghp_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]{8,}"
 )
 MODELDOCK_MAX_PROMPT_BYTES = 512 * 1024
+MODELDOCK_MAX_MESSAGES = 32
 MODELDOCK_MLX_TEXT_ENGINES = frozenset({"mlx-lm", "mlx-vlm"})
 _READ_CHUNK_BYTES = 64 * 1024
 
@@ -417,6 +419,7 @@ class ModelDockClient:
                 run_mode=normalized_mode,
                 content_validator=content_validator,
                 content_requires_correlation=content_requires_correlation,
+                structured_output_requested=normalized_request["response_format"]["type"] == "json_schema",
             )
             safe_response = _safe_response_projection(envelope, include_content=True)
             safe_response_bytes = canonical_json_bytes(safe_response)
@@ -522,6 +525,18 @@ class ModelDockClient:
                 "ModelDockRequestValidationError",
                 "ModelDock request fields do not match the text.generate contract",
             )
+        if ("prompt" in fields) == ("messages" in fields):
+            raise _ProtocolIssue(
+                "request_schema",
+                "ModelDockRequestValidationError",
+                "ModelDock request requires exactly one prompt or messages input",
+            )
+        if run_mode == "REPLAY" and "messages" in fields:
+            raise _ProtocolIssue(
+                "request_messages_live_only",
+                "ModelDockRequestValidationError",
+                "REPLAY requests must preserve the recorded prompt input",
+            )
         profile = value.get("profile")
         if profile != self.config.profile:
             raise _ProtocolIssue(
@@ -544,19 +559,49 @@ class ModelDockClient:
                 "ModelDockRequestValidationError",
                 "ModelDock request model conflicts with configuration",
             )
-        prompt = value.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise _ProtocolIssue(
-                "request_prompt_invalid",
-                "ModelDockRequestValidationError",
-                "ModelDock prompt must be a nonblank string",
-            )
-        if len(prompt.encode("utf-8")) > MODELDOCK_MAX_PROMPT_BYTES:
-            raise _ProtocolIssue(
-                "request_prompt_oversized",
-                "ModelDockRequestValidationError",
-                "ModelDock prompt exceeds the client input limit",
-            )
+        if "prompt" in fields:
+            prompt = value.get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise _ProtocolIssue(
+                    "request_prompt_invalid",
+                    "ModelDockRequestValidationError",
+                    "ModelDock prompt must be a nonblank string",
+                )
+            if len(prompt.encode("utf-8")) > MODELDOCK_MAX_PROMPT_BYTES:
+                raise _ProtocolIssue(
+                    "request_prompt_oversized",
+                    "ModelDockRequestValidationError",
+                    "ModelDock prompt exceeds the client input limit",
+                )
+        else:
+            messages = value.get("messages")
+            if not isinstance(messages, list) or not 1 <= len(messages) <= MODELDOCK_MAX_MESSAGES:
+                raise _ProtocolIssue(
+                    "request_messages_invalid",
+                    "ModelDockRequestValidationError",
+                    "ModelDock messages must contain between one and 32 messages",
+                )
+            content_bytes = 0
+            for message in messages:
+                if (
+                    not isinstance(message, Mapping)
+                    or set(message) != {"role", "content"}
+                    or message.get("role") not in ("system", "user", "assistant")
+                    or not isinstance(message.get("content"), str)
+                    or not message["content"].strip()
+                ):
+                    raise _ProtocolIssue(
+                        "request_messages_invalid",
+                        "ModelDockRequestValidationError",
+                        "ModelDock messages require supported roles and nonblank string content only",
+                    )
+                content_bytes += len(message["content"].encode("utf-8"))
+                if content_bytes > MODELDOCK_MAX_PROMPT_BYTES:
+                    raise _ProtocolIssue(
+                        "request_messages_oversized",
+                        "ModelDockRequestValidationError",
+                        "ModelDock message content exceeds the client input limit",
+                    )
         capabilities = value.get("capabilities")
         if capabilities != ["text"]:
             raise _ProtocolIssue(
@@ -564,11 +609,24 @@ class ModelDockClient:
                 "ModelDockRequestValidationError",
                 "ModelDock narrative capabilities must be exactly ['text']",
             )
-        if value.get("response_format") != {"type": "json"}:
+        response_format = value.get("response_format")
+        structured_format = (
+            isinstance(response_format, Mapping)
+            and set(response_format) == {"type", "schema"}
+            and response_format.get("type") == "json_schema"
+            and isinstance(response_format.get("schema"), dict)
+        )
+        if response_format != {"type": "json"} and not structured_format:
             raise _ProtocolIssue(
                 "request_format_invalid",
                 "ModelDockRequestValidationError",
-                "ModelDock response_format must request JSON",
+                "ModelDock response_format must request JSON or an explicit JSON schema",
+            )
+        if structured_format and run_mode != "LIVE":
+            raise _ProtocolIssue(
+                "request_structured_live_only",
+                "ModelDockRequestValidationError",
+                "REPLAY requests must preserve the recorded JSON response format",
             )
         request_timeout = value.get("timeout")
         if (
@@ -647,6 +705,7 @@ class ModelDockClient:
         run_mode: str,
         content_validator: ContentValidator | None,
         content_requires_correlation: bool,
+        structured_output_requested: bool,
     ) -> tuple[Any, str | None]:
         if set(value) != _ENVELOPE_FIELDS:
             raise _ProtocolIssue(
@@ -789,6 +848,12 @@ class ModelDockClient:
                 "ModelDockProtocolError",
                 "ModelDock response correlation does not match the mission",
             )
+        if structured_output_requested and not _structured_output_acknowledged(metadata):
+            raise _ProtocolIssue(
+                "response_structured_output_unconfirmed",
+                "ModelDockProtocolError",
+                "ModelDock did not confirm schema-constrained generation and validation",
+            )
         content = value["content"]
         if not isinstance(content, str) or not content.strip():
             raise _ProtocolIssue(
@@ -915,11 +980,16 @@ def _strict_json_object(source: bytes, document_name: str) -> dict[str, Any]:
         )
     except _ProtocolIssue:
         raise
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        # Parser coordinates are safe diagnostics; the exception's document,
+        # snippets and free-form message must never enter failure receipts.
+        # Offsets count decoded characters, not UTF-8 bytes. Acceptance remains
+        # strict: no reasoning removal, fence stripping or JSON repair here.
         raise _ProtocolIssue(
             "response_malformed_json",
             "ModelDockProtocolError",
-            f"{document_name} is malformed JSON",
+            f"{document_name} is malformed JSON "
+            f"(line={exc.lineno}; column={exc.colno}; character_offset={exc.pos})",
         ) from None
     if not isinstance(parsed, dict):
         raise _ProtocolIssue(
@@ -928,6 +998,15 @@ def _strict_json_object(source: bytes, document_name: str) -> dict[str, Any]:
             f"{document_name} must be a JSON object",
         )
     return parsed
+
+
+def _structured_output_acknowledged(metadata: Mapping[str, Any]) -> bool:
+    value = metadata.get("structured_output")
+    return (
+        isinstance(value, Mapping)
+        and value.get("mode") == "json_schema"
+        and value.get("validated") is True
+    )
 
 
 def _safe_response_projection(
@@ -949,6 +1028,8 @@ def _safe_response_projection(
 
     projected_metadata: dict[str, Any] = {}
     if isinstance(metadata, Mapping):
+        if _structured_output_acknowledged(metadata):
+            projected_metadata["structured_output"] = {"mode": "json_schema", "validated": True}
         correlation = metadata.get(MODELDOCK_CORRELATION_FIELD)
         if isinstance(correlation, Mapping) and set(correlation) == _CORRELATION_FIELDS:
             projected_correlation = {

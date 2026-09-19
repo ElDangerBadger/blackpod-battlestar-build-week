@@ -102,7 +102,28 @@ Governor, or operator inputs to force approval or satisfy a display gate.
 
 ## 3. Interpret current state honestly
 
-### Current local source — completed no-trade run, 2026-09-15
+### Current local source — completed no-trade run, 2026-09-18
+
+The current application source is `artifacts/live-analysis-20260918-001`,
+mission `mission-live-aapl-20260918-001`. Oracle, Council, and Governor have
+executed against newly acquired market evidence. The result is intentionally
+`HELD` / `BLOCKED` under the explicit no-trade mandate. A separate fresh Sentry
+scan is available under **Sentry → Scan results**; its Equity/ETF interpretations
+remain `RESEARCH_ONLY`, not inputs to this mission.
+
+See the [September 18 operator record](LIVE_ANALYSIS_RUN_20260918.md) for the
+complete startup command, timings, coverage, validation, and limitations.
+The initial optional ModelDock brief failed validation. After separate reviewed
+attempts and a schema-constrained consumer fix, one explicitly authorized call
+successfully produced a brief from the same saved September 18 evidence. It
+passed Oracle validation and evidence review, and is visible under **Oracle →
+Market summary and analysis → Oracle’s market brief**. The snapshot and brief
+generation times are separately labeled; this is not a new market refresh.
+Original failed attempts and native Oracle narration remain preserved. See
+[the narration acceptance record](ORACLE_NARRATION_INTEGRATION.md#accepted-schema-constrained-generation-and-live-publication).
+Analysis remains operator-triggered; opening the Cabin never starts another run.
+
+### Historical local source — completed no-trade run, 2026-09-15
 
 Navigator's first Harbor row is AAPL. The user-authorized LIVE pipeline test
 completed through Council and Governor, without operator approval or trading:
@@ -175,8 +196,10 @@ pack. Starting this command only views the existing run and never repeats it.
 
 The chart is a captured observation, not a streaming quote. The reader follows
 mission revisions but does not refresh this market capture. Evidence-age
-warnings will appear naturally as the run ages. A scheduled producer, recurring
-captures, and a production market-data service remain separate future work.
+warnings will appear naturally as the run ages. A scheduled analysis producer
+remains separate future work. The independently operated current-reference
+worker and live-price connection described above do not update this historical
+mission's analysis or saved captures.
 
 The initial `artifacts/initial-live-20260915` mission,
 `mission-live-aapl-20260915-001`, remains a preserved revision-5 failure at

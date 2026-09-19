@@ -4,7 +4,9 @@ import unittest
 
 from blackpod_build_week.contracts.mission_request import ContractValidationError
 from blackpod_build_week.contracts.oracle_narrative import OracleNarrativeSelection
-from blackpod_build_week.narrative_diagnostics import narrative_validation_message
+from blackpod_build_week.narrative_diagnostics import (
+    CanonicalBriefValidationError, narrative_validation_message,
+)
 
 
 class NarrativeDiagnosticTests(unittest.TestCase):
@@ -86,6 +88,59 @@ class NarrativeDiagnosticTests(unittest.TestCase):
         ):
             with self.subTest(error_type=type(error).__name__):
                 self.assert_diagnostic(error, "unclassified", "narrative")
+
+    def test_trusted_brief_adapter_maps_only_exact_fixed_reasons(self) -> None:
+        cases = (
+            ("draft: fields do not match the contract", "fields_mismatch", "brief"),
+            ("unsupported draft schema", "schema_version", "schema_version"),
+            ("paragraph: fields do not match the contract", "fields_mismatch", "brief_paragraph"),
+            ("model prose: expected bounded nonblank plain text", "bounded_plain_text", "brief_text"),
+            ("model prose contains unsupported numeric, markup, path, predictive, or action language", "prose_guardrail", "brief_text"),
+            ("aggregate briefing cannot create symbol commentary", "symbol_attribution", "brief_text"),
+            ("fact citations: expected bounded array", "bounded_array", "fact_citations"),
+            ("fact citations: expected bounded nonblank plain text", "bounded_plain_text", "fact_citations"),
+            ("fact citations: duplicate values", "duplicate_values", "fact_citations"),
+            ("paragraph requires known fact citations", "required_known_citations", "fact_citations"),
+            ("draft requires all ordered sections", "sections_shape", "sections"),
+            ("section: fields do not match the contract", "fields_mismatch", "section"),
+            ("section order or paragraph count invalid", "section_order_or_paragraph_count", "sections"),
+            ("document exceeds the bounded byte limit", "size_limit", "brief_document"),
+            ("value is not finite canonical JSON", "canonical_json", "brief_document"),
+        )
+        for message, rule, field in cases:
+            with self.subTest(rule=rule, field=field):
+                adapted = CanonicalBriefValidationError(ValueError(message))
+                self.assert_diagnostic(adapted, rule, field)
+                self.assertNotIn(message, str(adapted))
+
+    def test_brief_diagnostics_do_not_trust_exception_names_or_raw_messages(self) -> None:
+        named_like_canonical = type("OracleMarketBriefError", (ValueError,), {})
+        self.assert_diagnostic(named_like_canonical("unsupported draft schema"), "unclassified", "narrative")
+        secret = "/private/model-authored-rejection"
+        for error in (
+            ValueError(secret),
+            ValueError("unsupported draft schema: " + secret),
+            ValueError({"secret": secret}),
+            ValueError("unsupported draft schema", secret),
+        ):
+            with self.subTest(error_args_type=type(error.args[0]).__name__):
+                adapted = CanonicalBriefValidationError(error)
+                self.assert_diagnostic(adapted, "unclassified", "narrative")
+                self.assertNotIn(secret, str(adapted))
+                self.assertNotIn(secret, repr(adapted.args))
+        adapted = CanonicalBriefValidationError(ValueError("unsupported draft schema"))
+        adapted.diagnostic = (secret, "schema_version")
+        self.assert_diagnostic(adapted, "unclassified", "narrative")
+
+    def test_brief_adapter_never_formats_custom_exceptions(self) -> None:
+        class UnsafeFormattingError(ValueError):
+            def __str__(self):
+                raise AssertionError("custom formatter must not be called")
+
+        self.assert_diagnostic(
+            CanonicalBriefValidationError(UnsafeFormattingError("unsupported draft schema")),
+            "schema_version", "schema_version",
+        )
 
     def test_real_selection_validator_remains_strict(self) -> None:
         value = {

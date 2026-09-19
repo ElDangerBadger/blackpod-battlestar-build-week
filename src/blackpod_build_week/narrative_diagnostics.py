@@ -57,6 +57,43 @@ _TEXT_RULES = (
     (r"contains credential- or secret-like text", "sensitive_text"),
 )
 
+# Canonical brief validation combines some checks in one guard. Keep those
+# combinations explicit rather than pretending a failure identifies a word,
+# field position, or narrower condition that the validator did not report.
+_BRIEF_EXACT_RULES = {
+    "draft: fields do not match the contract": ("fields_mismatch", "brief"),
+    "unsupported draft schema": ("schema_version", "schema_version"),
+    "paragraph: fields do not match the contract": ("fields_mismatch", "brief_paragraph"),
+    "model prose: expected bounded nonblank plain text": ("bounded_plain_text", "brief_text"),
+    "model prose contains unsupported numeric, markup, path, predictive, or action language": ("prose_guardrail", "brief_text"),
+    "aggregate briefing cannot create symbol commentary": ("symbol_attribution", "brief_text"),
+    "fact citations: expected bounded array": ("bounded_array", "fact_citations"),
+    "fact citations: expected bounded nonblank plain text": ("bounded_plain_text", "fact_citations"),
+    "fact citations: duplicate values": ("duplicate_values", "fact_citations"),
+    "paragraph requires known fact citations": ("required_known_citations", "fact_citations"),
+    "draft requires all ordered sections": ("sections_shape", "sections"),
+    "section: fields do not match the contract": ("fields_mismatch", "section"),
+    "section order or paragraph count invalid": ("section_order_or_paragraph_count", "sections"),
+    "document exceeds the bounded byte limit": ("size_limit", "brief_document"),
+    "value is not finite canonical JSON": ("canonical_json", "brief_document"),
+}
+
+
+class CanonicalBriefValidationError(ContractValidationError):
+    """Trusted adapter for a rejection by the explicitly loaded brief contract.
+
+    The producer catches its loaded module's error class by identity before
+    creating this exception. Only fixed labels survive the adapter; neither
+    raw prose nor the canonical error message is retained in this exception.
+    This does not validate, repair, or accept any draft.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self.diagnostic = _UNKNOWN
+        if len(error.args) == 1 and type(error.args[0]) is str:
+            self.diagnostic = _BRIEF_EXACT_RULES.get(error.args[0], _UNKNOWN)
+        super().__init__("Canonical Oracle market brief failed contract validation")
+
 
 def narrative_validation_message(error: Exception) -> str:
     """Return only fixed, allowlisted diagnostic labels, never exception text.
@@ -71,6 +108,12 @@ def narrative_validation_message(error: Exception) -> str:
 
 
 def _classify(error: Exception) -> tuple[str, str]:
+    if type(error) is CanonicalBriefValidationError:
+        # Return the allowlist's own labels, even if a caller modified the
+        # exception. Never trust arbitrary fields attached to other errors.
+        if type(error.diagnostic) is tuple and error.diagnostic in _BRIEF_EXACT_RULES.values():
+            return error.diagnostic
+        return _UNKNOWN
     if not isinstance(error, ContractValidationError):
         return _UNKNOWN
     # Known contract errors are ordinary ValueErrors. Avoid formatting custom
