@@ -523,6 +523,12 @@ class JournalStore:
                 validate_assessment_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid research acceptance assessment: {exc}") from exc
+        elif source["kind"] in {"TRADING_EVIDENCE_QUALIFICATION_POLICY", "TRADING_EVIDENCE_QUALIFICATION"}:
+            from .trading_evidence_qualification_journal import validate_qualification_event
+            try:
+                validate_qualification_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid trading evidence qualification: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:
