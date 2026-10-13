@@ -134,6 +134,7 @@ testing; they do not govern live-product acceptance. Browser setup and checks:
 - [Shadow hypothesis challenge and outcome evaluation](docs/INVESTMENT_REVIEW.md)
 - [Research validation and evidence gate](docs/RESEARCH_ACCEPTANCE.md)
 - [Governed Trading Desk real-evidence qualification](docs/TRADING_EVIDENCE_QUALIFICATION.md)
+- [Governed TRAIN-window market-evidence capture/export](docs/TRAIN_MARKET_EVIDENCE.md)
 - [Product specification and roadmap](docs/PRODUCT_SPEC.md)
 - [Live product runbook](docs/LIVE_PRODUCT_RUNBOOK.md)
 - [Architecture](docs/ARCHITECTURE.md)

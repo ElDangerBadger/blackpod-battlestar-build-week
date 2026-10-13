@@ -39,6 +39,7 @@ JOURNAL_EVENT_V15_SCHEMA_VERSION = "blackpod.decision_journal_event.v15"
 JOURNAL_EVENT_V16_SCHEMA_VERSION = "blackpod.decision_journal_event.v16"
 JOURNAL_EVENT_V17_SCHEMA_VERSION = "blackpod.decision_journal_event.v17"
 JOURNAL_EVENT_V18_SCHEMA_VERSION = "blackpod.decision_journal_event.v18"
+JOURNAL_EVENT_V19_SCHEMA_VERSION = "blackpod.decision_journal_event.v19"
 INVESTMENT_HYPOTHESIS_EVENT_TYPE = "INVESTMENT_HYPOTHESIS_RECORDED"
 INVESTMENT_CHALLENGE_EVENT_TYPE = "INVESTMENT_CHALLENGE_RECORDED"
 INVESTMENT_OUTCOME_EVALUATION_EVENT_TYPE = "INVESTMENT_OUTCOME_EVALUATION_RECORDED"
@@ -302,6 +303,9 @@ def _event(value: object) -> dict[str, Any]:
         return validate_journal_event(result)
     if result["schema_version"] == JOURNAL_EVENT_V18_SCHEMA_VERSION:
         from .trading_evidence_qualification import validate_journal_event
+        return validate_journal_event(result)
+    if result["schema_version"] == JOURNAL_EVENT_V19_SCHEMA_VERSION:
+        from .train_market_evidence import validate_journal_event
         return validate_journal_event(result)
     if result["schema_version"] != JOURNAL_EVENT_SCHEMA_VERSION:
         raise ContractValidationError("unsupported journal event schema_version")
