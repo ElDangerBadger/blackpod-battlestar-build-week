@@ -1,0 +1,61 @@
+{
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "challenge_event_id": "journal-event-9ab28d7a8a4b53b306c6bd15d8a025de85670c697a0e4304978262e57a8e4391",
+  "conclusion": "Future-dated synthetic endpoint comparison only; not actual investment performance, a causal finding or an authorization.",
+  "domain": "INVESTMENT",
+  "evaluation_id": "synthetic-financing-final-001",
+  "evaluation_stage": "FINAL",
+  "evaluator_id": "offline-example-evaluator",
+  "evaluator_role": "INDEPENDENT_HUMAN_RESEARCH_REVIEWER",
+  "evidence_cutoff_at": "2027-04-11T00:00:00Z",
+  "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+  "hypothesis_id": "synthetic-financing-hypothesis-001",
+  "hypothesis_sha256": "ddb5f3f97d42654ced0e070a96695973993032c37bb2719831090df6c620599c",
+  "measurements": [
+    {
+      "check_id": "synthetic-margin-decline",
+      "check_type": "OUTCOME",
+      "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+      "observation": {
+        "artifact_path": "outcomes/synthetic_measurements.json",
+        "artifact_sha256": "7a5d5a717808157bc201123c2b3b2f9eb011491633b7e57eb3dba748c0713130",
+        "as_of": "2027-04-11T00:00:00Z",
+        "as_of_pointer": "/as_of",
+        "observation_id": "margin-outcome-point",
+        "source_event_id": "journal-event-99447fd3dcd4d4956157a55d8469bb7b2e0c0049e4cfccabf9b142d6cf9ab88d",
+        "time_role": "AS_OF",
+        "unit": "PERCENTAGE_POINTS",
+        "value": -1.5,
+        "value_pointer": "/metrics/operating_margin_change_pct_points"
+      },
+      "unit": "PERCENTAGE_POINTS"
+    },
+    {
+      "check_id": "synthetic-no-margin-decline",
+      "check_type": "INVALIDATION",
+      "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+      "observation": {
+        "artifact_path": "outcomes/synthetic_measurements.json",
+        "artifact_sha256": "7a5d5a717808157bc201123c2b3b2f9eb011491633b7e57eb3dba748c0713130",
+        "as_of": "2027-04-11T00:00:00Z",
+        "as_of_pointer": "/as_of",
+        "observation_id": "margin-outcome-point",
+        "source_event_id": "journal-event-99447fd3dcd4d4956157a55d8469bb7b2e0c0049e4cfccabf9b142d6cf9ab88d",
+        "time_role": "AS_OF",
+        "unit": "PERCENTAGE_POINTS",
+        "value": -1.5,
+        "value_pointer": "/metrics/operating_margin_change_pct_points"
+      },
+      "unit": "PERCENTAGE_POINTS"
+    }
+  ],
+  "mode": "SHADOW",
+  "recorded_at": "2027-04-11T00:00:00Z",
+  "schema_version": "blackpod.investment_outcome_evaluation.v1",
+  "supersedes_event_id": null
+}

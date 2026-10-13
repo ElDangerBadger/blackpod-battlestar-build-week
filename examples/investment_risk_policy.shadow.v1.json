@@ -1,0 +1,37 @@
+{
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "authorized_approver_ids": [
+    "declared-approver"
+  ],
+  "domain": "INVESTMENT",
+  "limits": {
+    "high_correlation_threshold": 0.8,
+    "max_consolidated_gross": 0.8,
+    "max_correlated_pair_weight": 0.5,
+    "max_investment_gross": 0.5,
+    "max_position_weight": 0.4,
+    "max_sector_weight": 0.5,
+    "max_stress_loss_weight": 0.2,
+    "min_cash_weight": 0.2,
+    "min_liquidity_score": 0.6
+  },
+  "max_approval_lifetime_seconds": 3600,
+  "max_context_age_seconds": 86400,
+  "method_version": "blackpod.shadow_long_only_risk.v1",
+  "mode": "SHADOW",
+  "policy_id": "fixture-risk",
+  "policy_version": 1,
+  "recorded_at": "2026-10-13T00:00:00Z",
+  "require_distinct_role_artifacts": true,
+  "require_final_evaluation": false,
+  "require_no_active_dissent": true,
+  "require_role_coverage": true,
+  "required_approver_role": "INVESTMENT_REVIEWER",
+  "schema_version": "blackpod.investment_shadow_risk_policy.v1",
+  "status": "SHADOW_PROPOSED"
+}

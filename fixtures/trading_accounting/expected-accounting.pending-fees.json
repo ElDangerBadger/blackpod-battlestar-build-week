@@ -1,0 +1,232 @@
+{
+  "decision_id": "journal-decision-c06945876d673351ba5bcf21870c4075f86622b9a4295decbdd6589efc917518",
+  "domain": "TRADING",
+  "event_id": "journal-event-10f6cba865ec8cc50c96ae9c7bbec8411cdafd7a217fb0c78d3513ca18827a43",
+  "event_type": "TRADING_FILL_LOT_ACCOUNTING_RECORDED",
+  "evidence": [
+    {
+      "path": "broker/activity-source.json",
+      "sha256": "21a84fe22067a34d568fdf5c1a3edf4f8647582e3e3ff97ee69644aff98e751d",
+      "size_bytes": 1182
+    },
+    {
+      "path": "trading/accounting.json",
+      "sha256": "fb152d9eeeedf4e2ece4b28dfacd8fbea4ac42a1625f3400b19cb19e904c4414",
+      "size_bytes": 1297
+    },
+    {
+      "path": "trading/activities.json",
+      "sha256": "f812b78648822ee430363f26b9e34010a29d2c5bc262d656e28017444c438f7f",
+      "size_bytes": 1570
+    }
+  ],
+  "payload": {
+    "accounting": {
+      "account_id": "fixture-account",
+      "accounting_id": "example-accounting-fees-pending",
+      "accounting_method": "FIFO_LONG_ONLY",
+      "activities_evidence": {
+        "path": "trading/activities.json",
+        "sha256": "f812b78648822ee430363f26b9e34010a29d2c5bc262d656e28017444c438f7f",
+        "size_bytes": 1570
+      },
+      "authority": {
+        "authorization_enabled": false,
+        "capital_activation_enabled": false,
+        "execution_enabled": false,
+        "policy_changes_enabled": false
+      },
+      "end_reconciliation_event_id": "journal-event-862dcc5fedf02954beef2d965170ecc97e67b25d7d1d91497c5ab268f105b4c6",
+      "end_reconciliation_sha256": "8cf6a38d88d3a6f611cf0e7733dc7ea1a55eeb4be201a8c73998a9ffec011ea2",
+      "mode": "PAPER",
+      "ownership_event_id": "journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e",
+      "ownership_sha256": "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c",
+      "prior_accounting_event_id": null,
+      "recorded_at": "2026-10-15T00:05:00Z",
+      "schema_version": "blackpod.trading_fill_lot_accounting.v1",
+      "scope": "PAPER_FILL_LOT_ACCOUNTING_ONLY",
+      "start_snapshot_event_id": "journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7",
+      "start_snapshot_sha256": "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59"
+    },
+    "result": {
+      "accounting_method": "FIFO_LONG_ONLY",
+      "activities_sha256": "f812b78648822ee430363f26b9e34010a29d2c5bc262d656e28017444c438f7f",
+      "attributable_execution_observed": true,
+      "authority": {
+        "authorization_enabled": false,
+        "capital_activation_enabled": false,
+        "execution_enabled": false,
+        "policy_changes_enabled": false
+      },
+      "closed_lots": [
+        {
+          "allocated_entry_fees": null,
+          "allocated_exit_fees": null,
+          "buy_activity_id": "fill-buy-1",
+          "buy_price": "10",
+          "gross_cost": "20",
+          "gross_pnl": "10",
+          "gross_proceeds": "30",
+          "lot_id": "fill-lot-2712c6ee907fc81fb86356e3ab277a4ac36b14f5558e232b6dbf005a3d2b6750",
+          "net_pnl": null,
+          "qty": "2",
+          "sell_activity_id": "fill-sell-1",
+          "sell_price": "15",
+          "symbol": "MSFT"
+        },
+        {
+          "allocated_entry_fees": null,
+          "allocated_exit_fees": null,
+          "buy_activity_id": "fill-buy-2",
+          "buy_price": "12",
+          "gross_cost": "24",
+          "gross_pnl": "6",
+          "gross_proceeds": "30",
+          "lot_id": "fill-lot-9b5df992da67f0a371167f9cb739ae9d284b7bf764cc21fe6deb737d6c47338e",
+          "net_pnl": null,
+          "qty": "2",
+          "sell_activity_id": "fill-sell-1",
+          "sell_price": "15",
+          "symbol": "MSFT"
+        }
+      ],
+      "currency": "USD",
+      "end_reconciliation_event_id": "journal-event-862dcc5fedf02954beef2d965170ecc97e67b25d7d1d91497c5ab268f105b4c6",
+      "execution_authority_granted": false,
+      "execution_observed": true,
+      "fees_complete": false,
+      "limitations": [
+        "DECLARED_ACTIVITY_AND_FEE_COMPLETENESS",
+        "NON_ATOMIC_BROKER_SNAPSHOT",
+        "DECLARED_DESK_OWNERSHIP_UNAUTHENTICATED",
+        "PROVIDER_IDENTITY_NOT_ATTESTED",
+        "LONG_ONLY_FIFO_NO_CORPORATE_ACTIONS",
+        "BOUNDED_FEE_COVERAGE_NOT_FINAL_SETTLEMENT",
+        "NO_MISSION_PNL_ATTRIBUTION",
+        "NO_EXECUTION_AUTHORITY"
+      ],
+      "matched_fees": [],
+      "matched_fills": [
+        {
+          "activity_id": "fill-buy-1",
+          "attempt_sha256": "e57c3a6538611bd655e5ccac6a5b53469847f76e785532c6a91da071a2c5f039",
+          "fee_amount": null,
+          "gross_value": "20",
+          "occurred_at": "2026-10-15T00:01:00Z",
+          "order_id": "buy-1",
+          "price": "10",
+          "qty": "2",
+          "side": "buy",
+          "symbol": "MSFT"
+        },
+        {
+          "activity_id": "fill-buy-2",
+          "attempt_sha256": "c4050c5b688a4f285dcd05dd9bad0b65454cca7943c9a2750c0fc267ddfc99c6",
+          "fee_amount": null,
+          "gross_value": "36",
+          "occurred_at": "2026-10-15T00:02:00Z",
+          "order_id": "buy-2",
+          "price": "12",
+          "qty": "3",
+          "side": "buy",
+          "symbol": "MSFT"
+        },
+        {
+          "activity_id": "fill-sell-1",
+          "attempt_sha256": "2c157e7631b1e01fc9dad1c9eea301f20a982a579d0effdd98359ee9615fa549",
+          "fee_amount": null,
+          "gross_value": "60",
+          "occurred_at": "2026-10-15T00:03:00Z",
+          "order_id": "sell-1",
+          "price": "15",
+          "qty": "4",
+          "side": "sell",
+          "symbol": "MSFT"
+        }
+      ],
+      "open_lots": [
+        {
+          "allocated_entry_fees": null,
+          "buy_activity_id": "fill-buy-2",
+          "gross_cost": "12",
+          "lot_id": "fill-lot-9b5df992da67f0a371167f9cb739ae9d284b7bf764cc21fe6deb737d6c47338e",
+          "opened_at": "2026-10-15T00:02:00Z",
+          "original_qty": "3",
+          "remaining_qty": "1",
+          "symbol": "MSFT",
+          "unit_price": "12"
+        }
+      ],
+      "order_checks": [
+        {
+          "activity_filled_qty": "2",
+          "activity_gross_value": "20",
+          "broker_filled_qty": "2",
+          "broker_gross_value": "20",
+          "matches": true,
+          "order_id": "buy-1",
+          "price_matches": true
+        },
+        {
+          "activity_filled_qty": "3",
+          "activity_gross_value": "36",
+          "broker_filled_qty": "3",
+          "broker_gross_value": "36",
+          "matches": true,
+          "order_id": "buy-2",
+          "price_matches": true
+        },
+        {
+          "activity_filled_qty": "4",
+          "activity_gross_value": "60",
+          "broker_filled_qty": "4",
+          "broker_gross_value": "60",
+          "matches": true,
+          "order_id": "sell-1",
+          "price_matches": true
+        }
+      ],
+      "ownership_authenticated": false,
+      "ownership_event_id": "journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e",
+      "positions": [
+        {
+          "expected_qty": "1",
+          "matches": true,
+          "observed_qty": "1",
+          "symbol": "MSFT"
+        }
+      ],
+      "precision_policy": {
+        "calculation_precision": 256,
+        "fee_allocation_scale": 18,
+        "residual": "LAST_SLICE_REMAINDER",
+        "rounding": "ROUND_HALF_EVEN"
+      },
+      "provider_verified": false,
+      "readiness": false,
+      "realized_trade_pnl": null,
+      "reason_codes": [
+        "FEES_INCOMPLETE"
+      ],
+      "start_snapshot_event_id": "journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7",
+      "status": "GROSS_RECONCILED_FEES_PENDING",
+      "totals": {
+        "allocated_closed_fees": null,
+        "allocated_open_fees": null,
+        "buy_gross": "56",
+        "gross_realized_pnl": "16",
+        "net_realized_pnl": null,
+        "sell_gross": "60"
+      },
+      "unmatched_fees": [],
+      "unmatched_fills": []
+    }
+  },
+  "recorded_at": "2026-10-15T00:05:00Z",
+  "schema_version": "blackpod.decision_journal_event.v7",
+  "source": {
+    "accounting_id": "example-accounting-fees-pending",
+    "kind": "TRADING_FILL_LOT_ACCOUNTING",
+    "source_sha256": "fb152d9eeeedf4e2ece4b28dfacd8fbea4ac42a1625f3400b19cb19e904c4414"
+  }
+}

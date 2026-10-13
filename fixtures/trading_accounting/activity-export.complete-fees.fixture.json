@@ -1,0 +1,77 @@
+{
+  "account_id": "fixture-account",
+  "activities": [
+    {
+      "activity_type": "FILL",
+      "id": "fill-buy-1",
+      "order_id": "buy-1",
+      "price": "10",
+      "qty": "2",
+      "side": "buy",
+      "symbol": "MSFT",
+      "transaction_time": "2026-10-15T00:01:00Z"
+    },
+    {
+      "activity_type": "FILL",
+      "id": "fill-buy-2",
+      "order_id": "buy-2",
+      "price": "12",
+      "qty": "3",
+      "side": "buy",
+      "symbol": "MSFT",
+      "transaction_time": "2026-10-15T00:02:00Z"
+    },
+    {
+      "activity_type": "FILL",
+      "id": "fill-sell-1",
+      "order_id": "sell-1",
+      "price": "15",
+      "qty": "4",
+      "side": "sell",
+      "symbol": "MSFT",
+      "transaction_time": "2026-10-15T00:03:00Z"
+    },
+    {
+      "activity_type": "FEE",
+      "date": "2026-10-15T00:01:00Z",
+      "fill_activity_id": "fill-buy-1",
+      "id": "fee-buy-1",
+      "net_amount": "-0.02",
+      "order_id": "buy-1"
+    },
+    {
+      "activity_type": "FEE",
+      "date": "2026-10-15T00:02:00Z",
+      "fill_activity_id": "fill-buy-2",
+      "id": "fee-buy-2",
+      "net_amount": "-0.03",
+      "order_id": "buy-2"
+    },
+    {
+      "activity_type": "FEE",
+      "date": "2026-10-15T00:03:00Z",
+      "fill_activity_id": "fill-sell-1",
+      "id": "fee-sell-1",
+      "net_amount": "-0.04",
+      "order_id": "sell-1"
+    }
+  ],
+  "coverage": {
+    "fees_complete": true,
+    "fills_complete": true,
+    "scope_order_ids": [
+      "buy-1",
+      "buy-2",
+      "sell-1"
+    ]
+  },
+  "currency": "USD",
+  "mode": "PAPER",
+  "recorded_at": "2026-10-15T00:06:00Z",
+  "schema_version": "blackpod.paper_activity_export.v1",
+  "source_kind": "SYNTHETIC_FIXTURE",
+  "window": {
+    "ended_at": "2026-10-15T00:04:00Z",
+    "started_at": "2026-10-15T00:00:00Z"
+  }
+}

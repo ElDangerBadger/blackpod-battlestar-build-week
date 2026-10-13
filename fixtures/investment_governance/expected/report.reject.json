@@ -1,0 +1,234 @@
+{
+  "approval_scope": "INVESTMENT_SHADOW_RESEARCH_ONLY",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "checks": [
+    {
+      "check_id": "PROSPECTIVE_HYPOTHESIS",
+      "limit": true,
+      "observed": "PROSPECTIVE",
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "ACTIVE_HYPOTHESIS_HORIZON",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "PROPOSAL_VALIDITY",
+      "limit": true,
+      "observed": "2026-10-14T00:00:00Z",
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "EXACT_CONTEXT_TOTAL",
+      "limit": true,
+      "observed": 1,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "COMPLETE_CONTEXT",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "CONTEXT_FRESHNESS",
+      "limit": 86400,
+      "observed": 0,
+      "reason_code": "CONTEXT_CURRENT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "SELECTED_CHALLENGE_ACTIVE",
+      "limit": true,
+      "observed": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "NO_ACTIVE_DISSENT",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "DECLARED_EVIDENCE_ROLE_COVERAGE",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "DISTINCT_ROLE_ARTIFACTS",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "NO_KNOWN_INVALIDATION",
+      "limit": false,
+      "observed": false,
+      "reason_code": "NO_RECORDED_ACTIVE_INVALIDATION",
+      "status": "PASS"
+    },
+    {
+      "check_id": "NO_KNOWN_UNMET_EXPECTATIONS",
+      "limit": true,
+      "observed": true,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "FULL_INVESTMENT_TARGETS",
+      "limit": true,
+      "observed": null,
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "INVESTMENT_DESK_BUDGET",
+      "limit": 0.5,
+      "observed": 0.7,
+      "reason_code": "LIMIT_EXCEEDED",
+      "status": "FAIL"
+    },
+    {
+      "check_id": "INVESTMENT_GROSS",
+      "limit": 0.5,
+      "observed": 0.7,
+      "reason_code": "LIMIT_EXCEEDED",
+      "status": "FAIL"
+    },
+    {
+      "check_id": "CONSOLIDATED_GROSS",
+      "limit": 0.8,
+      "observed": 0.8,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "CASH_RESERVE",
+      "limit": 0.2,
+      "observed": 0.2,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "POSITION_WEIGHT_0",
+      "limit": 0.4,
+      "observed": 0.1,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "INSTRUMENT_METADATA_0",
+      "limit": true,
+      "observed": "AAPL",
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "LIQUIDITY_0",
+      "limit": 0.6,
+      "observed": 0.8,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "POSITION_WEIGHT_1",
+      "limit": 0.4,
+      "observed": 0.7,
+      "reason_code": "LIMIT_EXCEEDED",
+      "status": "FAIL"
+    },
+    {
+      "check_id": "INSTRUMENT_METADATA_1",
+      "limit": true,
+      "observed": "MSFT",
+      "reason_code": "SATISFIED",
+      "status": "PASS"
+    },
+    {
+      "check_id": "LIQUIDITY_1",
+      "limit": 0.6,
+      "observed": 0.9,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "SECTOR_WEIGHT_0",
+      "limit": 0.5,
+      "observed": 0.8,
+      "reason_code": "LIMIT_EXCEEDED",
+      "status": "FAIL"
+    },
+    {
+      "check_id": "CONSOLIDATED_STRESS_LOSS",
+      "limit": 0.2,
+      "observed": 0.09,
+      "reason_code": "WITHIN_LIMIT",
+      "status": "PASS"
+    },
+    {
+      "check_id": "CORRELATED_PAIR_0",
+      "limit": 0.8,
+      "observed": 0.3,
+      "reason_code": "BELOW_HIGH_CORRELATION_THRESHOLD",
+      "status": "PASS"
+    }
+  ],
+  "economic_truth_evaluated": false,
+  "gate": "REJECT",
+  "metrics": {
+    "investment_budget_weight": 0.5,
+    "projected_cash_weight": 0.2,
+    "projected_consolidated_gross": 0.8,
+    "projected_sector_weights": [
+      {
+        "sector": "TECH",
+        "weight": 0.8
+      }
+    ],
+    "projected_stress_loss_weight": 0.09,
+    "projected_symbol_weights": [
+      {
+        "symbol": "AAPL",
+        "weight": 0.1
+      },
+      {
+        "symbol": "MSFT",
+        "weight": 0.7
+      }
+    ],
+    "proposed_investment_gross": 0.7
+  },
+  "operational_authority_granted": false,
+  "proposal_ready_for_human_review": false,
+  "residual_risks": [
+    "DECLARED_IDENTITIES_UNAUTHENTICATED",
+    "SOURCE_INDEPENDENCE_NOT_ESTABLISHED",
+    "METRIC_UNITS_NOT_INDEPENDENTLY_VERIFIED",
+    "RISK_CONTEXT_MANUALLY_DECLARED",
+    "SHADOW_POLICY_NOT_LIVE_OR_CALIBRATED",
+    "WHOLE_HORIZON_INVALIDATION_NOT_ESTABLISHED",
+    "CAPITAL_POLICY_NOT_ACTIVATED",
+    "DECLARED_TIMESTAMPS_NOT_ATTESTED",
+    "NO_FINAL_OUTCOME_EVALUATION"
+  ],
+  "risk_context_sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+  "risk_method_version": "blackpod.shadow_long_only_risk.v1",
+  "risk_policy_sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41"
+}

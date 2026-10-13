@@ -1,0 +1,76 @@
+{
+  "decision_id": "journal-decision-edf9a24d259a40e062c5f8d2de300a07eede25b7c4c2037e206d3cb97ad7dbeb",
+  "domain": "TRADING",
+  "event_id": "journal-event-84d9e6952ecc109fd9d6263073c5d4a72ee2910af637e4103f03cda27dffde4c",
+  "event_type": "TRADING_EXECUTION_RECONCILED",
+  "evidence": [
+    {
+      "path": "trading/reconciliation.json",
+      "sha256": "b2dec49ab5bb4342cad68d673659ca2cde49cc18455142b4ac58fea252d3429a",
+      "size_bytes": 937
+    }
+  ],
+  "payload": {
+    "reconciliation": {
+      "account_id": "paper-account-example",
+      "authority": {
+        "authorization_enabled": false,
+        "capital_activation_enabled": false,
+        "execution_enabled": false,
+        "policy_changes_enabled": false
+      },
+      "broker_snapshot_event_id": "journal-event-115f5fee9a92fd2bdf28c8d0a4d5e48cddfc7cba4777dba00e5bde192f7db65d",
+      "broker_snapshot_sha256": "fac3c5dc215cf972571ad6ed41f19237ae4a4551bc83dd06dc0b76e3e9eb9158",
+      "mode": "PAPER",
+      "ownership_event_id": "journal-event-1f940cb9dc88037b387a4602be8064587776ec2383354bd80d3bf10fbbdb2c1f",
+      "ownership_sha256": "2b7fb0eba996db510eea7033a1f5b2454f717f15d4bb9d637a9489e08bd34744",
+      "prior_reconciliation_event_id": null,
+      "realized_trade_pnl": null,
+      "reconciliation_id": "paper-reconciliation-example",
+      "recorded_at": "2026-10-12T00:00:00Z",
+      "runtime_evidence": null,
+      "schema_version": "blackpod.trading_execution_reconciliation.v1",
+      "scope": "PAPER_RECONCILIATION_ONLY"
+    },
+    "result": {
+      "attempts": [],
+      "attributable_execution_observed": false,
+      "authority": {
+        "authorization_enabled": false,
+        "capital_activation_enabled": false,
+        "execution_enabled": false,
+        "policy_changes_enabled": false
+      },
+      "execution_authority_granted": false,
+      "execution_observed": false,
+      "limitations": [
+        "NON_ATOMIC_BROKER_SNAPSHOT",
+        "DECLARED_DESK_OWNERSHIP_UNAUTHENTICATED",
+        "PROVIDER_IDENTITY_NOT_ATTESTED",
+        "NO_ATTRIBUTABLE_COST_BASIS_OR_FEES",
+        "CUMULATIVE_FILLS_NOT_ADDITIVE",
+        "NO_EXECUTION_AUTHORITY"
+      ],
+      "orders": [],
+      "ownership_authenticated": false,
+      "positions": [],
+      "provider_verified": false,
+      "readiness": false,
+      "realized_trade_pnl": null,
+      "restart_barrier": {
+        "automatic_resubmission_enabled": false,
+        "entries_blocked": false,
+        "execution_authority_granted": false,
+        "unresolved_attempts": []
+      },
+      "status": "NO_EXECUTION_OBSERVED"
+    }
+  },
+  "recorded_at": "2026-10-12T00:00:00Z",
+  "schema_version": "blackpod.decision_journal_event.v6",
+  "source": {
+    "kind": "TRADING_EXECUTION_RECONCILIATION",
+    "reconciliation_id": "paper-reconciliation-example",
+    "source_sha256": "b2dec49ab5bb4342cad68d673659ca2cde49cc18455142b4ac58fea252d3429a"
+  }
+}

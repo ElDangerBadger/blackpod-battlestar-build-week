@@ -1,0 +1,24 @@
+{
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "challenge_event_id": "journal-event-9ab28d7a8a4b53b306c6bd15d8a025de85670c697a0e4304978262e57a8e4391",
+  "conclusion": "No measurements supplied: fixed-plan results must remain inconclusive.",
+  "domain": "INVESTMENT",
+  "evaluation_id": "synthetic-financing-missing-001",
+  "evaluation_stage": "FINAL",
+  "evaluator_id": "offline-example-evaluator",
+  "evaluator_role": "INDEPENDENT_HUMAN_RESEARCH_REVIEWER",
+  "evidence_cutoff_at": "2027-04-11T00:00:00Z",
+  "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+  "hypothesis_id": "synthetic-financing-hypothesis-001",
+  "hypothesis_sha256": "ddb5f3f97d42654ced0e070a96695973993032c37bb2719831090df6c620599c",
+  "measurements": [],
+  "mode": "SHADOW",
+  "recorded_at": "2027-04-11T00:00:00Z",
+  "schema_version": "blackpod.investment_outcome_evaluation.v1",
+  "supersedes_event_id": null
+}

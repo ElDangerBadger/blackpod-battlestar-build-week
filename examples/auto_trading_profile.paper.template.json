@@ -1,0 +1,51 @@
+{
+  "schema_version": "blackpod.galactica_trading_profile.v1",
+  "profile_id": "REPLACE-PROFILE-ID",
+  "mode": "PAPER",
+  "galactica_root": "/REPLACE/absolute/galactica/root",
+  "python_executable": "/REPLACE/existing/galactica/interpreter/python",
+  "source_hashes": {
+    "blackwell_navigator_trickle.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/__init__.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/audit.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/bias_contract.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/broker.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/config.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/indicators.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/loggers.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "execution/mandate_gate.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "mandate/enforcer.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "setup/setup_manager.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "setup/bar_aggregator.py": "0000000000000000000000000000000000000000000000000000000000000000",
+    "mandate/__init__.py": null,
+    "setup/__init__.py": null
+  },
+  "symbols": [
+    "REPLACE"
+  ],
+  "protected_symbols": [],
+  "account_scope": "DEDICATED_TRADING",
+  "account_id": "REPLACE-EXACT-PAPER-ACCOUNT-ID",
+  "capital_authorization_id": "REPLACE-EXPLICIT-CAPITAL-AUTHORIZATION-ID",
+  "trading_budget_usd": "REPLACE-AUTHORIZED-DOLLAR-BUDGET",
+  "max_account_gross_usd": "REPLACE-CONSOLIDATED-DOLLAR-CAP",
+  "max_order_notional_usd": "REPLACE-ORDER-DOLLAR-CAP",
+  "price_max_age_seconds": 30,
+  "price_buffer_fraction": "0.05",
+  "authorization_expires_at": "REPLACE-EXPLICIT-RFC3339-EXPIRY",
+  "frozen_inputs": {
+    "bias_csv": {
+      "path": "/REPLACE/absolute/bias_csv",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "mandate_path": {
+      "path": "/REPLACE/absolute/mandate_path",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "native_settings": {
+    "per_trade_usd_cap": 2000,
+    "eod_flatten_min": 15,
+    "exit_after_close": true
+  }
+}

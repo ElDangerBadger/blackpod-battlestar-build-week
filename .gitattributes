@@ -1,0 +1,5 @@
+# Native research fixtures retain exact bytes for source-hash verification.
+fixtures/shadow_galactica_analysis/*.py whitespace=-blank-at-eol,-blank-at-eof
+fixtures/shadow_quantitative_producer/models/model_library.py whitespace=-blank-at-eol,-blank-at-eof
+# This fixture uses a seven-equals docstring heading, not a merge conflict.
+fixtures/shadow_galactica_analysis/spyglass.py conflict-marker-size=32

@@ -1,0 +1,66 @@
+{
+  "account_id": "fixture-account",
+  "activity_set_id": "example-activities-fees-pending",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "coverage": {
+    "fees_complete": false,
+    "fills_complete": true,
+    "scope_order_ids": [
+      "buy-1",
+      "buy-2",
+      "sell-1"
+    ]
+  },
+  "currency": "USD",
+  "fees": [],
+  "fills": [
+    {
+      "activity_id": "fill-buy-1",
+      "occurred_at": "2026-10-15T00:01:00Z",
+      "order_id": "buy-1",
+      "price": "10",
+      "qty": "2",
+      "side": "buy",
+      "symbol": "MSFT"
+    },
+    {
+      "activity_id": "fill-buy-2",
+      "occurred_at": "2026-10-15T00:02:00Z",
+      "order_id": "buy-2",
+      "price": "12",
+      "qty": "3",
+      "side": "buy",
+      "symbol": "MSFT"
+    },
+    {
+      "activity_id": "fill-sell-1",
+      "occurred_at": "2026-10-15T00:03:00Z",
+      "order_id": "sell-1",
+      "price": "15",
+      "qty": "4",
+      "side": "sell",
+      "symbol": "MSFT"
+    }
+  ],
+  "mode": "PAPER",
+  "provenance": {
+    "provider_verified": false,
+    "source_evidence": {
+      "path": "broker/activity-source.json",
+      "sha256": "21a84fe22067a34d568fdf5c1a3edf4f8647582e3e3ff97ee69644aff98e751d",
+      "size_bytes": 1182
+    },
+    "source_kind": "SYNTHETIC_FIXTURE"
+  },
+  "recorded_at": "2026-10-15T00:05:00Z",
+  "schema_version": "blackpod.paper_activities.v1",
+  "window": {
+    "ended_at": "2026-10-15T00:04:00Z",
+    "started_at": "2026-10-15T00:00:00Z"
+  }
+}

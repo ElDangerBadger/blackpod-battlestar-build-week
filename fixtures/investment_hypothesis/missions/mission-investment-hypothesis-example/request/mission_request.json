@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "purpose": "Synthetic investment-hypothesis fixture only; no market recommendation, stages or execution."
+  },
+  "mission_id": "mission-investment-hypothesis-example",
+  "operator_id": "offline-example",
+  "request_id": "request-investment-hypothesis-example",
+  "requested_at": "2026-10-11T00:00:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "SYSTEM"
+}

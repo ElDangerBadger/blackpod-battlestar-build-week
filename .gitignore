@@ -21,7 +21,17 @@ __pycache__/
 /ui/dist/
 /ui/coverage/
 /ui/public/demo/
+# Captured broker data, runtime journals, and generated reports stay local.
+/output/
 /output/playwright/
+/output/decision-journal-*/
+/output/decision-journal-evaluation.json
+/output/investment-hypothesis-*/
+/output/investment-review-*/
+/output/investment-governance-*/
+/output/auto-trading-*/
 /ui/playwright-report/
 /ui/test-results/
 /.playwright-cli/
+/output/trading-research-*/
+/output/trading-historical-*/

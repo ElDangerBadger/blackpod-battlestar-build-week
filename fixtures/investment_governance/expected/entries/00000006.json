@@ -1,0 +1,168 @@
+{
+  "event": {
+    "decision_id": "journal-decision-583cb822db36b3ce5297aa2720cbcdff707790be5e81f48eafcbaa78882ed1d4",
+    "domain": "INVESTMENT",
+    "event_id": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+    "event_type": "INVESTMENT_CHALLENGE_RECORDED",
+    "evidence": [
+      {
+        "path": "challenges/challenge-fixture/challenge.json",
+        "sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c",
+        "size_bytes": 2901
+      },
+      {
+        "path": "hypotheses/synthetic-financing-hypothesis-001/hypothesis.json",
+        "sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "size_bytes": 4301
+      },
+      {
+        "path": "sources/journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad/research/observations.json",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "sources/journal-event-c2f44c7a2e93d77722190d0e35b93eaa7385f07e182a3ae434b1e2fb42787085/research/observations.json",
+        "sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+        "size_bytes": 114
+      }
+    ],
+    "payload": {
+      "assessment": {
+        "assessment_method_version": "blackpod.source_relationship_assessment.v1",
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "declared_evidence_roles": [
+          "FUNDAMENTAL",
+          "STATISTICAL"
+        ],
+        "economic_truth_evaluated": false,
+        "execution_status": "NOT_EXECUTED",
+        "missing_evidence_roles": [],
+        "reviewer_distinct": true,
+        "reviewer_identity_authenticated": false,
+        "source_independence_verified": false,
+        "source_relationships": [
+          {
+            "evidence_role": "FUNDAMENTAL",
+            "independence_verified": false,
+            "observation_id": "growth",
+            "provenance_group": "declared-fixture-source",
+            "relationship": "SAME_VALUE_BINDING"
+          },
+          {
+            "evidence_role": "STATISTICAL",
+            "independence_verified": false,
+            "observation_id": "statistical",
+            "provenance_group": "synthetic-distinct",
+            "relationship": "DISTINCT_RETAINED_ARTIFACT"
+          }
+        ]
+      },
+      "challenge": {
+        "assumption_reviews": [
+          {
+            "assumption_index": 0,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          },
+          {
+            "assumption_index": 1,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          },
+          {
+            "assumption_index": 2,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          }
+        ],
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "challenge_id": "challenge-fixture",
+        "counter_hypotheses": [
+          {
+            "counter_id": "counter-fixture",
+            "discriminating_test": "Compare the recorded deadline metric.",
+            "observation_ids": [
+              "growth"
+            ],
+            "statement": "Fixture alternate cause."
+          }
+        ],
+        "disposition": "REVIEW_SUPPORTS",
+        "domain": "INVESTMENT",
+        "evidence_cutoff_at": "2026-10-12T00:00:00Z",
+        "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+        "hypothesis_id": "synthetic-financing-hypothesis-001",
+        "hypothesis_sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "mode": "SHADOW",
+        "observations": [
+          {
+            "artifact_path": "research/observations.json",
+            "artifact_sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+            "as_of": "2026-10-11T00:00:00Z",
+            "as_of_pointer": "/as_of",
+            "evidence_role": "FUNDAMENTAL",
+            "observation_id": "growth",
+            "provenance_group": "declared-fixture-source",
+            "source_event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+            "time_role": "AS_OF",
+            "unit": "PERCENT",
+            "value": 5.0,
+            "value_pointer": "/metrics/growth"
+          },
+          {
+            "artifact_path": "research/observations.json",
+            "artifact_sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+            "as_of": "2026-10-12T00:00:00Z",
+            "as_of_pointer": "/as_of",
+            "evidence_role": "STATISTICAL",
+            "observation_id": "statistical",
+            "provenance_group": "synthetic-distinct",
+            "source_event_id": "journal-event-c2f44c7a2e93d77722190d0e35b93eaa7385f07e182a3ae434b1e2fb42787085",
+            "time_role": "AS_OF",
+            "unit": "PERCENT",
+            "value": 1.0,
+            "value_pointer": "/metrics/signal"
+          }
+        ],
+        "recorded_at": "2026-10-12T00:00:00Z",
+        "reviewer_id": "independent-declared-reviewer",
+        "risk_notes": [
+          "No economic independence is verified."
+        ],
+        "schema_version": "blackpod.investment_challenge.v1",
+        "supersedes_event_id": null,
+        "unresolved_questions": []
+      }
+    },
+    "recorded_at": "2026-10-12T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v3",
+    "source": {
+      "challenge_id": "challenge-fixture",
+      "kind": "INVESTMENT_CHALLENGE",
+      "source_sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c"
+    }
+  },
+  "event_sha256": "8b8caaa919d8075dc8e9749f5239ee6453ceedfdc5a738599f68e190b402d09e",
+  "previous_entry_sha256": "5dd8d9571b82de825c5b82287a102a076cf22be458d619ca95716ec0da4eb32a",
+  "schema_version": "blackpod.decision_journal_entry.v1",
+  "sequence": 6
+}

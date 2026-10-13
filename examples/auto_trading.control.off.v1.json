@@ -1,0 +1,12 @@
+{
+  "schema_version": "blackpod.trading_automation_control.v1",
+  "control_id": "simulation-auto-trading-off",
+  "operator_id": "simulation-operator",
+  "recorded_at": "2026-10-11T00:00:00Z",
+  "switch_id": "auto-trading",
+  "requested_enabled": false,
+  "scope": "TRADING_CONTROL_INTENT_ONLY",
+  "domain": "TRADING",
+  "execution_mode": "DISABLED",
+  "origin": "SIMULATED_TEST"
+}

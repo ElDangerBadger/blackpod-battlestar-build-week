@@ -1,0 +1,113 @@
+{
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "challenge_event_id": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+  "domain": "INVESTMENT",
+  "evaluation_event_id": null,
+  "evidence_cutoff_at": "2026-10-13T00:00:00Z",
+  "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+  "hypothesis_id": "synthetic-financing-hypothesis-001",
+  "hypothesis_sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+  "mode": "SHADOW",
+  "proposal_id": "proposal-fixture-reject",
+  "rationale": "Synthetic paper research; no live allocation authority.",
+  "recorded_at": "2026-10-13T00:00:00Z",
+  "risk_context": {
+    "as_of": "2026-10-13T00:00:00Z",
+    "basis": "ACCOUNT_EQUITY_FRACTIONS",
+    "cash_by_desk": {
+      "INVESTMENT": 0.4,
+      "TRADING": 0.4
+    },
+    "context_id": "context-fixture",
+    "correlations": [
+      {
+        "correlation": 0.3,
+        "symbol_a": "MSFT",
+        "symbol_b": "AAPL"
+      }
+    ],
+    "instruments": [
+      {
+        "liquidity_score": 0.9,
+        "sector": "TECH",
+        "stress_loss_fraction": 0.1,
+        "symbol": "MSFT"
+      },
+      {
+        "liquidity_score": 0.8,
+        "sector": "TECH",
+        "stress_loss_fraction": 0.2,
+        "symbol": "AAPL"
+      }
+    ],
+    "is_complete": true,
+    "portfolio_scope_id": "paper-account",
+    "positions": [
+      {
+        "desk": "INVESTMENT",
+        "symbol": "MSFT",
+        "weight": 0.1
+      },
+      {
+        "desk": "TRADING",
+        "symbol": "AAPL",
+        "weight": 0.1
+      }
+    ],
+    "schema_version": "blackpod.investment_risk_context.v1",
+    "scope_mode": "LONG_ONLY",
+    "source_kind": "SYNTHETIC_FIXTURE"
+  },
+  "risk_policy": {
+    "authority": {
+      "authorization_enabled": false,
+      "capital_activation_enabled": false,
+      "execution_enabled": false,
+      "policy_changes_enabled": false
+    },
+    "authorized_approver_ids": [
+      "declared-approver"
+    ],
+    "domain": "INVESTMENT",
+    "limits": {
+      "high_correlation_threshold": 0.8,
+      "max_consolidated_gross": 0.8,
+      "max_correlated_pair_weight": 0.5,
+      "max_investment_gross": 0.5,
+      "max_position_weight": 0.4,
+      "max_sector_weight": 0.5,
+      "max_stress_loss_weight": 0.2,
+      "min_cash_weight": 0.2,
+      "min_liquidity_score": 0.6
+    },
+    "max_approval_lifetime_seconds": 3600,
+    "max_context_age_seconds": 86400,
+    "method_version": "blackpod.shadow_long_only_risk.v1",
+    "mode": "SHADOW",
+    "policy_id": "fixture-risk",
+    "policy_version": 1,
+    "recorded_at": "2026-10-13T00:00:00Z",
+    "require_distinct_role_artifacts": true,
+    "require_final_evaluation": false,
+    "require_no_active_dissent": true,
+    "require_role_coverage": true,
+    "required_approver_role": "INVESTMENT_REVIEWER",
+    "schema_version": "blackpod.investment_shadow_risk_policy.v1",
+    "status": "SHADOW_PROPOSED"
+  },
+  "schema_version": "blackpod.investment_decision_proposal.v1",
+  "submitted_by": "fixture-researcher",
+  "supersedes_event_id": null,
+  "targets": [
+    {
+      "symbol": "MSFT",
+      "weight": 0.7
+    }
+  ],
+  "valid_until": "2026-10-14T00:00:00Z"
+}

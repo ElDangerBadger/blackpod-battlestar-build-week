@@ -1,0 +1,112 @@
+{
+  "assumption_reviews": [
+    {
+      "assumption_index": 0,
+      "observation_ids": [
+        "synthetic-revenue-growth",
+        "fixed-rate-debt-share",
+        "margin-sensitivity"
+      ],
+      "reason": "All referenced artifacts are explicitly synthetic mechanics fixtures.",
+      "status": "SUPPORTED"
+    },
+    {
+      "assumption_index": 1,
+      "observation_ids": [
+        "fixed-rate-debt-share"
+      ],
+      "reason": "Refinancing exposure and unchanged debt balances are not established by these metrics.",
+      "status": "UNTESTED"
+    },
+    {
+      "assumption_index": 2,
+      "observation_ids": [
+        "synthetic-revenue-growth",
+        "margin-sensitivity"
+      ],
+      "reason": "Initial growth and financing rate share a source; other artifact names do not establish independence.",
+      "status": "SUPPORTED"
+    }
+  ],
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "challenge_id": "synthetic-financing-challenge-001",
+  "counter_hypotheses": [
+    {
+      "counter_id": "fixed-rate-offset",
+      "discriminating_test": "Review maturities, actual interest expense and margins with comparable definitions; rates have different denominators.",
+      "observation_ids": [
+        "fixed-rate-debt-share",
+        "margin-sensitivity"
+      ],
+      "statement": "Fixed-rate debt or operating growth could offset the assumed refinancing pressure."
+    }
+  ],
+  "disposition": "REVIEW_CONTESTS",
+  "domain": "INVESTMENT",
+  "evidence_cutoff_at": "2026-10-12T00:00:00Z",
+  "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+  "hypothesis_id": "synthetic-financing-hypothesis-001",
+  "hypothesis_sha256": "ddb5f3f97d42654ced0e070a96695973993032c37bb2719831090df6c620599c",
+  "mode": "SHADOW",
+  "observations": [
+    {
+      "artifact_path": "research/synthetic_observations.json",
+      "artifact_sha256": "89fb36a73e060b69ce78be539d979036b788524a241af48e364e03604d00690f",
+      "as_of": "2026-10-11T00:00:00Z",
+      "as_of_pointer": "/as_of",
+      "evidence_role": "FUNDAMENTAL",
+      "observation_id": "synthetic-revenue-growth",
+      "provenance_group": "SYNTHETIC_INITIAL_METRICS",
+      "source_event_id": "journal-event-d8d82b190cf9c1c8d61f3d09ee9d756b65d9f09be66a17f10c92409f62eeaf94",
+      "time_role": "AS_OF",
+      "unit": "PERCENT",
+      "value": 5.0,
+      "value_pointer": "/metrics/revenue_growth_pct"
+    },
+    {
+      "artifact_path": "research/fundamental_sample.json",
+      "artifact_sha256": "532fda35ade6fc8ad56ef18578d7c53120cb8ef525b703cb7987a53c5f05b1e0",
+      "as_of": "2026-10-12T00:00:00Z",
+      "as_of_pointer": "/as_of",
+      "evidence_role": "FUNDAMENTAL",
+      "observation_id": "fixed-rate-debt-share",
+      "provenance_group": "DECLARED_SYNTHETIC_FUNDAMENTAL_SAMPLE",
+      "source_event_id": "journal-event-ba6da18a661373527f7cf8c65c9ecd3b25b4305ea611d6815291e3919f1e2c63",
+      "time_role": "AS_OF",
+      "unit": "PERCENT",
+      "value": 75.0,
+      "value_pointer": "/metrics/fixed_rate_debt_share_pct"
+    },
+    {
+      "artifact_path": "research/statistical_sample.json",
+      "artifact_sha256": "55c8d6210c999996ebeb894f8116715a8c5535b314254159f4655335a3bd8268",
+      "as_of": "2026-10-12T00:00:00Z",
+      "as_of_pointer": "/as_of",
+      "evidence_role": "STATISTICAL",
+      "observation_id": "margin-sensitivity",
+      "provenance_group": "DECLARED_SYNTHETIC_STATISTICAL_SAMPLE",
+      "source_event_id": "journal-event-ba6da18a661373527f7cf8c65c9ecd3b25b4305ea611d6815291e3919f1e2c63",
+      "time_role": "AS_OF",
+      "unit": "DECLARED_COEFFICIENT",
+      "value": -0.1,
+      "value_pointer": "/metrics/estimated_margin_sensitivity"
+    }
+  ],
+  "recorded_at": "2026-10-12T00:00:00Z",
+  "reviewer_id": "offline-example-challenger",
+  "risk_notes": [
+    "No portfolio allocation or consolidated account risk assessment is performed.",
+    "Synthetic observations do not establish real economic truth."
+  ],
+  "schema_version": "blackpod.investment_challenge.v1",
+  "supersedes_event_id": null,
+  "unresolved_questions": [
+    "No audited debt-service baseline or maturity schedule is supplied.",
+    "Statistical sample independence, selection and calibration are not established."
+  ]
+}

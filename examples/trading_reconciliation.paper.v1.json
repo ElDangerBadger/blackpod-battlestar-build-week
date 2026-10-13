@@ -1,0 +1,21 @@
+{
+  "account_id": "paper-account-example",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "broker_snapshot_event_id": "journal-event-115f5fee9a92fd2bdf28c8d0a4d5e48cddfc7cba4777dba00e5bde192f7db65d",
+  "broker_snapshot_sha256": "fac3c5dc215cf972571ad6ed41f19237ae4a4551bc83dd06dc0b76e3e9eb9158",
+  "mode": "PAPER",
+  "ownership_event_id": "journal-event-1f940cb9dc88037b387a4602be8064587776ec2383354bd80d3bf10fbbdb2c1f",
+  "ownership_sha256": "2b7fb0eba996db510eea7033a1f5b2454f717f15d4bb9d637a9489e08bd34744",
+  "prior_reconciliation_event_id": null,
+  "realized_trade_pnl": null,
+  "reconciliation_id": "paper-reconciliation-example",
+  "recorded_at": "2026-10-12T00:00:00Z",
+  "runtime_evidence": null,
+  "schema_version": "blackpod.trading_execution_reconciliation.v1",
+  "scope": "PAPER_RECONCILIATION_ONLY"
+}

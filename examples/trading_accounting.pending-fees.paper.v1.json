@@ -1,0 +1,27 @@
+{
+  "account_id": "fixture-account",
+  "accounting_id": "example-accounting-fees-pending",
+  "accounting_method": "FIFO_LONG_ONLY",
+  "activities_evidence": {
+    "path": "trading/activities.json",
+    "sha256": "f812b78648822ee430363f26b9e34010a29d2c5bc262d656e28017444c438f7f",
+    "size_bytes": 1570
+  },
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "end_reconciliation_event_id": "journal-event-862dcc5fedf02954beef2d965170ecc97e67b25d7d1d91497c5ab268f105b4c6",
+  "end_reconciliation_sha256": "8cf6a38d88d3a6f611cf0e7733dc7ea1a55eeb4be201a8c73998a9ffec011ea2",
+  "mode": "PAPER",
+  "ownership_event_id": "journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e",
+  "ownership_sha256": "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c",
+  "prior_accounting_event_id": null,
+  "recorded_at": "2026-10-15T00:05:00Z",
+  "schema_version": "blackpod.trading_fill_lot_accounting.v1",
+  "scope": "PAPER_FILL_LOT_ACCOUNTING_ONLY",
+  "start_snapshot_event_id": "journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7",
+  "start_snapshot_sha256": "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59"
+}

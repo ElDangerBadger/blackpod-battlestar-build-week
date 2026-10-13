@@ -135,6 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
   run-governor          Run Governor preparation and rendered decision
   operator-action       Record one explicit operator action
   run-navigator         Run Navigator handoff, intake, and SHADOW plan
+  journal               Offline evidence, shadow research, challenge and evaluation
 
 Run '<command> --help' for command-specific options.
 
@@ -1380,6 +1381,10 @@ def _run_mission_resume_command(argv: Sequence[str]) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "journal":
+        from .decision_journal_cli import main as journal_main
+
+        return journal_main(arguments[1:])
     if arguments and arguments[0] == "preflight":
         return _run_preflight_command(arguments[1:])
     if arguments and arguments[0] == "demo":

@@ -1,0 +1,47 @@
+{
+  "as_of": "2026-10-13T00:00:00Z",
+  "basis": "ACCOUNT_EQUITY_FRACTIONS",
+  "cash_by_desk": {
+    "INVESTMENT": 0.4,
+    "TRADING": 0.4
+  },
+  "context_id": "context-fixture",
+  "correlations": [
+    {
+      "correlation": 0.3,
+      "symbol_a": "MSFT",
+      "symbol_b": "AAPL"
+    }
+  ],
+  "instruments": [
+    {
+      "liquidity_score": 0.9,
+      "sector": "TECH",
+      "stress_loss_fraction": 0.1,
+      "symbol": "MSFT"
+    },
+    {
+      "liquidity_score": 0.8,
+      "sector": "TECH",
+      "stress_loss_fraction": 0.2,
+      "symbol": "AAPL"
+    }
+  ],
+  "is_complete": true,
+  "portfolio_scope_id": "paper-account",
+  "positions": [
+    {
+      "desk": "INVESTMENT",
+      "symbol": "MSFT",
+      "weight": 0.1
+    },
+    {
+      "desk": "TRADING",
+      "symbol": "AAPL",
+      "weight": 0.1
+    }
+  ],
+  "schema_version": "blackpod.investment_risk_context.v1",
+  "scope_mode": "LONG_ONLY",
+  "source_kind": "SYNTHETIC_FIXTURE"
+}

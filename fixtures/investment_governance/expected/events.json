@@ -1,0 +1,1226 @@
+[
+  {
+    "decision_id": "journal-decision-3db876b67f13a3bfc51417cee8015719d17828451e3ca98dac9dbc3df6d38c40",
+    "domain": "UNCLASSIFIED",
+    "event_id": "journal-event-34e89658fe014eb6da1f13b5b60d463e75857239231a4bd2017447241cf13885",
+    "event_type": "MISSION_SNAPSHOT_RECORDED",
+    "evidence": [
+      {
+        "path": "request/mission_request.json",
+        "sha256": "206d9f7076667d19b59c33738fc631741af1217bf09577e94c2abe90a53a72aa",
+        "size_bytes": 285
+      },
+      {
+        "path": "snapshots/mission_snapshot-r0001.json",
+        "sha256": "8264fcb968d8cb545adda1fd9c39ac85130d8c9f64e19b942ecc3b3aaf4dd08e",
+        "size_bytes": 2276
+      }
+    ],
+    "payload": {
+      "authorization": {
+        "action_id": null,
+        "operator_id": null,
+        "scope": null,
+        "status": "NOT_RECORDED"
+      },
+      "classification": {
+        "basis": "HISTORICAL_UNCLASSIFIED",
+        "reason": "Historical mission has no recorded desk classification."
+      },
+      "current_phase": "ORACLE",
+      "decision": {
+        "authority": null,
+        "decision_id": null,
+        "disposition": null
+      },
+      "execution_status": "NOT_EXECUTED",
+      "historical_semantics": {
+        "confidence_probability": "NOT_RECORDED",
+        "evaluation": "NOT_RECORDED",
+        "expectations": "NOT_RECORDED",
+        "hypothesis": "NOT_RECORDED",
+        "investment_horizon": "NOT_RECORDED"
+      },
+      "mission_outcome": "INCOMPLETE",
+      "stages": [
+        {
+          "name": "council",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "governor",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "harbormaster",
+          "native_state": "INITIALIZED",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "navigator",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "oracle",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        }
+      ],
+      "symbol": "MSFT",
+      "terminal": false
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "MISSION",
+      "mission_id": "mission-review-initial",
+      "request_id": "request-review-initial",
+      "revision": 1,
+      "run_mode": "REPLAY",
+      "source_sha256": "8264fcb968d8cb545adda1fd9c39ac85130d8c9f64e19b942ecc3b3aaf4dd08e"
+    }
+  },
+  {
+    "decision_id": "journal-decision-3db876b67f13a3bfc51417cee8015719d17828451e3ca98dac9dbc3df6d38c40",
+    "domain": "UNCLASSIFIED",
+    "event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+    "event_type": "MISSION_SNAPSHOT_RECORDED",
+    "evidence": [
+      {
+        "path": "request/mission_request.json",
+        "sha256": "206d9f7076667d19b59c33738fc631741af1217bf09577e94c2abe90a53a72aa",
+        "size_bytes": 285
+      },
+      {
+        "path": "research/observations.json",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "snapshots/mission_snapshot-r0002.json",
+        "sha256": "6716d2dcee8a6be383a4a285d53b5e0bdcad14394c0619516fe7291d2b16c730",
+        "size_bytes": 2693
+      }
+    ],
+    "payload": {
+      "authorization": {
+        "action_id": null,
+        "operator_id": null,
+        "scope": null,
+        "status": "NOT_RECORDED"
+      },
+      "classification": {
+        "basis": "HISTORICAL_UNCLASSIFIED",
+        "reason": "Historical mission has no recorded desk classification."
+      },
+      "current_phase": "ORACLE",
+      "decision": {
+        "authority": null,
+        "decision_id": null,
+        "disposition": null
+      },
+      "execution_status": "NOT_EXECUTED",
+      "historical_semantics": {
+        "confidence_probability": "NOT_RECORDED",
+        "evaluation": "NOT_RECORDED",
+        "expectations": "NOT_RECORDED",
+        "hypothesis": "NOT_RECORDED",
+        "investment_horizon": "NOT_RECORDED"
+      },
+      "mission_outcome": "INCOMPLETE",
+      "stages": [
+        {
+          "name": "council",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "governor",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "harbormaster",
+          "native_state": "INITIALIZED",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "navigator",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "oracle",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        }
+      ],
+      "symbol": "MSFT",
+      "terminal": false
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "MISSION",
+      "mission_id": "mission-review-initial",
+      "request_id": "request-review-initial",
+      "revision": 2,
+      "run_mode": "REPLAY",
+      "source_sha256": "6716d2dcee8a6be383a4a285d53b5e0bdcad14394c0619516fe7291d2b16c730"
+    }
+  },
+  {
+    "decision_id": "journal-decision-afa2d9547a70c13786a5ea8794bc482e599b67c2e4ae48bcae0e18a56d6aa60d",
+    "domain": "UNCLASSIFIED",
+    "event_id": "journal-event-93ae73d55ce8ead0f336ea6e6a5ab0f16680ec0638ba18df6e897969053dd461",
+    "event_type": "MISSION_SNAPSHOT_RECORDED",
+    "evidence": [
+      {
+        "path": "request/mission_request.json",
+        "sha256": "4af68655eb2e46f2f2fd6bc5ecc89440c628bc8935e45d314b47070d80d6a9f1",
+        "size_bytes": 293
+      },
+      {
+        "path": "snapshots/mission_snapshot-r0001.json",
+        "sha256": "9912529d7030d7496cbbe4998fb6670c4994e063b47c5451882b53ec57b85b9a",
+        "size_bytes": 2288
+      }
+    ],
+    "payload": {
+      "authorization": {
+        "action_id": null,
+        "operator_id": null,
+        "scope": null,
+        "status": "NOT_RECORDED"
+      },
+      "classification": {
+        "basis": "HISTORICAL_UNCLASSIFIED",
+        "reason": "Historical mission has no recorded desk classification."
+      },
+      "current_phase": "ORACLE",
+      "decision": {
+        "authority": null,
+        "decision_id": null,
+        "disposition": null
+      },
+      "execution_status": "NOT_EXECUTED",
+      "historical_semantics": {
+        "confidence_probability": "NOT_RECORDED",
+        "evaluation": "NOT_RECORDED",
+        "expectations": "NOT_RECORDED",
+        "hypothesis": "NOT_RECORDED",
+        "investment_horizon": "NOT_RECORDED"
+      },
+      "mission_outcome": "INCOMPLETE",
+      "stages": [
+        {
+          "name": "council",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "governor",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "harbormaster",
+          "native_state": "INITIALIZED",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "navigator",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "oracle",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        }
+      ],
+      "symbol": "MSFT",
+      "terminal": false
+    },
+    "recorded_at": "2026-10-12T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "MISSION",
+      "mission_id": "mission-review-statistical",
+      "request_id": "request-review-statistical",
+      "revision": 1,
+      "run_mode": "REPLAY",
+      "source_sha256": "9912529d7030d7496cbbe4998fb6670c4994e063b47c5451882b53ec57b85b9a"
+    }
+  },
+  {
+    "decision_id": "journal-decision-afa2d9547a70c13786a5ea8794bc482e599b67c2e4ae48bcae0e18a56d6aa60d",
+    "domain": "UNCLASSIFIED",
+    "event_id": "journal-event-c2f44c7a2e93d77722190d0e35b93eaa7385f07e182a3ae434b1e2fb42787085",
+    "event_type": "MISSION_SNAPSHOT_RECORDED",
+    "evidence": [
+      {
+        "path": "request/mission_request.json",
+        "sha256": "4af68655eb2e46f2f2fd6bc5ecc89440c628bc8935e45d314b47070d80d6a9f1",
+        "size_bytes": 293
+      },
+      {
+        "path": "research/observations.json",
+        "sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+        "size_bytes": 114
+      },
+      {
+        "path": "snapshots/mission_snapshot-r0002.json",
+        "sha256": "f2c9c05b5a514ef859ab32c9d032c1ae8d51fc9ee85b6b4f448124d2513d7ea6",
+        "size_bytes": 2705
+      }
+    ],
+    "payload": {
+      "authorization": {
+        "action_id": null,
+        "operator_id": null,
+        "scope": null,
+        "status": "NOT_RECORDED"
+      },
+      "classification": {
+        "basis": "HISTORICAL_UNCLASSIFIED",
+        "reason": "Historical mission has no recorded desk classification."
+      },
+      "current_phase": "ORACLE",
+      "decision": {
+        "authority": null,
+        "decision_id": null,
+        "disposition": null
+      },
+      "execution_status": "NOT_EXECUTED",
+      "historical_semantics": {
+        "confidence_probability": "NOT_RECORDED",
+        "evaluation": "NOT_RECORDED",
+        "expectations": "NOT_RECORDED",
+        "hypothesis": "NOT_RECORDED",
+        "investment_horizon": "NOT_RECORDED"
+      },
+      "mission_outcome": "INCOMPLETE",
+      "stages": [
+        {
+          "name": "council",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "governor",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "harbormaster",
+          "native_state": "INITIALIZED",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "navigator",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "oracle",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        }
+      ],
+      "symbol": "MSFT",
+      "terminal": false
+    },
+    "recorded_at": "2026-10-12T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "MISSION",
+      "mission_id": "mission-review-statistical",
+      "request_id": "request-review-statistical",
+      "revision": 2,
+      "run_mode": "REPLAY",
+      "source_sha256": "f2c9c05b5a514ef859ab32c9d032c1ae8d51fc9ee85b6b4f448124d2513d7ea6"
+    }
+  },
+  {
+    "decision_id": "journal-decision-583cb822db36b3ce5297aa2720cbcdff707790be5e81f48eafcbaa78882ed1d4",
+    "domain": "INVESTMENT",
+    "event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+    "event_type": "INVESTMENT_HYPOTHESIS_RECORDED",
+    "evidence": [
+      {
+        "path": "hypotheses/synthetic-financing-hypothesis-001/hypothesis.json",
+        "sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "size_bytes": 4301
+      },
+      {
+        "path": "sources/journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad/research/observations.json",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      }
+    ],
+    "payload": {
+      "alternatives": [
+        {
+          "alternative_id": "synthetic-pricing-power",
+          "distinguishing_observation": "Compare refinancing exposure, debt-service costs and realized operating margins against the fixed initial expectations.",
+          "observation_ids": [
+            "growth",
+            "financing"
+          ],
+          "statement": "Pricing power or fixed-rate financing could absorb higher quoted funding costs and preserve operating margins."
+        }
+      ],
+      "author_id": "offline-example-author",
+      "authority": {
+        "authorization_enabled": false,
+        "capital_activation_enabled": false,
+        "execution_enabled": false,
+        "policy_changes_enabled": false
+      },
+      "domain": "INVESTMENT",
+      "evaluation_plan": {
+        "condition_ids": [
+          "synthetic-no-margin-decline"
+        ],
+        "evaluate_at": "2027-04-11T00:00:00Z",
+        "evaluator_role": "INDEPENDENT_HUMAN_RESEARCH_REVIEWER",
+        "method": "MANUAL_SOURCE_BOUND_REVIEW",
+        "missing_data_policy": "INCONCLUSIVE",
+        "outcome_ids": [
+          "synthetic-margin-decline"
+        ],
+        "plan_id": "synthetic-financing-evaluation-plan-001",
+        "success_rule": "ALL_EXPECTED_OUTCOMES_AND_NO_INVALIDATION"
+      },
+      "evidence_cutoff_at": "2026-10-11T00:00:00Z",
+      "expected_outcomes": [
+        {
+          "description": "Illustrative operating margin decreases at least one percentage point; no future observation is supplied in this burst.",
+          "due_at": "2027-04-11T00:00:00Z",
+          "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+          "operator": "LTE",
+          "outcome_id": "synthetic-margin-decline",
+          "threshold": -1.0,
+          "unit": "PERCENTAGE_POINTS"
+        }
+      ],
+      "horizon": {
+        "end_at": "2027-04-11T00:00:00Z",
+        "review_at": "2027-01-11T00:00:00Z",
+        "start_at": "2026-10-11T00:00:00Z"
+      },
+      "hypothesis": {
+        "assumptions": [
+          "All source observations are invented fixture values, not actual company or market evidence.",
+          "The illustrative businesses have refinancing exposure and unchanged debt balances.",
+          "The two metrics come from one synthetic artifact and provide no independent statistical or fundamental corroboration."
+        ],
+        "causal_mechanism": "If financing-sensitive businesses cannot pass higher funding costs through to customers, debt-service costs could outpace revenue growth and reduce margins.",
+        "observation_ids": [
+          "growth",
+          "financing"
+        ],
+        "statement": "Illustrative hypothesis only: financing costs above revenue growth could weaken operating margins in this synthetic scenario over six months."
+      },
+      "hypothesis_id": "synthetic-financing-hypothesis-001",
+      "invalidation_conditions": [
+        {
+          "check_by": "2027-04-11T00:00:00Z",
+          "condition_id": "synthetic-no-margin-decline",
+          "description": "Operating margin does not decline despite the assumed financing pressure; classify missing evidence as inconclusive.",
+          "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+          "operator": "GTE",
+          "threshold": 0.0,
+          "unit": "PERCENTAGE_POINTS"
+        }
+      ],
+      "mode": "SHADOW",
+      "observations": [
+        {
+          "artifact_path": "research/observations.json",
+          "artifact_sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+          "as_of": "2026-10-11T00:00:00Z",
+          "as_of_pointer": "/as_of",
+          "observation_id": "growth",
+          "source_event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+          "time_role": "AS_OF",
+          "unit": "PERCENT",
+          "value": 5.0,
+          "value_pointer": "/metrics/growth"
+        },
+        {
+          "artifact_path": "research/observations.json",
+          "artifact_sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+          "as_of": "2026-10-11T00:00:00Z",
+          "as_of_pointer": "/as_of",
+          "observation_id": "financing",
+          "source_event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+          "time_role": "AS_OF",
+          "unit": "PERCENT",
+          "value": 6.0,
+          "value_pointer": "/metrics/financing"
+        }
+      ],
+      "recorded_at": "2026-10-11T00:00:00Z",
+      "research_mode": "PROSPECTIVE",
+      "schema_version": "blackpod.investment_hypothesis.v1",
+      "scope": {
+        "identifiers": [
+          "SYNTHETIC_FINANCING_SCENARIO"
+        ],
+        "kind": "SECTOR"
+      },
+      "status": "SHADOW_DRAFT"
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v2",
+    "source": {
+      "hypothesis_id": "synthetic-financing-hypothesis-001",
+      "kind": "INVESTMENT_HYPOTHESIS",
+      "source_sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0"
+    }
+  },
+  {
+    "decision_id": "journal-decision-583cb822db36b3ce5297aa2720cbcdff707790be5e81f48eafcbaa78882ed1d4",
+    "domain": "INVESTMENT",
+    "event_id": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+    "event_type": "INVESTMENT_CHALLENGE_RECORDED",
+    "evidence": [
+      {
+        "path": "challenges/challenge-fixture/challenge.json",
+        "sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c",
+        "size_bytes": 2901
+      },
+      {
+        "path": "hypotheses/synthetic-financing-hypothesis-001/hypothesis.json",
+        "sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "size_bytes": 4301
+      },
+      {
+        "path": "sources/journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad/research/observations.json",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "sources/journal-event-c2f44c7a2e93d77722190d0e35b93eaa7385f07e182a3ae434b1e2fb42787085/research/observations.json",
+        "sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+        "size_bytes": 114
+      }
+    ],
+    "payload": {
+      "assessment": {
+        "assessment_method_version": "blackpod.source_relationship_assessment.v1",
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "declared_evidence_roles": [
+          "FUNDAMENTAL",
+          "STATISTICAL"
+        ],
+        "economic_truth_evaluated": false,
+        "execution_status": "NOT_EXECUTED",
+        "missing_evidence_roles": [],
+        "reviewer_distinct": true,
+        "reviewer_identity_authenticated": false,
+        "source_independence_verified": false,
+        "source_relationships": [
+          {
+            "evidence_role": "FUNDAMENTAL",
+            "independence_verified": false,
+            "observation_id": "growth",
+            "provenance_group": "declared-fixture-source",
+            "relationship": "SAME_VALUE_BINDING"
+          },
+          {
+            "evidence_role": "STATISTICAL",
+            "independence_verified": false,
+            "observation_id": "statistical",
+            "provenance_group": "synthetic-distinct",
+            "relationship": "DISTINCT_RETAINED_ARTIFACT"
+          }
+        ]
+      },
+      "challenge": {
+        "assumption_reviews": [
+          {
+            "assumption_index": 0,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          },
+          {
+            "assumption_index": 1,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          },
+          {
+            "assumption_index": 2,
+            "observation_ids": [
+              "growth"
+            ],
+            "reason": "Fixture assumption requires subsequent evidence.",
+            "status": "SUPPORTED"
+          }
+        ],
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "challenge_id": "challenge-fixture",
+        "counter_hypotheses": [
+          {
+            "counter_id": "counter-fixture",
+            "discriminating_test": "Compare the recorded deadline metric.",
+            "observation_ids": [
+              "growth"
+            ],
+            "statement": "Fixture alternate cause."
+          }
+        ],
+        "disposition": "REVIEW_SUPPORTS",
+        "domain": "INVESTMENT",
+        "evidence_cutoff_at": "2026-10-12T00:00:00Z",
+        "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+        "hypothesis_id": "synthetic-financing-hypothesis-001",
+        "hypothesis_sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "mode": "SHADOW",
+        "observations": [
+          {
+            "artifact_path": "research/observations.json",
+            "artifact_sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+            "as_of": "2026-10-11T00:00:00Z",
+            "as_of_pointer": "/as_of",
+            "evidence_role": "FUNDAMENTAL",
+            "observation_id": "growth",
+            "provenance_group": "declared-fixture-source",
+            "source_event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+            "time_role": "AS_OF",
+            "unit": "PERCENT",
+            "value": 5.0,
+            "value_pointer": "/metrics/growth"
+          },
+          {
+            "artifact_path": "research/observations.json",
+            "artifact_sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+            "as_of": "2026-10-12T00:00:00Z",
+            "as_of_pointer": "/as_of",
+            "evidence_role": "STATISTICAL",
+            "observation_id": "statistical",
+            "provenance_group": "synthetic-distinct",
+            "source_event_id": "journal-event-c2f44c7a2e93d77722190d0e35b93eaa7385f07e182a3ae434b1e2fb42787085",
+            "time_role": "AS_OF",
+            "unit": "PERCENT",
+            "value": 1.0,
+            "value_pointer": "/metrics/signal"
+          }
+        ],
+        "recorded_at": "2026-10-12T00:00:00Z",
+        "reviewer_id": "independent-declared-reviewer",
+        "risk_notes": [
+          "No economic independence is verified."
+        ],
+        "schema_version": "blackpod.investment_challenge.v1",
+        "supersedes_event_id": null,
+        "unresolved_questions": []
+      }
+    },
+    "recorded_at": "2026-10-12T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v3",
+    "source": {
+      "challenge_id": "challenge-fixture",
+      "kind": "INVESTMENT_CHALLENGE",
+      "source_sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c"
+    }
+  },
+  {
+    "decision_id": "journal-decision-a45b1a1c12e5f91f429d0cd4ad4577670a38f1a3ab10f2eadc71df81197b75b6",
+    "domain": "INVESTMENT",
+    "event_id": "journal-event-691f9f052d902ddb0bce888915ed973d8676732758fed2d303d7a6f7afcb24ff",
+    "event_type": "INVESTMENT_DECISION_PROPOSAL_RECORDED",
+    "evidence": [
+      {
+        "path": "investment_proposals/proposal-fixture/proposal.json",
+        "sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5",
+        "size_bytes": 3328
+      },
+      {
+        "path": "risk_contexts/context-fixture/context.json",
+        "sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+        "size_bytes": 944
+      },
+      {
+        "path": "risk_policies/fixture-risk/v1.json",
+        "sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41",
+        "size_bytes": 1123
+      },
+      {
+        "path": "source_events/journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3/event.json",
+        "sha256": "63773c84b7d7a6097ef719b0346caedb3d2f8403413fa130411c20316c774a3a",
+        "size_bytes": 5593
+      },
+      {
+        "path": "source_events/journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4/event.json",
+        "sha256": "8b8caaa919d8075dc8e9749f5239ee6453ceedfdc5a738599f68e190b402d09e",
+        "size_bytes": 5935
+      },
+      {
+        "path": "source_evidence/4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026.blob",
+        "sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+        "size_bytes": 114
+      },
+      {
+        "path": "source_evidence/5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0.blob",
+        "sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "size_bytes": 4301
+      },
+      {
+        "path": "source_evidence/5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c.blob",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "source_evidence/ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c.blob",
+        "sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c",
+        "size_bytes": 2901
+      }
+    ],
+    "payload": {
+      "proposal": {
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "challenge_event_id": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+        "domain": "INVESTMENT",
+        "evaluation_event_id": null,
+        "evidence_cutoff_at": "2026-10-13T00:00:00Z",
+        "hypothesis_event_id": "journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3",
+        "hypothesis_id": "synthetic-financing-hypothesis-001",
+        "hypothesis_sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "mode": "SHADOW",
+        "proposal_id": "proposal-fixture",
+        "rationale": "Synthetic paper research; no live allocation authority.",
+        "recorded_at": "2026-10-13T00:00:00Z",
+        "risk_context": {
+          "as_of": "2026-10-13T00:00:00Z",
+          "basis": "ACCOUNT_EQUITY_FRACTIONS",
+          "cash_by_desk": {
+            "INVESTMENT": 0.4,
+            "TRADING": 0.4
+          },
+          "context_id": "context-fixture",
+          "correlations": [
+            {
+              "correlation": 0.3,
+              "symbol_a": "MSFT",
+              "symbol_b": "AAPL"
+            }
+          ],
+          "instruments": [
+            {
+              "liquidity_score": 0.9,
+              "sector": "TECH",
+              "stress_loss_fraction": 0.1,
+              "symbol": "MSFT"
+            },
+            {
+              "liquidity_score": 0.8,
+              "sector": "TECH",
+              "stress_loss_fraction": 0.2,
+              "symbol": "AAPL"
+            }
+          ],
+          "is_complete": true,
+          "portfolio_scope_id": "paper-account",
+          "positions": [
+            {
+              "desk": "INVESTMENT",
+              "symbol": "MSFT",
+              "weight": 0.1
+            },
+            {
+              "desk": "TRADING",
+              "symbol": "AAPL",
+              "weight": 0.1
+            }
+          ],
+          "schema_version": "blackpod.investment_risk_context.v1",
+          "scope_mode": "LONG_ONLY",
+          "source_kind": "SYNTHETIC_FIXTURE"
+        },
+        "risk_policy": {
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "authorized_approver_ids": [
+            "declared-approver"
+          ],
+          "domain": "INVESTMENT",
+          "limits": {
+            "high_correlation_threshold": 0.8,
+            "max_consolidated_gross": 0.8,
+            "max_correlated_pair_weight": 0.5,
+            "max_investment_gross": 0.5,
+            "max_position_weight": 0.4,
+            "max_sector_weight": 0.5,
+            "max_stress_loss_weight": 0.2,
+            "min_cash_weight": 0.2,
+            "min_liquidity_score": 0.6
+          },
+          "max_approval_lifetime_seconds": 3600,
+          "max_context_age_seconds": 86400,
+          "method_version": "blackpod.shadow_long_only_risk.v1",
+          "mode": "SHADOW",
+          "policy_id": "fixture-risk",
+          "policy_version": 1,
+          "recorded_at": "2026-10-13T00:00:00Z",
+          "require_distinct_role_artifacts": true,
+          "require_final_evaluation": false,
+          "require_no_active_dissent": true,
+          "require_role_coverage": true,
+          "required_approver_role": "INVESTMENT_REVIEWER",
+          "schema_version": "blackpod.investment_shadow_risk_policy.v1",
+          "status": "SHADOW_PROPOSED"
+        },
+        "schema_version": "blackpod.investment_decision_proposal.v1",
+        "submitted_by": "fixture-researcher",
+        "supersedes_event_id": null,
+        "targets": [
+          {
+            "symbol": "MSFT",
+            "weight": 0.2
+          }
+        ],
+        "valid_until": "2026-10-14T00:00:00Z"
+      },
+      "report": {
+        "approval_scope": "INVESTMENT_SHADOW_RESEARCH_ONLY",
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "checks": [
+          {
+            "check_id": "PROSPECTIVE_HYPOTHESIS",
+            "limit": true,
+            "observed": "PROSPECTIVE",
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "ACTIVE_HYPOTHESIS_HORIZON",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "PROPOSAL_VALIDITY",
+            "limit": true,
+            "observed": "2026-10-14T00:00:00Z",
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "EXACT_CONTEXT_TOTAL",
+            "limit": true,
+            "observed": 1,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "COMPLETE_CONTEXT",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "CONTEXT_FRESHNESS",
+            "limit": 86400,
+            "observed": 0,
+            "reason_code": "CONTEXT_CURRENT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "SELECTED_CHALLENGE_ACTIVE",
+            "limit": true,
+            "observed": "journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4",
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "NO_ACTIVE_DISSENT",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "DECLARED_EVIDENCE_ROLE_COVERAGE",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "DISTINCT_ROLE_ARTIFACTS",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "NO_KNOWN_INVALIDATION",
+            "limit": false,
+            "observed": false,
+            "reason_code": "NO_RECORDED_ACTIVE_INVALIDATION",
+            "status": "PASS"
+          },
+          {
+            "check_id": "NO_KNOWN_UNMET_EXPECTATIONS",
+            "limit": true,
+            "observed": true,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "FULL_INVESTMENT_TARGETS",
+            "limit": true,
+            "observed": null,
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "INVESTMENT_DESK_BUDGET",
+            "limit": 0.5,
+            "observed": 0.2,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "INVESTMENT_GROSS",
+            "limit": 0.5,
+            "observed": 0.2,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "CONSOLIDATED_GROSS",
+            "limit": 0.8,
+            "observed": 0.3,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "CASH_RESERVE",
+            "limit": 0.2,
+            "observed": 0.7,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "POSITION_WEIGHT_0",
+            "limit": 0.4,
+            "observed": 0.1,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "INSTRUMENT_METADATA_0",
+            "limit": true,
+            "observed": "AAPL",
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "LIQUIDITY_0",
+            "limit": 0.6,
+            "observed": 0.8,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "POSITION_WEIGHT_1",
+            "limit": 0.4,
+            "observed": 0.2,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "INSTRUMENT_METADATA_1",
+            "limit": true,
+            "observed": "MSFT",
+            "reason_code": "SATISFIED",
+            "status": "PASS"
+          },
+          {
+            "check_id": "LIQUIDITY_1",
+            "limit": 0.6,
+            "observed": 0.9,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "SECTOR_WEIGHT_0",
+            "limit": 0.5,
+            "observed": 0.3,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "CONSOLIDATED_STRESS_LOSS",
+            "limit": 0.2,
+            "observed": 0.04,
+            "reason_code": "WITHIN_LIMIT",
+            "status": "PASS"
+          },
+          {
+            "check_id": "CORRELATED_PAIR_0",
+            "limit": 0.8,
+            "observed": 0.3,
+            "reason_code": "BELOW_HIGH_CORRELATION_THRESHOLD",
+            "status": "PASS"
+          }
+        ],
+        "economic_truth_evaluated": false,
+        "gate": "REVIEW_READY",
+        "metrics": {
+          "investment_budget_weight": 0.5,
+          "projected_cash_weight": 0.7,
+          "projected_consolidated_gross": 0.3,
+          "projected_sector_weights": [
+            {
+              "sector": "TECH",
+              "weight": 0.3
+            }
+          ],
+          "projected_stress_loss_weight": 0.04,
+          "projected_symbol_weights": [
+            {
+              "symbol": "AAPL",
+              "weight": 0.1
+            },
+            {
+              "symbol": "MSFT",
+              "weight": 0.2
+            }
+          ],
+          "proposed_investment_gross": 0.2
+        },
+        "operational_authority_granted": false,
+        "proposal_ready_for_human_review": true,
+        "residual_risks": [
+          "DECLARED_IDENTITIES_UNAUTHENTICATED",
+          "SOURCE_INDEPENDENCE_NOT_ESTABLISHED",
+          "METRIC_UNITS_NOT_INDEPENDENTLY_VERIFIED",
+          "RISK_CONTEXT_MANUALLY_DECLARED",
+          "SHADOW_POLICY_NOT_LIVE_OR_CALIBRATED",
+          "WHOLE_HORIZON_INVALIDATION_NOT_ESTABLISHED",
+          "CAPITAL_POLICY_NOT_ACTIVATED",
+          "DECLARED_TIMESTAMPS_NOT_ATTESTED",
+          "NO_FINAL_OUTCOME_EVALUATION"
+        ],
+        "risk_context_sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+        "risk_method_version": "blackpod.shadow_long_only_risk.v1",
+        "risk_policy_sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41"
+      }
+    },
+    "recorded_at": "2026-10-13T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v4",
+    "source": {
+      "kind": "INVESTMENT_DECISION_PROPOSAL",
+      "proposal_id": "proposal-fixture",
+      "source_sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5"
+    }
+  },
+  {
+    "decision_id": "journal-decision-a45b1a1c12e5f91f429d0cd4ad4577670a38f1a3ab10f2eadc71df81197b75b6",
+    "domain": "INVESTMENT",
+    "event_id": "journal-event-e4451cd33da0f45776df83e01401a56f4761319342e9ceb0cb3d2905d1148423",
+    "event_type": "INVESTMENT_SHADOW_APPROVAL_RECORDED",
+    "evidence": [
+      {
+        "path": "approvals/approval-simulated-fixture/approval.json",
+        "sha256": "31df6d8f0afa79ada13c357e525bed0534c0fab56d9080564a00867f17118066",
+        "size_bytes": 1718
+      },
+      {
+        "path": "investment_proposals/proposal-fixture/proposal.json",
+        "sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5",
+        "size_bytes": 3328
+      },
+      {
+        "path": "proposals/proposal-fixture/proposal_event.json",
+        "sha256": "95bb9d2f1df66d7416191d5082ca74a878baf3c62018ac814de9779526eb29ca",
+        "size_bytes": 13039
+      },
+      {
+        "path": "risk_contexts/context-fixture/context.json",
+        "sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+        "size_bytes": 944
+      },
+      {
+        "path": "risk_policies/fixture-risk/v1.json",
+        "sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41",
+        "size_bytes": 1123
+      },
+      {
+        "path": "source_events/journal-event-59d1d3e51ab133dffa7dc2a747d4a22cb79dd835c74f4d09acbdb067791b30e3/event.json",
+        "sha256": "63773c84b7d7a6097ef719b0346caedb3d2f8403413fa130411c20316c774a3a",
+        "size_bytes": 5593
+      },
+      {
+        "path": "source_events/journal-event-8ae9792816564f37e1bec099de757ee7b8e24b0fab88453b0eb20b26f44aabe4/event.json",
+        "sha256": "8b8caaa919d8075dc8e9749f5239ee6453ceedfdc5a738599f68e190b402d09e",
+        "size_bytes": 5935
+      },
+      {
+        "path": "source_evidence/4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026.blob",
+        "sha256": "4a97e36d9ac85d1d320b0d9ed8e59a5b9978b4f7728168d1f207facaedb19026",
+        "size_bytes": 114
+      },
+      {
+        "path": "source_evidence/5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0.blob",
+        "sha256": "5878a93a9801cee5d2d4a1244ec86a565bd49c97d8617701a8d89076f4a114a0",
+        "size_bytes": 4301
+      },
+      {
+        "path": "source_evidence/5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c.blob",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "source_evidence/ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c.blob",
+        "sha256": "ee28e23121356eb168f7bd531ca505d8705ef61b380972bddf2418ced98fc08c",
+        "size_bytes": 2901
+      }
+    ],
+    "payload": {
+      "approval": {
+        "acknowledged_residual_risks": [
+          "DECLARED_IDENTITIES_UNAUTHENTICATED",
+          "SOURCE_INDEPENDENCE_NOT_ESTABLISHED",
+          "METRIC_UNITS_NOT_INDEPENDENTLY_VERIFIED",
+          "RISK_CONTEXT_MANUALLY_DECLARED",
+          "SHADOW_POLICY_NOT_LIVE_OR_CALIBRATED",
+          "WHOLE_HORIZON_INVALIDATION_NOT_ESTABLISHED",
+          "CAPITAL_POLICY_NOT_ACTIVATED",
+          "DECLARED_TIMESTAMPS_NOT_ATTESTED",
+          "NO_FINAL_OUTCOME_EVALUATION"
+        ],
+        "action": "APPROVE",
+        "approval_id": "approval-simulated-fixture",
+        "approver_id": "declared-approver",
+        "approver_role": "INVESTMENT_REVIEWER",
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "confirmation": {
+          "acknowledges_shadow_only": true,
+          "action": "APPROVE",
+          "proposal_sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5"
+        },
+        "domain": "INVESTMENT",
+        "expires_at": "2026-10-13T00:30:00Z",
+        "mode": "SHADOW",
+        "origin": "SIMULATED_TEST",
+        "proposal_event_id": "journal-event-691f9f052d902ddb0bce888915ed973d8676732758fed2d303d7a6f7afcb24ff",
+        "proposal_id": "proposal-fixture",
+        "proposal_sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5",
+        "recorded_at": "2026-10-13T00:01:00Z",
+        "report_sha256": "18172827b992c19cff6594be655a9ac262a9b274a7894adbe526cba036f48ddd",
+        "revokes_approval_event_id": null,
+        "risk_context_sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+        "risk_policy_sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41",
+        "schema_version": "blackpod.investment_shadow_approval.v1",
+        "scope": "INVESTMENT_SHADOW_RESEARCH_ONLY"
+      },
+      "decision": {
+        "action": "APPROVE",
+        "approver_identity_authenticated": false,
+        "authority": {
+          "authorization_enabled": false,
+          "capital_activation_enabled": false,
+          "execution_enabled": false,
+          "policy_changes_enabled": false
+        },
+        "execution_status": "NOT_EXECUTED",
+        "expires_at": "2026-10-13T00:30:00Z",
+        "operational_authority_granted": false,
+        "origin": "SIMULATED_TEST",
+        "realized_trade_pnl": null,
+        "result": "SIMULATED_SHADOW_APPROVED",
+        "scope": "INVESTMENT_SHADOW_RESEARCH_ONLY"
+      }
+    },
+    "recorded_at": "2026-10-13T00:01:00Z",
+    "schema_version": "blackpod.decision_journal_event.v4",
+    "source": {
+      "approval_id": "approval-simulated-fixture",
+      "kind": "INVESTMENT_SHADOW_APPROVAL",
+      "source_sha256": "31df6d8f0afa79ada13c357e525bed0534c0fab56d9080564a00867f17118066"
+    }
+  },
+  {
+    "decision_id": "journal-decision-44acfb5b7af8b82a7ab7d0c9daf5c815cd1d37df69ed105411f7514bce428c01",
+    "domain": "CAPITAL_ALLOCATION",
+    "event_id": "journal-event-c9368e33a5eeee13502ccba4ac0747473d76a5057961fdf3a0707069fa7a8c39",
+    "event_type": "CAPITAL_POLICY_PROPOSED",
+    "evidence": [
+      {
+        "path": "capital_policy/proposal.json",
+        "sha256": "c5293ba0e295d9480330c604830e72059feb56f2c0020512c17f58d895999db1",
+        "size_bytes": 540
+      }
+    ],
+    "payload": {
+      "activation_enabled": false,
+      "allocation_basis": "ACCOUNT_EQUITY",
+      "allocations": {
+        "INVESTMENT": 0.5,
+        "TRADING": 0.5
+      },
+      "automated_reallocation_enabled": false,
+      "capital_transfers_enabled": false,
+      "consolidated_account_risk_required": true,
+      "policy_id": "initial-two-desk-50-50",
+      "proposed_at": "2026-10-11T00:00:00Z",
+      "rebalance_mode": "INITIAL_ALLOCATION_ONLY",
+      "schema_version": "blackpod.capital_policy_proposal.v1",
+      "status": "PROPOSED",
+      "subsequent_changes_require_explicit_authorization": true
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "CAPITAL_POLICY",
+      "policy_id": "initial-two-desk-50-50",
+      "source_sha256": "c5293ba0e295d9480330c604830e72059feb56f2c0020512c17f58d895999db1"
+    }
+  }
+]

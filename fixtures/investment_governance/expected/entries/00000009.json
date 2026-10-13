@@ -1,0 +1,43 @@
+{
+  "event": {
+    "decision_id": "journal-decision-44acfb5b7af8b82a7ab7d0c9daf5c815cd1d37df69ed105411f7514bce428c01",
+    "domain": "CAPITAL_ALLOCATION",
+    "event_id": "journal-event-c9368e33a5eeee13502ccba4ac0747473d76a5057961fdf3a0707069fa7a8c39",
+    "event_type": "CAPITAL_POLICY_PROPOSED",
+    "evidence": [
+      {
+        "path": "capital_policy/proposal.json",
+        "sha256": "c5293ba0e295d9480330c604830e72059feb56f2c0020512c17f58d895999db1",
+        "size_bytes": 540
+      }
+    ],
+    "payload": {
+      "activation_enabled": false,
+      "allocation_basis": "ACCOUNT_EQUITY",
+      "allocations": {
+        "INVESTMENT": 0.5,
+        "TRADING": 0.5
+      },
+      "automated_reallocation_enabled": false,
+      "capital_transfers_enabled": false,
+      "consolidated_account_risk_required": true,
+      "policy_id": "initial-two-desk-50-50",
+      "proposed_at": "2026-10-11T00:00:00Z",
+      "rebalance_mode": "INITIAL_ALLOCATION_ONLY",
+      "schema_version": "blackpod.capital_policy_proposal.v1",
+      "status": "PROPOSED",
+      "subsequent_changes_require_explicit_authorization": true
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "CAPITAL_POLICY",
+      "policy_id": "initial-two-desk-50-50",
+      "source_sha256": "c5293ba0e295d9480330c604830e72059feb56f2c0020512c17f58d895999db1"
+    }
+  },
+  "event_sha256": "4365cf6dd74c1c39c7b8e3bf036f7d386171d59b28996f95d2710dae15b23f33",
+  "previous_entry_sha256": "eeaaa72c2f1945e157aa11e34f3991038c626edebbffa5009c67ae02a66be58f",
+  "schema_version": "blackpod.decision_journal_entry.v1",
+  "sequence": 9
+}

@@ -1,0 +1,103 @@
+{
+  "approval_scope": null,
+  "artifacts": [
+    {
+      "byte_size": 388,
+      "name": "mission_request",
+      "observed_at": "2027-04-11T00:00:00Z",
+      "path": "request/mission_request.json",
+      "producer": "harbormaster",
+      "schema_version": "blackpod.mission_request.v1",
+      "sha256": "823bca8ea62fb080998176bd63b3d83433efa01a25ebb8f05a0cb466f7adc8cc"
+    },
+    {
+      "byte_size": 419,
+      "name": "synthetic_outcomes",
+      "observed_at": "2027-04-11T00:00:00Z",
+      "path": "outcomes/synthetic_measurements.json",
+      "producer": "offline-fixture-author",
+      "schema_version": "blackpod.investment_outcome_fixture.v1",
+      "sha256": "7a5d5a717808157bc201123c2b3b2f9eb011491633b7e57eb3dba748c0713130"
+    }
+  ],
+  "components": {},
+  "current_phase": "ORACLE",
+  "mission_id": "mission-investment-outcome-evidence",
+  "mission_outcome": "INCOMPLETE",
+  "navigator": {
+    "allowed_operations": [],
+    "expires_at": null,
+    "handoff_id": null,
+    "handoff_status": null,
+    "idempotency_key": null,
+    "intake_receipt_id": null,
+    "intake_status": null,
+    "mode": null,
+    "plan_id": null,
+    "plan_status": null,
+    "prohibited_operations": []
+  },
+  "observed_at": "2027-04-11T00:00:00Z",
+  "operator": {
+    "acted_at": null,
+    "action": null,
+    "action_id": null,
+    "action_status": "NOT_STARTED",
+    "error": null,
+    "operator_id": null,
+    "result": null,
+    "route": null
+  },
+  "previous_snapshot_sha256": "373fbd760f574ad6082f776161cef4a3279d29c807b41e85166ffad9a92a870b",
+  "request_id": "request-investment-outcome-evidence",
+  "revision": 2,
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_snapshot.v1",
+  "snapshot_id": "mission-investment-outcome-evidence-r0002",
+  "stages": {
+    "council": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "governor": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "harbormaster": {
+      "error": null,
+      "inputs": [
+        "mission_request"
+      ],
+      "modeldock_calls": [],
+      "native_state": "INITIALIZED",
+      "outputs": [],
+      "status": "SUCCEEDED"
+    },
+    "navigator": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "oracle": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    }
+  },
+  "started_at": "2027-04-11T00:00:00Z",
+  "terminal": false
+}

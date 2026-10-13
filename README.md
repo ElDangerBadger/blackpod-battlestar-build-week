@@ -71,8 +71,23 @@ for source configuration, development, and recovery.
   operator approval, or change canonical evidence.
 - Keep deterministic replay for explicit developer/historical review, outside
   normal product use.
-- Add-symbol workflows and eventual trading integration are roadmap work.
-  Neither is enabled or authorized by this read-only release.
+- Cabin-managed add-symbol and trading workflows remain roadmap work. The
+  read-only product does not start the separate execution controller.
+
+Separate explicit development interfaces now support a passive Decision
+Journal, governed investment research, and a guarded Galactica/Alpaca trading
+toggle. The Cabin and mission orchestration remain read-only/SHADOW. See
+[Investment governance](docs/INVESTMENT_GOVERNANCE.md) and
+[Auto-trading controls](docs/AUTO_TRADING.md). Auto-trading defaults OFF;
+investment research approval cannot enable it. No capital policy is activated.
+The [paper reconciliation and ownership interfaces](docs/TRADING_RECONCILIATION.md)
+retain broker facts and restore unresolved-attempt barriers; funded activation
+is blocked pending a separately governed path.
+
+[Offline fill-lot and fee accounting](docs/TRADING_ACCOUNTING.md) links
+individual execution activities to verified paper history, applies long-only
+FIFO and retains later fee observations without rewriting prior results.
+Unknown fees leave net P&L unknown. Accounting commands never enable trading.
 
 The mission symbol is correlation metadata. The existing Oracle analyzes its
 supported fleet; a Navigator reference chart does not turn that into
@@ -114,6 +129,9 @@ testing; they do not govern live-product acceptance. Browser setup and checks:
 
 ## Documentation
 
+- [Passive Decision Journal and two-desk foundation](docs/DECISION_JOURNAL.md)
+- [Source-bound investment hypotheses in shadow mode](docs/INVESTMENT_HYPOTHESES.md)
+- [Shadow hypothesis challenge and outcome evaluation](docs/INVESTMENT_REVIEW.md)
 - [Product specification and roadmap](docs/PRODUCT_SPEC.md)
 - [Live product runbook](docs/LIVE_PRODUCT_RUNBOOK.md)
 - [Architecture](docs/ARCHITECTURE.md)
@@ -128,3 +146,129 @@ Historical material is retained, not the current startup path:
 [Build Week implementation history](docs/BUILD_WEEK_HISTORY.md),
 [archived Demo Runbook](docs/DEMO_RUNBOOK.md), and
 [archived LIVE Demo Runbook](docs/LIVE_DEMO_RUNBOOK.md).
+
+## Shadow two-desk candidate review
+
+The [shadow desk review](docs/SHADOW_DESK_REVIEW.md) reuses pinned native Oracle,
+candidate and Senate calculations, connects Galactica Spyglass to retained
+daily bars, and preserves explicitly supplied historical Brigade opinions and
+dissent. It records source-bound research rankings, proposed desk ownership and
+whole-share PAPER test sizes in journal v8. Fresh Brigade inference and
+predictive forecasts remain an explicit gap.
+
+The fixed 25%-of-captured-equity testing budget is split equally between the
+desks and stays inactive. Review parameters are proposed research policy;
+ownership and sizes are not installed. Auto-trading remains **OFF**. The
+offline example and assess/record/show/render commands never start a mission,
+call ModelDock, activate capital, submit an order or change existing trading
+rules. The linked design includes the complete module inventory and separates
+connected analytical paths from optional presentation, research and execution
+interfaces.
+
+## Governed forecasts and Brigade shadow analysis
+
+The additive [forecast and Brigade interface](docs/FORECAST_BRIGADE_SHADOW.md)
+retains explicit forecast units, horizons, source/model provenance and data
+cutoffs before admitting advisory analysis. Legacy `LIVE` filenames and labels
+do not establish currentness. Different horizons at the same as-of instant
+remain different targets; they do not become historical trend observations.
+
+The separate journal path preserves admitted and deferred evidence, strict
+Brigade opinion validation and disabled authority. It leaves canonical mission
+stages, existing ModelDock routing/configuration and the independent execution
+controller unchanged. Auto-trading remains **OFF**; daily forecasts cannot
+authorize a long-horizon investment or activate the inactive desk budgets.
+
+## Governed current forecast export
+
+The separately invoked [forecast producer export](docs/GOVERNED_FORECAST_EXPORT.md)
+connects newly fitted native daily price forecasts to the existing intake and
+Brigade SHADOW review. It retains completed-session evidence, actual training
+rows and target-label availability, original quantile identities and data-only
+model provenance. Crossed quantiles, incomplete bars and stale inputs remain
+explicit barriers. It uses the existing fitting runtime without changing
+Galactica caches, dependency declarations or ModelDock routing.
+
+Fresh fitting and optional local text inference are explicit producer actions.
+Verified journal replay performs neither. All research authority remains
+disabled, auto-trading stays **OFF**, and the fixed two-desk budgets remain
+inactive. Forecast eligibility is advisory evidence, not approval to trade.
+
+## Structured Brigade shadow responses
+
+The [versioned structured response interface](docs/BRIGADE_STRUCTURED_RESPONSES.md)
+adds exact typed member responses, deterministic native-parser projections and
+passive journal v11 records. Original raw JSON, native prompts, parser output
+and dissent remain retained separately. Malformed or mismatched responses defer
+without repair, fallback votes or automatic retries. Existing v1/v9 records
+continue to replay through their original versions.
+
+Runnable synthetic examples exercise the new interface without provider calls.
+Explicit current local captures retain the existing ModelDock boundary and
+appliance-owned routing. All opinions remain SHADOW recommendations; auto-trading
+stays **OFF**, desk budgets remain inactive, and no execution authority is added.
+
+## Trading strategy rebuild direction
+
+The [trading rebuild roadmap](docs/ARCHITECTURE.md#trading-strategy-rebuild-roadmap--october-12-2026)
+records the decision to replace Galactica's trading logic with independently
+specified and evaluated day/swing strategies. Existing native trading rules,
+prompts, sizing and forecast defaults receive no automatic production reuse.
+The journal, accounting, evidence and verified operational safeguards remain
+useful infrastructure. The next trading work establishes a new research
+contract and offline evaluation foundation before replacement shadow analysis
+and separately authorized paper testing. Auto-trading remains **OFF**; this
+roadmap changes no current execution behavior or investment-desk policy.
+
+## Independent trading research and offline evaluation
+
+The new [TRADING research foundation](docs/TRADING_RESEARCH.md) establishes a
+versioned, strategy-neutral contract and deterministic offline evaluation of
+explicitly supplied candidate decisions. It reuses retained evidence and the
+passive journal, while excluding Galactica's trading rules, Brigade voting
+criteria, forecast defaults, Navigator mandates, stops and sizing heuristics.
+Chronological availability, simulation costs, cash/position accounting and
+trial provenance remain explicit. Synthetic examples use authored decisions
+and standalone simulated cash, without a broker, provider or strategy engine.
+
+Simulation results cannot promote a strategy, activate desk budgets or acquire
+execution authority. Auto-trading remains **OFF**. Brigade evidence-consistency
+review is a separate optional diagnostic for the retained advisory channel;
+it is neither a prerequisite for this new foundation nor a replacement for
+economic evaluation of newly specified trading strategies.
+
+## Independent hypotheses and governed historical intake
+
+[Historical research intake](docs/TRADING_HISTORICAL_RESEARCH.md) now freezes
+two original, untested daily hypotheses and projects retained Alpaca bars and
+returned calendar sessions through strict source-bound contracts. Journal v13
+retains the catalog and intake; v14 links data-quality-only research plans and
+evaluations to both originals. Historical availability remains a declared
+retrospective assumption. No strategy decisions, scores, winners or paper
+orders are produced. Auto-trading stays **OFF**. See the
+[validation report](docs/TRADING_HISTORICAL_RESEARCH_VALIDATION.md) for exact
+commands, actual tests and real-history versus fixture coverage.
+
+## Deterministic shadow intent research
+
+[Governed shadow research](docs/TRADING_SHADOW_RESEARCH.md) implements the two
+frozen hypotheses, whole-share sizing from known completed closes, and an
+equal-weight counterfactual control matched to admitted entry notional and
+holding duration. Strict continuity and cost evidence gates precede production.
+Missing reviews defer the study; failed controls remain inconclusive. Journal
+v15 freezes each declaration and links reproducible evaluations at 1×, 2× and
+4× costs. Final-holdout scoring and every execution authority remain disabled.
+Auto-trading stays **OFF**. See the
+[validation report](docs/TRADING_SHADOW_RESEARCH_VALIDATION.md) for changed
+files, commands, actual tests and fixture-versus-retained-history results.
+
+## Real-data evidence and explicit shadow risk review
+
+[Governed evidence adapters](docs/TRADING_SHADOW_EVIDENCE.md) now retain and
+verify native corporate actions, paginated historical quotes and separate cost
+assumptions. Study v2 and journal v16 bind those inputs to an explicit simulation
+sizing/risk review. A proposal stays deferred; a shadow approval can change
+temporary simulation risk only. Original plans and the previous calculation
+versions remain immutable. Auto-trading stays **OFF**. See the
+[validation report](docs/TRADING_SHADOW_EVIDENCE_VALIDATION.md) for actual
+captures, test results, unchanged journals and unresolved evidence.

@@ -1,0 +1,42 @@
+{
+  "acknowledged_residual_risks": [
+    "DECLARED_IDENTITIES_UNAUTHENTICATED",
+    "SOURCE_INDEPENDENCE_NOT_ESTABLISHED",
+    "METRIC_UNITS_NOT_INDEPENDENTLY_VERIFIED",
+    "RISK_CONTEXT_MANUALLY_DECLARED",
+    "SHADOW_POLICY_NOT_LIVE_OR_CALIBRATED",
+    "WHOLE_HORIZON_INVALIDATION_NOT_ESTABLISHED",
+    "CAPITAL_POLICY_NOT_ACTIVATED",
+    "DECLARED_TIMESTAMPS_NOT_ATTESTED",
+    "NO_FINAL_OUTCOME_EVALUATION"
+  ],
+  "action": "APPROVE",
+  "approval_id": "approval-simulated-fixture",
+  "approver_id": "declared-approver",
+  "approver_role": "INVESTMENT_REVIEWER",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "confirmation": {
+    "acknowledges_shadow_only": true,
+    "action": "APPROVE",
+    "proposal_sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5"
+  },
+  "domain": "INVESTMENT",
+  "expires_at": "2026-10-13T00:30:00Z",
+  "mode": "SHADOW",
+  "origin": "SIMULATED_TEST",
+  "proposal_event_id": "journal-event-691f9f052d902ddb0bce888915ed973d8676732758fed2d303d7a6f7afcb24ff",
+  "proposal_id": "proposal-fixture",
+  "proposal_sha256": "db510122f40fe70bf84b350a1340e04e6ef47d431c580b6cfd76a0be0cd380f5",
+  "recorded_at": "2026-10-13T00:01:00Z",
+  "report_sha256": "18172827b992c19cff6594be655a9ac262a9b274a7894adbe526cba036f48ddd",
+  "revokes_approval_event_id": null,
+  "risk_context_sha256": "2b271d9a0ffbe835ec0afcb230f2c35ec794299c77a04bc065d6bf025913cc0c",
+  "risk_policy_sha256": "23fb68c3bfdbe900f0f001e243b6da92feb76d58d4ff5e7cacda1a9108fa6e41",
+  "schema_version": "blackpod.investment_shadow_approval.v1",
+  "scope": "INVESTMENT_SHADOW_RESEARCH_ONLY"
+}

@@ -1,0 +1,14 @@
+{
+  "as_of": "2026-10-11T00:00:00Z",
+  "limitations": [
+    "Invented observations for offline contract tests only.",
+    "No independent statistical or fundamental evidence; no economic claim is validated."
+  ],
+  "metrics": {
+    "financing_cost_pct": 6.0,
+    "revenue_growth_pct": 5.0
+  },
+  "schema_version": "blackpod.investment_observation_fixture.v1",
+  "scope": "ILLUSTRATIVE_FINANCING_SCENARIO",
+  "source_kind": "SYNTHETIC_FIXTURE"
+}

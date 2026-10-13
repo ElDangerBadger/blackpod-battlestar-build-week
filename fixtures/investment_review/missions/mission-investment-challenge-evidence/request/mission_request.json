@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "purpose": "Synthetic investment review tests; no stage execution."
+  },
+  "mission_id": "mission-investment-challenge-evidence",
+  "operator_id": "offline-fixture-author",
+  "request_id": "request-investment-challenge-evidence",
+  "requested_at": "2026-10-12T00:00:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "SYSTEM"
+}

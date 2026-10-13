@@ -1,0 +1,53 @@
+{
+  "account_id": "synthetic-example-paper-account",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "budget": {
+    "proposal_evidence": {
+      "path": "shadow-desk/budget.json",
+      "sha256": "73f74e8d7b35285a79dcacff8ef74de9c5a60b819e9eee6f57d5551eab62fe4a",
+      "size_bytes": 1475
+    },
+    "source_snapshot_event_id": "journal-event-a0d0f0beb5ab4f8958df94ea945625e8246b6c6e49f360917bbb815d4002fc77",
+    "source_snapshot_sha256": "d4ba968b2a6d3094cd7175aba8474fc63411ec799392492a59d888d114f87271"
+  },
+  "mode": "PAPER",
+  "policy": {
+    "atr_multiple": "2",
+    "benchmark_symbol": "SPY",
+    "expires_at": "2026-10-13T20:00:00Z",
+    "investment_candidate_fraction": "0.20",
+    "investment_horizon_days": 90,
+    "max_active_entries": 1,
+    "max_completed_cycles": 1,
+    "max_entry_fraction": "0.10",
+    "price_buffer_fraction": "0.01",
+    "scenario_risk_fraction": "0.0025",
+    "status": "PROPOSED_SHADOW_ONLY"
+  },
+  "recorded_at": "2026-10-12T20:00:00Z",
+  "review_id": "synthetic-two-desk-example",
+  "schema_version": "blackpod.shadow_two_desk_review.v1",
+  "scope": "SHADOW_TWO_DESK_REVIEW_ONLY",
+  "sources": {
+    "analysis_evidence": {
+      "path": "shadow-desk/analysis.json",
+      "sha256": "739666472460d91430e30a88175cf19fe9f7e739f5bfb9d34345cf3dc3f2f258",
+      "size_bytes": 145564
+    },
+    "issuer_evidence": {
+      "path": "shadow-desk/issuers.json",
+      "sha256": "7a69ae3f27af93865f103b48d8f728dddaeecdea716723c14c1aa9b44a3a4bcb",
+      "size_bytes": 2740
+    },
+    "market_evidence": {
+      "path": "shadow-desk/market.json",
+      "sha256": "a3cfbac15114095ac3c24362b9a59aa702e674b42af19ec7d9245de7c08fe510",
+      "size_bytes": 204356
+    }
+  }
+}

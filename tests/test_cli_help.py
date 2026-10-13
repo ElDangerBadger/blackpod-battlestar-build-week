@@ -36,6 +36,7 @@ class RootCliHelpTests(unittest.TestCase):
             "run-governor",
             "operator-action",
             "run-navigator",
+            "journal",
         ):
             with self.subTest(command=command):
                 self.assertIn(command, output)

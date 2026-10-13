@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "purpose": "Journal fixture only; no stage execution or desk classification."
+  },
+  "mission_id": "mission-journal-example",
+  "operator_id": "offline-example",
+  "request_id": "request-journal-example",
+  "requested_at": "2026-10-11T00:00:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "SYSTEM"
+}

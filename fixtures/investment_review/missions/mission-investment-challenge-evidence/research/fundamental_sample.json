@@ -1,0 +1,9 @@
+{
+  "as_of": "2026-10-12T00:00:00Z",
+  "metrics": {
+    "fixed_rate_debt_share_pct": 75.0
+  },
+  "notes": "Invented mechanics sample; not audited fundamental research.",
+  "schema_version": "blackpod.investment_review_fixture.v1",
+  "source_kind": "SYNTHETIC_FIXTURE"
+}

@@ -1,0 +1,114 @@
+{
+  "alternatives": [
+    {
+      "alternative_id": "synthetic-pricing-power",
+      "distinguishing_observation": "Compare refinancing exposure, debt-service costs and realized operating margins against the fixed initial expectations.",
+      "observation_ids": [
+        "synthetic-revenue-growth",
+        "synthetic-financing-cost"
+      ],
+      "statement": "Pricing power or fixed-rate financing could absorb higher quoted funding costs and preserve operating margins."
+    }
+  ],
+  "author_id": "offline-example-author",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "domain": "INVESTMENT",
+  "evaluation_plan": {
+    "condition_ids": [
+      "synthetic-no-margin-decline"
+    ],
+    "evaluate_at": "2027-04-11T00:00:00Z",
+    "evaluator_role": "INDEPENDENT_HUMAN_RESEARCH_REVIEWER",
+    "method": "MANUAL_SOURCE_BOUND_REVIEW",
+    "missing_data_policy": "INCONCLUSIVE",
+    "outcome_ids": [
+      "synthetic-margin-decline"
+    ],
+    "plan_id": "synthetic-financing-evaluation-plan-001",
+    "success_rule": "ALL_EXPECTED_OUTCOMES_AND_NO_INVALIDATION"
+  },
+  "evidence_cutoff_at": "2026-10-11T00:00:00Z",
+  "expected_outcomes": [
+    {
+      "description": "Illustrative operating margin decreases at least one percentage point; no future observation is supplied in this burst.",
+      "due_at": "2027-04-11T00:00:00Z",
+      "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+      "operator": "LTE",
+      "outcome_id": "synthetic-margin-decline",
+      "threshold": -1.0,
+      "unit": "PERCENTAGE_POINTS"
+    }
+  ],
+  "horizon": {
+    "end_at": "2027-04-11T00:00:00Z",
+    "review_at": "2027-01-11T00:00:00Z",
+    "start_at": "2026-10-11T00:00:00Z"
+  },
+  "hypothesis": {
+    "assumptions": [
+      "All source observations are invented fixture values, not actual company or market evidence.",
+      "The illustrative businesses have refinancing exposure and unchanged debt balances.",
+      "The two metrics come from one synthetic artifact and provide no independent statistical or fundamental corroboration."
+    ],
+    "causal_mechanism": "If financing-sensitive businesses cannot pass higher funding costs through to customers, debt-service costs could outpace revenue growth and reduce margins.",
+    "observation_ids": [
+      "synthetic-revenue-growth",
+      "synthetic-financing-cost"
+    ],
+    "statement": "Illustrative hypothesis only: financing costs above revenue growth could weaken operating margins in this synthetic scenario over six months."
+  },
+  "hypothesis_id": "synthetic-financing-hypothesis-001",
+  "invalidation_conditions": [
+    {
+      "check_by": "2027-04-11T00:00:00Z",
+      "condition_id": "synthetic-no-margin-decline",
+      "description": "Operating margin does not decline despite the assumed financing pressure; classify missing evidence as inconclusive.",
+      "metric": "OPERATING_MARGIN_CHANGE_PCT_POINTS",
+      "operator": "GTE",
+      "threshold": 0.0,
+      "unit": "PERCENTAGE_POINTS"
+    }
+  ],
+  "mode": "SHADOW",
+  "observations": [
+    {
+      "artifact_path": "research/synthetic_observations.json",
+      "artifact_sha256": "89fb36a73e060b69ce78be539d979036b788524a241af48e364e03604d00690f",
+      "as_of": "2026-10-11T00:00:00Z",
+      "as_of_pointer": "/as_of",
+      "observation_id": "synthetic-revenue-growth",
+      "source_event_id": "journal-event-d8d82b190cf9c1c8d61f3d09ee9d756b65d9f09be66a17f10c92409f62eeaf94",
+      "time_role": "AS_OF",
+      "unit": "PERCENT",
+      "value": 5.0,
+      "value_pointer": "/metrics/revenue_growth_pct"
+    },
+    {
+      "artifact_path": "research/synthetic_observations.json",
+      "artifact_sha256": "89fb36a73e060b69ce78be539d979036b788524a241af48e364e03604d00690f",
+      "as_of": "2026-10-11T00:00:00Z",
+      "as_of_pointer": "/as_of",
+      "observation_id": "synthetic-financing-cost",
+      "source_event_id": "journal-event-d8d82b190cf9c1c8d61f3d09ee9d756b65d9f09be66a17f10c92409f62eeaf94",
+      "time_role": "AS_OF",
+      "unit": "PERCENT",
+      "value": 6.0,
+      "value_pointer": "/metrics/financing_cost_pct"
+    }
+  ],
+  "recorded_at": "2026-10-11T00:00:00Z",
+  "research_mode": "PROSPECTIVE",
+  "schema_version": "blackpod.investment_hypothesis.v1",
+  "scope": {
+    "identifiers": [
+      "SYNTHETIC_FINANCING_SCENARIO"
+    ],
+    "kind": "SECTOR"
+  },
+  "status": "SHADOW_DRAFT"
+}

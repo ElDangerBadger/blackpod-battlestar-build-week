@@ -1,0 +1,112 @@
+{
+  "approval_scope": null,
+  "artifacts": [
+    {
+      "byte_size": 392,
+      "name": "mission_request",
+      "observed_at": "2026-10-12T00:00:00Z",
+      "path": "request/mission_request.json",
+      "producer": "harbormaster",
+      "schema_version": "blackpod.mission_request.v1",
+      "sha256": "361c3f716bbb1b6245d7b4ca7bd5a27c9ebb00b119cc4da87be61ebe8952b5e6"
+    },
+    {
+      "byte_size": 270,
+      "name": "fundamental_sample",
+      "observed_at": "2026-10-12T00:00:00Z",
+      "path": "research/fundamental_sample.json",
+      "producer": "offline-fixture-author",
+      "schema_version": "blackpod.investment_review_fixture.v1",
+      "sha256": "532fda35ade6fc8ad56ef18578d7c53120cb8ef525b703cb7987a53c5f05b1e0"
+    },
+    {
+      "byte_size": 317,
+      "name": "statistical_sample",
+      "observed_at": "2026-10-12T00:00:00Z",
+      "path": "research/statistical_sample.json",
+      "producer": "offline-fixture-author",
+      "schema_version": "blackpod.investment_review_fixture.v1",
+      "sha256": "55c8d6210c999996ebeb894f8116715a8c5535b314254159f4655335a3bd8268"
+    }
+  ],
+  "components": {},
+  "current_phase": "ORACLE",
+  "mission_id": "mission-investment-challenge-evidence",
+  "mission_outcome": "INCOMPLETE",
+  "navigator": {
+    "allowed_operations": [],
+    "expires_at": null,
+    "handoff_id": null,
+    "handoff_status": null,
+    "idempotency_key": null,
+    "intake_receipt_id": null,
+    "intake_status": null,
+    "mode": null,
+    "plan_id": null,
+    "plan_status": null,
+    "prohibited_operations": []
+  },
+  "observed_at": "2026-10-12T00:00:00Z",
+  "operator": {
+    "acted_at": null,
+    "action": null,
+    "action_id": null,
+    "action_status": "NOT_STARTED",
+    "error": null,
+    "operator_id": null,
+    "result": null,
+    "route": null
+  },
+  "previous_snapshot_sha256": "3ff9b7310eb21295c025b88794e0d1aac4a17ed42aae6e8da0096ce11d66ecc3",
+  "request_id": "request-investment-challenge-evidence",
+  "revision": 2,
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_snapshot.v1",
+  "snapshot_id": "mission-investment-challenge-evidence-r0002",
+  "stages": {
+    "council": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "governor": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "harbormaster": {
+      "error": null,
+      "inputs": [
+        "mission_request"
+      ],
+      "modeldock_calls": [],
+      "native_state": "INITIALIZED",
+      "outputs": [],
+      "status": "SUCCEEDED"
+    },
+    "navigator": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    },
+    "oracle": {
+      "error": null,
+      "inputs": [],
+      "modeldock_calls": [],
+      "native_state": null,
+      "outputs": [],
+      "status": "NOT_STARTED"
+    }
+  },
+  "started_at": "2026-10-12T00:00:00Z",
+  "terminal": false
+}

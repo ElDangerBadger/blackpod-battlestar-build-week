@@ -1,0 +1,95 @@
+{
+  "event": {
+    "decision_id": "journal-decision-3db876b67f13a3bfc51417cee8015719d17828451e3ca98dac9dbc3df6d38c40",
+    "domain": "UNCLASSIFIED",
+    "event_id": "journal-event-a92eb0d44da7cbbf22f00662d7e4496ada272feaea059a2e49d0aff36c414cad",
+    "event_type": "MISSION_SNAPSHOT_RECORDED",
+    "evidence": [
+      {
+        "path": "request/mission_request.json",
+        "sha256": "206d9f7076667d19b59c33738fc631741af1217bf09577e94c2abe90a53a72aa",
+        "size_bytes": 285
+      },
+      {
+        "path": "research/observations.json",
+        "sha256": "5c46fbccf1aac6627e052b2c33cae89618dc1ad7a6c1c49edba5f21a08b7082c",
+        "size_bytes": 136
+      },
+      {
+        "path": "snapshots/mission_snapshot-r0002.json",
+        "sha256": "6716d2dcee8a6be383a4a285d53b5e0bdcad14394c0619516fe7291d2b16c730",
+        "size_bytes": 2693
+      }
+    ],
+    "payload": {
+      "authorization": {
+        "action_id": null,
+        "operator_id": null,
+        "scope": null,
+        "status": "NOT_RECORDED"
+      },
+      "classification": {
+        "basis": "HISTORICAL_UNCLASSIFIED",
+        "reason": "Historical mission has no recorded desk classification."
+      },
+      "current_phase": "ORACLE",
+      "decision": {
+        "authority": null,
+        "decision_id": null,
+        "disposition": null
+      },
+      "execution_status": "NOT_EXECUTED",
+      "historical_semantics": {
+        "confidence_probability": "NOT_RECORDED",
+        "evaluation": "NOT_RECORDED",
+        "expectations": "NOT_RECORDED",
+        "hypothesis": "NOT_RECORDED",
+        "investment_horizon": "NOT_RECORDED"
+      },
+      "mission_outcome": "INCOMPLETE",
+      "stages": [
+        {
+          "name": "council",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "governor",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "harbormaster",
+          "native_state": "INITIALIZED",
+          "status": "SUCCEEDED"
+        },
+        {
+          "name": "navigator",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        },
+        {
+          "name": "oracle",
+          "native_state": null,
+          "status": "NOT_STARTED"
+        }
+      ],
+      "symbol": "MSFT",
+      "terminal": false
+    },
+    "recorded_at": "2026-10-11T00:00:00Z",
+    "schema_version": "blackpod.decision_journal_event.v1",
+    "source": {
+      "kind": "MISSION",
+      "mission_id": "mission-review-initial",
+      "request_id": "request-review-initial",
+      "revision": 2,
+      "run_mode": "REPLAY",
+      "source_sha256": "6716d2dcee8a6be383a4a285d53b5e0bdcad14394c0619516fe7291d2b16c730"
+    }
+  },
+  "event_sha256": "123a88a7f18b26d86d9c4622065ef1f3a3c029704fb27700e7e768fbb261dc23",
+  "previous_entry_sha256": "98e556889b2bf85a7329f25771e332df9726ca0f7952ab31fe6d48d64cc67dae",
+  "schema_version": "blackpod.decision_journal_entry.v1",
+  "sequence": 2
+}

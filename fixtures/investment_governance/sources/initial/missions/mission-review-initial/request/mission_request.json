@@ -1,0 +1,10 @@
+{
+  "metadata": {},
+  "mission_id": "mission-review-initial",
+  "operator_id": "offline-fixture-author",
+  "request_id": "request-review-initial",
+  "requested_at": "2026-10-11T00:00:00Z",
+  "run_mode": "REPLAY",
+  "schema_version": "blackpod.mission_request.v1",
+  "symbol": "MSFT"
+}

@@ -1,0 +1,17 @@
+{
+  "activation_enabled": false,
+  "allocation_basis": "ACCOUNT_EQUITY",
+  "allocations": {
+    "INVESTMENT": 0.5,
+    "TRADING": 0.5
+  },
+  "automated_reallocation_enabled": false,
+  "capital_transfers_enabled": false,
+  "consolidated_account_risk_required": true,
+  "policy_id": "initial-two-desk-50-50",
+  "proposed_at": "2026-10-11T00:00:00Z",
+  "rebalance_mode": "INITIAL_ALLOCATION_ONLY",
+  "schema_version": "blackpod.capital_policy_proposal.v1",
+  "status": "PROPOSED",
+  "subsequent_changes_require_explicit_authorization": true
+}

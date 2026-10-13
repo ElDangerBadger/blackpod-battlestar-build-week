@@ -1,0 +1,27 @@
+{
+  "account_id": "paper-account-example",
+  "authority": {
+    "authorization_enabled": false,
+    "capital_activation_enabled": false,
+    "execution_enabled": false,
+    "policy_changes_enabled": false
+  },
+  "broker_snapshot_event_id": "journal-event-115f5fee9a92fd2bdf28c8d0a4d5e48cddfc7cba4777dba00e5bde192f7db65d",
+  "broker_snapshot_sha256": "fac3c5dc215cf972571ad6ed41f19237ae4a4551bc83dd06dc0b76e3e9eb9158",
+  "declared_by": "example-human",
+  "desks": {
+    "INVESTMENT": [
+      "AAPL"
+    ],
+    "TRADING": [
+      "MSFT"
+    ]
+  },
+  "identity_authenticated": false,
+  "mode": "PAPER",
+  "ownership_id": "paper-book-example",
+  "recorded_at": "2026-10-12T00:00:00Z",
+  "schema_version": "blackpod.trading_desk_ownership.v1",
+  "status": "DECLARED",
+  "supersedes_event_id": null
+}

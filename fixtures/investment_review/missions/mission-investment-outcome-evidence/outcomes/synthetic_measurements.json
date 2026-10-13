@@ -1,0 +1,11 @@
+{
+  "as_of": "2027-04-11T00:00:00Z",
+  "metrics": {
+    "invalidation_case_margin_change_pct_points": 0.5,
+    "missing_margin_change_pct_points": null,
+    "operating_margin_change_pct_points": -1.5
+  },
+  "notes": "Future-dated synthetic test observations only; no actual realized investment outcome or trade P&L.",
+  "schema_version": "blackpod.investment_outcome_fixture.v1",
+  "source_kind": "SYNTHETIC_FIXTURE"
+}

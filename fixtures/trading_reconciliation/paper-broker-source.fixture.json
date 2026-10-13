@@ -1,0 +1,25 @@
+{
+  "account": {
+    "account_blocked": false,
+    "buying_power": null,
+    "cash": "100000.00",
+    "currency": "USD",
+    "equity": "100000.00",
+    "status": "ACTIVE",
+    "trading_blocked": false
+  },
+  "account_id": "paper-account-example",
+  "capture_window": {
+    "completed_at": "2026-10-12T00:00:00Z",
+    "started_at": "2026-10-12T00:00:00Z"
+  },
+  "completeness": {
+    "open_orders_complete": true,
+    "positions_complete": true,
+    "tracked_orders_complete": true
+  },
+  "mode": "PAPER",
+  "orders": [],
+  "positions": [],
+  "schema_version": "blackpod.paper_broker_fixture.v1"
+}

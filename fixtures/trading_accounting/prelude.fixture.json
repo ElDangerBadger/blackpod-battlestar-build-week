@@ -1,0 +1,527 @@
+{
+  "events": [
+    {
+      "decision_id": "journal-decision-d4806cd15a5f4c9436142ca557be6f93d38573eb857be5f88416084e86ac1b79",
+      "domain": "TRADING",
+      "event_id": "journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7",
+      "event_type": "PAPER_BROKER_SNAPSHOT_RECORDED",
+      "evidence": [
+        {
+          "path": "broker/fixture-source.json",
+          "sha256": "a456ecabe491678dbc194a01a8ce49480d0dfd5b8f44704317a999f9353d1291",
+          "size_bytes": 587
+        },
+        {
+          "path": "trading/snapshot.json",
+          "sha256": "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59",
+          "size_bytes": 1231
+        }
+      ],
+      "payload": {
+        "assessment": {
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "execution_authority_granted": false,
+          "execution_observed": false,
+          "order_classifications": [],
+          "order_count": 0,
+          "position_classifications": [],
+          "position_count": 0,
+          "provider_verified": false,
+          "readiness": false,
+          "realized_trade_pnl": null
+        },
+        "snapshot": {
+          "account": {
+            "account_blocked": false,
+            "buying_power": "99980",
+            "cash": "99980",
+            "currency": "USD",
+            "equity": "100000",
+            "status": "ACTIVE",
+            "trading_blocked": false
+          },
+          "account_id": "fixture-account",
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "capture_provenance": {
+            "origin": "https://paper-api.alpaca.markets",
+            "provider_verified": false,
+            "sequential_capture": true,
+            "snapshot_atomic": false,
+            "source_evidence": {
+              "path": "broker/fixture-source.json",
+              "sha256": "a456ecabe491678dbc194a01a8ce49480d0dfd5b8f44704317a999f9353d1291",
+              "size_bytes": 587
+            },
+            "source_kind": "SYNTHETIC_FIXTURE"
+          },
+          "capture_window": {
+            "completed_at": "2026-10-15T00:00:00Z",
+            "started_at": "2026-10-15T00:00:00Z"
+          },
+          "captured_at": "2026-10-15T00:00:00Z",
+          "completeness": {
+            "open_orders_complete": true,
+            "positions_complete": true,
+            "tracked_orders_complete": true
+          },
+          "mode": "PAPER",
+          "orders": [],
+          "positions": [],
+          "schema_version": "blackpod.paper_broker_snapshot.v1",
+          "snapshot_id": "accounting-start"
+        }
+      },
+      "recorded_at": "2026-10-15T00:00:00Z",
+      "schema_version": "blackpod.decision_journal_event.v6",
+      "source": {
+        "kind": "PAPER_BROKER_SNAPSHOT",
+        "snapshot_id": "accounting-start",
+        "source_sha256": "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59"
+      }
+    },
+    {
+      "decision_id": "journal-decision-7d21640abd74f011a4dcea079f94a52ab2ccc59a3502d182b9cd8adcca7e4479",
+      "domain": "TRADING",
+      "event_id": "journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e",
+      "event_type": "TRADING_DESK_OWNERSHIP_RECORDED",
+      "evidence": [
+        {
+          "path": "trading/ownership.json",
+          "sha256": "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c",
+          "size_bytes": 787
+        }
+      ],
+      "payload": {
+        "assessment": {
+          "added_symbols": [
+            "AAPL",
+            "MSFT"
+          ],
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "baseline_orders": [],
+          "baseline_positions": [],
+          "effective_at": "2026-10-15T00:00:01Z",
+          "execution_authority_granted": false,
+          "identity_authenticated": false,
+          "readiness": false,
+          "realized_trade_pnl": null,
+          "reassigned_symbols": [],
+          "released_symbols": []
+        },
+        "ownership": {
+          "account_id": "fixture-account",
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "broker_snapshot_event_id": "journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7",
+          "broker_snapshot_sha256": "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59",
+          "declared_by": "fixture-human",
+          "desks": {
+            "INVESTMENT": [
+              "AAPL"
+            ],
+            "TRADING": [
+              "MSFT"
+            ]
+          },
+          "identity_authenticated": false,
+          "mode": "PAPER",
+          "ownership_id": "accounting-owner",
+          "recorded_at": "2026-10-15T00:00:01Z",
+          "schema_version": "blackpod.trading_desk_ownership.v1",
+          "status": "DECLARED",
+          "supersedes_event_id": null
+        }
+      },
+      "recorded_at": "2026-10-15T00:00:01Z",
+      "schema_version": "blackpod.decision_journal_event.v6",
+      "source": {
+        "kind": "TRADING_DESK_OWNERSHIP",
+        "ownership_id": "accounting-owner",
+        "source_sha256": "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c"
+      }
+    },
+    {
+      "decision_id": "journal-decision-d4806cd15a5f4c9436142ca557be6f93d38573eb857be5f88416084e86ac1b79",
+      "domain": "TRADING",
+      "event_id": "journal-event-6e92edfd157791e9711cdbae3044e9fec6e36b2add9fdd576fc96e89bd2dd680",
+      "event_type": "PAPER_BROKER_SNAPSHOT_RECORDED",
+      "evidence": [
+        {
+          "path": "broker/fixture-source.json",
+          "sha256": "d7366306c740729ff9c39034f70bfa99549007a5bdc01c9fa935c9a431be109d",
+          "size_bytes": 2675
+        },
+        {
+          "path": "trading/snapshot.json",
+          "sha256": "c3d34bc5f4eca7b732a936af84a04aa82380be57ca2c7f98f70bec0638790469",
+          "size_bytes": 3318
+        }
+      ],
+      "payload": {
+        "assessment": {
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "execution_authority_granted": false,
+          "execution_observed": true,
+          "order_classifications": [
+            {
+              "desk": "UNCLASSIFIED",
+              "order_id": "buy-1",
+              "symbol": "MSFT"
+            },
+            {
+              "desk": "UNCLASSIFIED",
+              "order_id": "buy-2",
+              "symbol": "MSFT"
+            },
+            {
+              "desk": "UNCLASSIFIED",
+              "order_id": "sell-1",
+              "symbol": "MSFT"
+            }
+          ],
+          "order_count": 3,
+          "position_classifications": [
+            {
+              "desk": "UNCLASSIFIED",
+              "symbol": "MSFT"
+            }
+          ],
+          "position_count": 1,
+          "provider_verified": false,
+          "readiness": false,
+          "realized_trade_pnl": null
+        },
+        "snapshot": {
+          "account": {
+            "account_blocked": false,
+            "buying_power": "99980",
+            "cash": "99980",
+            "currency": "USD",
+            "equity": "100000",
+            "status": "ACTIVE",
+            "trading_blocked": false
+          },
+          "account_id": "fixture-account",
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "capture_provenance": {
+            "origin": "https://paper-api.alpaca.markets",
+            "provider_verified": false,
+            "sequential_capture": true,
+            "snapshot_atomic": false,
+            "source_evidence": {
+              "path": "broker/fixture-source.json",
+              "sha256": "d7366306c740729ff9c39034f70bfa99549007a5bdc01c9fa935c9a431be109d",
+              "size_bytes": 2675
+            },
+            "source_kind": "SYNTHETIC_FIXTURE"
+          },
+          "capture_window": {
+            "completed_at": "2026-10-15T00:04:00Z",
+            "started_at": "2026-10-15T00:04:00Z"
+          },
+          "captured_at": "2026-10-15T00:04:00Z",
+          "completeness": {
+            "open_orders_complete": true,
+            "positions_complete": true,
+            "tracked_orders_complete": true
+          },
+          "mode": "PAPER",
+          "orders": [
+            {
+              "canceled_at": null,
+              "client_order_id": "client-buy-1",
+              "expired_at": null,
+              "failed_at": null,
+              "filled_at": "2026-10-15T00:01:00Z",
+              "filled_avg_price": "10",
+              "filled_qty": "2",
+              "id": "buy-1",
+              "leg_ids": [],
+              "notional": null,
+              "parent_order_id": null,
+              "qty": "2",
+              "replaced_at": null,
+              "replaced_by": null,
+              "replaces": null,
+              "side": "buy",
+              "status": "filled",
+              "submitted_at": "2026-10-15T00:01:00Z",
+              "symbol": "MSFT",
+              "time_in_force": "day",
+              "type": "market",
+              "updated_at": "2026-10-15T00:01:00Z"
+            },
+            {
+              "canceled_at": null,
+              "client_order_id": "client-buy-2",
+              "expired_at": null,
+              "failed_at": null,
+              "filled_at": "2026-10-15T00:02:00Z",
+              "filled_avg_price": "12",
+              "filled_qty": "3",
+              "id": "buy-2",
+              "leg_ids": [],
+              "notional": null,
+              "parent_order_id": null,
+              "qty": "3",
+              "replaced_at": null,
+              "replaced_by": null,
+              "replaces": null,
+              "side": "buy",
+              "status": "filled",
+              "submitted_at": "2026-10-15T00:02:00Z",
+              "symbol": "MSFT",
+              "time_in_force": "day",
+              "type": "market",
+              "updated_at": "2026-10-15T00:02:00Z"
+            },
+            {
+              "canceled_at": null,
+              "client_order_id": "client-sell-1",
+              "expired_at": null,
+              "failed_at": null,
+              "filled_at": "2026-10-15T00:03:00Z",
+              "filled_avg_price": "15",
+              "filled_qty": "4",
+              "id": "sell-1",
+              "leg_ids": [],
+              "notional": null,
+              "parent_order_id": null,
+              "qty": "4",
+              "replaced_at": null,
+              "replaced_by": null,
+              "replaces": null,
+              "side": "sell",
+              "status": "filled",
+              "submitted_at": "2026-10-15T00:03:00Z",
+              "symbol": "MSFT",
+              "time_in_force": "day",
+              "type": "market",
+              "updated_at": "2026-10-15T00:03:00Z"
+            }
+          ],
+          "positions": [
+            {
+              "avg_entry_price": "12",
+              "current_price": "15",
+              "market_value": "15",
+              "qty": "1",
+              "side": "long",
+              "symbol": "MSFT"
+            }
+          ],
+          "schema_version": "blackpod.paper_broker_snapshot.v1",
+          "snapshot_id": "accounting-end"
+        }
+      },
+      "recorded_at": "2026-10-15T00:04:00Z",
+      "schema_version": "blackpod.decision_journal_event.v6",
+      "source": {
+        "kind": "PAPER_BROKER_SNAPSHOT",
+        "snapshot_id": "accounting-end",
+        "source_sha256": "c3d34bc5f4eca7b732a936af84a04aa82380be57ca2c7f98f70bec0638790469"
+      }
+    },
+    {
+      "decision_id": "journal-decision-eeb183a4ef5ea9240a2f172ec5f146e7a1d6d653ecbcbd64dd715f67e02c3b68",
+      "domain": "TRADING",
+      "event_id": "journal-event-862dcc5fedf02954beef2d965170ecc97e67b25d7d1d91497c5ab268f105b4c6",
+      "event_type": "TRADING_EXECUTION_RECONCILED",
+      "evidence": [
+        {
+          "path": "trading/reconciliation.json",
+          "sha256": "8cf6a38d88d3a6f611cf0e7733dc7ea1a55eeb4be201a8c73998a9ffec011ea2",
+          "size_bytes": 1081
+        },
+        {
+          "path": "trading/runtime-prefix.json",
+          "sha256": "97b39b4d30c798560b4be7ef6554a37eef5c9252c1ebe3c9ac1ee0516fe723d8",
+          "size_bytes": 9310
+        }
+      ],
+      "payload": {
+        "reconciliation": {
+          "account_id": "fixture-account",
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "broker_snapshot_event_id": "journal-event-6e92edfd157791e9711cdbae3044e9fec6e36b2add9fdd576fc96e89bd2dd680",
+          "broker_snapshot_sha256": "c3d34bc5f4eca7b732a936af84a04aa82380be57ca2c7f98f70bec0638790469",
+          "mode": "PAPER",
+          "ownership_event_id": "journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e",
+          "ownership_sha256": "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c",
+          "prior_reconciliation_event_id": null,
+          "realized_trade_pnl": null,
+          "reconciliation_id": "accounting-end-reconciliation",
+          "recorded_at": "2026-10-15T00:05:00Z",
+          "runtime_evidence": {
+            "path": "trading/runtime-prefix.json",
+            "sha256": "97b39b4d30c798560b4be7ef6554a37eef5c9252c1ebe3c9ac1ee0516fe723d8",
+            "size_bytes": 9310
+          },
+          "schema_version": "blackpod.trading_execution_reconciliation.v1",
+          "scope": "PAPER_RECONCILIATION_ONLY"
+        },
+        "result": {
+          "attempts": [
+            {
+              "attempt_sha256": "e57c3a6538611bd655e5ccac6a5b53469847f76e785532c6a91da071a2c5f039",
+              "broker_status": "filled",
+              "client_order_id": "client-buy-1",
+              "filled_avg_price": "10",
+              "filled_qty": "2",
+              "order_id": "buy-1",
+              "qty": "2",
+              "replacement_order_ids": [],
+              "session_id": "accounting-session",
+              "side": "buy",
+              "status": "BROKER_TERMINAL",
+              "symbol": "MSFT"
+            },
+            {
+              "attempt_sha256": "c4050c5b688a4f285dcd05dd9bad0b65454cca7943c9a2750c0fc267ddfc99c6",
+              "broker_status": "filled",
+              "client_order_id": "client-buy-2",
+              "filled_avg_price": "12",
+              "filled_qty": "3",
+              "order_id": "buy-2",
+              "qty": "3",
+              "replacement_order_ids": [],
+              "session_id": "accounting-session",
+              "side": "buy",
+              "status": "BROKER_TERMINAL",
+              "symbol": "MSFT"
+            },
+            {
+              "attempt_sha256": "2c157e7631b1e01fc9dad1c9eea301f20a982a579d0effdd98359ee9615fa549",
+              "broker_status": "filled",
+              "client_order_id": "client-sell-1",
+              "filled_avg_price": "15",
+              "filled_qty": "4",
+              "order_id": "sell-1",
+              "qty": "4",
+              "replacement_order_ids": [],
+              "session_id": "accounting-session",
+              "side": "sell",
+              "status": "BROKER_TERMINAL",
+              "symbol": "MSFT"
+            }
+          ],
+          "attributable_execution_observed": true,
+          "authority": {
+            "authorization_enabled": false,
+            "capital_activation_enabled": false,
+            "execution_enabled": false,
+            "policy_changes_enabled": false
+          },
+          "execution_authority_granted": false,
+          "execution_observed": true,
+          "limitations": [
+            "NON_ATOMIC_BROKER_SNAPSHOT",
+            "DECLARED_DESK_OWNERSHIP_UNAUTHENTICATED",
+            "PROVIDER_IDENTITY_NOT_ATTESTED",
+            "NO_ATTRIBUTABLE_COST_BASIS_OR_FEES",
+            "CUMULATIVE_FILLS_NOT_ADDITIVE",
+            "NO_EXECUTION_AUTHORITY"
+          ],
+          "orders": [
+            {
+              "desk": "TRADING",
+              "filled_avg_price": "10",
+              "filled_qty": "2",
+              "matched_attempt_sha256": "e57c3a6538611bd655e5ccac6a5b53469847f76e785532c6a91da071a2c5f039",
+              "order_id": "buy-1",
+              "status": "filled",
+              "symbol": "MSFT"
+            },
+            {
+              "desk": "TRADING",
+              "filled_avg_price": "12",
+              "filled_qty": "3",
+              "matched_attempt_sha256": "c4050c5b688a4f285dcd05dd9bad0b65454cca7943c9a2750c0fc267ddfc99c6",
+              "order_id": "buy-2",
+              "status": "filled",
+              "symbol": "MSFT"
+            },
+            {
+              "desk": "TRADING",
+              "filled_avg_price": "15",
+              "filled_qty": "4",
+              "matched_attempt_sha256": "2c157e7631b1e01fc9dad1c9eea301f20a982a579d0effdd98359ee9615fa549",
+              "order_id": "sell-1",
+              "status": "filled",
+              "symbol": "MSFT"
+            }
+          ],
+          "ownership_authenticated": false,
+          "positions": [
+            {
+              "desk": "TRADING",
+              "qty": "1",
+              "symbol": "MSFT"
+            }
+          ],
+          "provider_verified": false,
+          "readiness": false,
+          "realized_trade_pnl": null,
+          "restart_barrier": {
+            "automatic_resubmission_enabled": false,
+            "entries_blocked": false,
+            "execution_authority_granted": false,
+            "unresolved_attempts": []
+          },
+          "status": "RECONCILED"
+        }
+      },
+      "recorded_at": "2026-10-15T00:05:00Z",
+      "schema_version": "blackpod.decision_journal_event.v6",
+      "source": {
+        "kind": "TRADING_EXECUTION_RECONCILIATION",
+        "reconciliation_id": "accounting-end-reconciliation",
+        "source_sha256": "8cf6a38d88d3a6f611cf0e7733dc7ea1a55eeb4be201a8c73998a9ffec011ea2"
+      }
+    }
+  ],
+  "evidence_by_sha256": {
+    "50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59": "{\n  \"account\": {\n    \"account_blocked\": false,\n    \"buying_power\": \"99980\",\n    \"cash\": \"99980\",\n    \"currency\": \"USD\",\n    \"equity\": \"100000\",\n    \"status\": \"ACTIVE\",\n    \"trading_blocked\": false\n  },\n  \"account_id\": \"fixture-account\",\n  \"authority\": {\n    \"authorization_enabled\": false,\n    \"capital_activation_enabled\": false,\n    \"execution_enabled\": false,\n    \"policy_changes_enabled\": false\n  },\n  \"capture_provenance\": {\n    \"origin\": \"https://paper-api.alpaca.markets\",\n    \"provider_verified\": false,\n    \"sequential_capture\": true,\n    \"snapshot_atomic\": false,\n    \"source_evidence\": {\n      \"path\": \"broker/fixture-source.json\",\n      \"sha256\": \"a456ecabe491678dbc194a01a8ce49480d0dfd5b8f44704317a999f9353d1291\",\n      \"size_bytes\": 587\n    },\n    \"source_kind\": \"SYNTHETIC_FIXTURE\"\n  },\n  \"capture_window\": {\n    \"completed_at\": \"2026-10-15T00:00:00Z\",\n    \"started_at\": \"2026-10-15T00:00:00Z\"\n  },\n  \"captured_at\": \"2026-10-15T00:00:00Z\",\n  \"completeness\": {\n    \"open_orders_complete\": true,\n    \"positions_complete\": true,\n    \"tracked_orders_complete\": true\n  },\n  \"mode\": \"PAPER\",\n  \"orders\": [],\n  \"positions\": [],\n  \"schema_version\": \"blackpod.paper_broker_snapshot.v1\",\n  \"snapshot_id\": \"accounting-start\"\n}\n",
+    "8cf6a38d88d3a6f611cf0e7733dc7ea1a55eeb4be201a8c73998a9ffec011ea2": "{\n  \"account_id\": \"fixture-account\",\n  \"authority\": {\n    \"authorization_enabled\": false,\n    \"capital_activation_enabled\": false,\n    \"execution_enabled\": false,\n    \"policy_changes_enabled\": false\n  },\n  \"broker_snapshot_event_id\": \"journal-event-6e92edfd157791e9711cdbae3044e9fec6e36b2add9fdd576fc96e89bd2dd680\",\n  \"broker_snapshot_sha256\": \"c3d34bc5f4eca7b732a936af84a04aa82380be57ca2c7f98f70bec0638790469\",\n  \"mode\": \"PAPER\",\n  \"ownership_event_id\": \"journal-event-6470dd891ad2129378c6da1c51ce9d7d578b5ec5181ee15f2dd0f49e1e5aa57e\",\n  \"ownership_sha256\": \"aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c\",\n  \"prior_reconciliation_event_id\": null,\n  \"realized_trade_pnl\": null,\n  \"reconciliation_id\": \"accounting-end-reconciliation\",\n  \"recorded_at\": \"2026-10-15T00:05:00Z\",\n  \"runtime_evidence\": {\n    \"path\": \"trading/runtime-prefix.json\",\n    \"sha256\": \"97b39b4d30c798560b4be7ef6554a37eef5c9252c1ebe3c9ac1ee0516fe723d8\",\n    \"size_bytes\": 9310\n  },\n  \"schema_version\": \"blackpod.trading_execution_reconciliation.v1\",\n  \"scope\": \"PAPER_RECONCILIATION_ONLY\"\n}\n",
+    "97b39b4d30c798560b4be7ef6554a37eef5c9252c1ebe3c9ac1ee0516fe723d8": "{\n  \"events\": [\n    {\n      \"event_sha256\": \"68f5f98cc26fdb0f7f428aae5fb3bcf650be88343816c860420e5fd073a8bf9f\",\n      \"kind\": \"CONTROL\",\n      \"payload\": {\n        \"action_id\": \"accounting-enable-fixture\",\n        \"entries_enabled\": true,\n        \"operator_id\": \"fixture-operator\",\n        \"profile_sha256\": \"f4451718809f572546ee18183f055398e134323c26d72f6fa7e2806bedd9801d\",\n        \"recorded_at\": \"2026-10-15T00:00:01Z\",\n        \"session_id\": \"accounting-session\"\n      },\n      \"previous_sha256\": null,\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 1\n    },\n    {\n      \"event_sha256\": \"e57c3a6538611bd655e5ccac6a5b53469847f76e785532c6a91da071a2c5f039\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-0\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-buy-1\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": null,\n        \"outcome\": \"ATTEMPT\",\n        \"prior_qty\": \"0\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"2\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:01:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"buy\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"68f5f98cc26fdb0f7f428aae5fb3bcf650be88343816c860420e5fd073a8bf9f\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 2\n    },\n    {\n      \"event_sha256\": \"084565aa825859e78becdbc83745b6967e4c628828acca7cbe35b15d35f7fe02\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-0\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-buy-1\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": \"buy-1\",\n        \"outcome\": \"SUBMITTED\",\n        \"prior_qty\": \"0\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"2\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:01:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"buy\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"e57c3a6538611bd655e5ccac6a5b53469847f76e785532c6a91da071a2c5f039\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 3\n    },\n    {\n      \"event_sha256\": \"c4050c5b688a4f285dcd05dd9bad0b65454cca7943c9a2750c0fc267ddfc99c6\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-1\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-buy-2\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": null,\n        \"outcome\": \"ATTEMPT\",\n        \"prior_qty\": \"2\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"3\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:02:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"buy\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"084565aa825859e78becdbc83745b6967e4c628828acca7cbe35b15d35f7fe02\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 4\n    },\n    {\n      \"event_sha256\": \"55f935e8811cc3d56f1d4beab6b1425a86eef1d79f4ea0d462702bc913e77a22\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-1\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-buy-2\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": \"buy-2\",\n        \"outcome\": \"SUBMITTED\",\n        \"prior_qty\": \"2\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"3\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:02:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"buy\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"c4050c5b688a4f285dcd05dd9bad0b65454cca7943c9a2750c0fc267ddfc99c6\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 5\n    },\n    {\n      \"event_sha256\": \"2c157e7631b1e01fc9dad1c9eea301f20a982a579d0effdd98359ee9615fa549\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-2\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-sell-1\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": null,\n        \"outcome\": \"ATTEMPT\",\n        \"prior_qty\": \"5\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"4\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:03:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"sell\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"55f935e8811cc3d56f1d4beab6b1425a86eef1d79f4ea0d462702bc913e77a22\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 6\n    },\n    {\n      \"event_sha256\": \"3c1ea359889bc7a5628ce13dadd39f0bac5c9cdbd33be4718a7ccd5e84bb5177\",\n      \"kind\": \"BROKER_GUARD\",\n      \"payload\": {\n        \"account_id\": \"fixture-account\",\n        \"account_mode\": \"PAPER\",\n        \"attempt_id\": \"accounting-attempt-2\",\n        \"capital_authorization_id\": \"fixture-capital\",\n        \"client_order_id\": \"client-sell-1\",\n        \"domain\": \"TRADING\",\n        \"mode\": \"PAPER\",\n        \"order_id\": \"sell-1\",\n        \"outcome\": \"SUBMITTED\",\n        \"prior_qty\": \"5\",\n        \"profile_id\": \"profile-test\",\n        \"qty\": \"4\",\n        \"reason_code\": \"FIXTURE\",\n        \"recorded_at\": \"2026-10-15T00:03:00Z\",\n        \"schema_version\": \"blackpod.trading_execution_receipt.v2\",\n        \"session_id\": \"accounting-session\",\n        \"side\": \"sell\",\n        \"symbol\": \"MSFT\"\n      },\n      \"previous_sha256\": \"2c157e7631b1e01fc9dad1c9eea301f20a982a579d0effdd98359ee9615fa549\",\n      \"schema_version\": \"blackpod.auto_trading_runtime_event.v1\",\n      \"sequence\": 7\n    }\n  ],\n  \"profiles\": {\n    \"f4451718809f572546ee18183f055398e134323c26d72f6fa7e2806bedd9801d\": {\n      \"account_id\": \"fixture-account\",\n      \"account_scope\": \"SHARED_DISJOINT\",\n      \"authorization_expires_at\": \"2026-10-15T01:00:00Z\",\n      \"capital_authorization_id\": \"fixture-capital\",\n      \"frozen_inputs\": {\n        \"bias_csv\": {\n          \"path\": \"/synthetic/nonexecuting/bias_csv\",\n          \"sha256\": \"c2bb45e4df41b58df884d48dd0bca4dd47f538884a4984e8347b9af67a7609ab\"\n        },\n        \"mandate_path\": {\n          \"path\": \"/synthetic/nonexecuting/mandate_path\",\n          \"sha256\": \"9d7a4c60301e7be8c7836c17554176d6dbbd14995a75039959005a4dcdf17f4b\"\n        }\n      },\n      \"galactica_root\": \"/synthetic/nonexecuting/galactica\",\n      \"max_account_gross_usd\": \"200.00\",\n      \"max_order_notional_usd\": \"25.00\",\n      \"mode\": \"PAPER\",\n      \"native_settings\": {\n        \"eod_flatten_min\": 15,\n        \"exit_after_close\": true,\n        \"per_trade_usd_cap\": 20\n      },\n      \"price_buffer_fraction\": \"0.05\",\n      \"price_max_age_seconds\": 30,\n      \"profile_id\": \"profile-test\",\n      \"protected_symbols\": [\n        \"AAPL\"\n      ],\n      \"python_executable\": \"/synthetic/nonexecuting/python3.11\",\n      \"schema_version\": \"blackpod.galactica_trading_profile.v1\",\n      \"source_hashes\": {\n        \"blackwell_navigator_trickle.py\": \"a536676b30f214bcf6f41ae9e2c3df1070b7f75ced48bd83094e3cc6adffc666\",\n        \"execution/__init__.py\": \"7b80b9e53ed92f19369fe7cc7356be12fe0ea49cb89adb2aad4d06b3c835bacd\",\n        \"execution/audit.py\": \"0cc184d65cacf8cd79f3ed4cdfde0c7a25f85ceff7d27626f8adb2d139942cda\",\n        \"execution/bias_contract.py\": \"30d01140546cbe6207a45e0ce123619b8c86a525b5990862368164cacba80d20\",\n        \"execution/broker.py\": \"8f030abcb5009e0150b8ffc9183095d801637a32c6d1f93d2ce395be1444995d\",\n        \"execution/config.py\": \"44bedec54200118bdcc255c8249b519e12dc37df921ea03e82b3425a9de3a64f\",\n        \"execution/indicators.py\": \"7d2dd4dbed794d7fcfb7f14d931e2eed9f347af881a0fdd67fcd0ba9847a46f6\",\n        \"execution/loggers.py\": \"6b0cd6c88848bf04d53239e0406b9e61839a3fc3c902a2ebb13b93af6fee2c5c\",\n        \"execution/mandate_gate.py\": \"f7bd43e6f859747d3a5cb082ded4c9b1a8105702d3607ab5212f22996d270214\",\n        \"mandate/__init__.py\": null,\n        \"mandate/enforcer.py\": \"0d88988622949a12c64057ebaa1c7ee49aae891a8dad60c0787c3dabe3aae9c8\",\n        \"setup/__init__.py\": null,\n        \"setup/bar_aggregator.py\": \"a327d78d58c6ee4c43a898060ba438af29545dfbdcf763bf1e0d41856bb950ea\",\n        \"setup/setup_manager.py\": \"f219c13a379d5eba8b99cc5ad6ef9456b6edecaa9186d722c8b339dd5db22f56\"\n      },\n      \"symbols\": [\n        \"MSFT\"\n      ],\n      \"trading_budget_usd\": \"100.00\"\n    }\n  },\n  \"schema_version\": \"blackpod.runtime_export.v1\"\n}\n",
+    "a456ecabe491678dbc194a01a8ce49480d0dfd5b8f44704317a999f9353d1291": "{\n  \"account\": {\n    \"account_blocked\": false,\n    \"buying_power\": \"99980\",\n    \"cash\": \"99980\",\n    \"currency\": \"USD\",\n    \"equity\": \"100000\",\n    \"status\": \"ACTIVE\",\n    \"trading_blocked\": false\n  },\n  \"account_id\": \"fixture-account\",\n  \"capture_window\": {\n    \"completed_at\": \"2026-10-15T00:00:00Z\",\n    \"started_at\": \"2026-10-15T00:00:00Z\"\n  },\n  \"completeness\": {\n    \"open_orders_complete\": true,\n    \"positions_complete\": true,\n    \"tracked_orders_complete\": true\n  },\n  \"mode\": \"PAPER\",\n  \"orders\": [],\n  \"positions\": [],\n  \"schema_version\": \"blackpod.paper_broker_fixture.v1\"\n}\n",
+    "aa15291ff7d6860ec0840f7d9bc9bf33571e600514158d94fd3d5e2542b8263c": "{\n  \"account_id\": \"fixture-account\",\n  \"authority\": {\n    \"authorization_enabled\": false,\n    \"capital_activation_enabled\": false,\n    \"execution_enabled\": false,\n    \"policy_changes_enabled\": false\n  },\n  \"broker_snapshot_event_id\": \"journal-event-54b12c2a5218d26eb95da2f9fbd13fb420158d2f58a4bb0a896ec20aadc168a7\",\n  \"broker_snapshot_sha256\": \"50f2b70ad7b4418b8c81525fc8b2ef759b2b86202a6d4aceda5f2d55c8f57f59\",\n  \"declared_by\": \"fixture-human\",\n  \"desks\": {\n    \"INVESTMENT\": [\n      \"AAPL\"\n    ],\n    \"TRADING\": [\n      \"MSFT\"\n    ]\n  },\n  \"identity_authenticated\": false,\n  \"mode\": \"PAPER\",\n  \"ownership_id\": \"accounting-owner\",\n  \"recorded_at\": \"2026-10-15T00:00:01Z\",\n  \"schema_version\": \"blackpod.trading_desk_ownership.v1\",\n  \"status\": \"DECLARED\",\n  \"supersedes_event_id\": null\n}\n",
+    "c3d34bc5f4eca7b732a936af84a04aa82380be57ca2c7f98f70bec0638790469": "{\n  \"account\": {\n    \"account_blocked\": false,\n    \"buying_power\": \"99980\",\n    \"cash\": \"99980\",\n    \"currency\": \"USD\",\n    \"equity\": \"100000\",\n    \"status\": \"ACTIVE\",\n    \"trading_blocked\": false\n  },\n  \"account_id\": \"fixture-account\",\n  \"authority\": {\n    \"authorization_enabled\": false,\n    \"capital_activation_enabled\": false,\n    \"execution_enabled\": false,\n    \"policy_changes_enabled\": false\n  },\n  \"capture_provenance\": {\n    \"origin\": \"https://paper-api.alpaca.markets\",\n    \"provider_verified\": false,\n    \"sequential_capture\": true,\n    \"snapshot_atomic\": false,\n    \"source_evidence\": {\n      \"path\": \"broker/fixture-source.json\",\n      \"sha256\": \"d7366306c740729ff9c39034f70bfa99549007a5bdc01c9fa935c9a431be109d\",\n      \"size_bytes\": 2675\n    },\n    \"source_kind\": \"SYNTHETIC_FIXTURE\"\n  },\n  \"capture_window\": {\n    \"completed_at\": \"2026-10-15T00:04:00Z\",\n    \"started_at\": \"2026-10-15T00:04:00Z\"\n  },\n  \"captured_at\": \"2026-10-15T00:04:00Z\",\n  \"completeness\": {\n    \"open_orders_complete\": true,\n    \"positions_complete\": true,\n    \"tracked_orders_complete\": true\n  },\n  \"mode\": \"PAPER\",\n  \"orders\": [\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-buy-1\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:01:00Z\",\n      \"filled_avg_price\": \"10\",\n      \"filled_qty\": \"2\",\n      \"id\": \"buy-1\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"2\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"buy\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:01:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:01:00Z\"\n    },\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-buy-2\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:02:00Z\",\n      \"filled_avg_price\": \"12\",\n      \"filled_qty\": \"3\",\n      \"id\": \"buy-2\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"3\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"buy\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:02:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:02:00Z\"\n    },\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-sell-1\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:03:00Z\",\n      \"filled_avg_price\": \"15\",\n      \"filled_qty\": \"4\",\n      \"id\": \"sell-1\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"4\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"sell\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:03:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:03:00Z\"\n    }\n  ],\n  \"positions\": [\n    {\n      \"avg_entry_price\": \"12\",\n      \"current_price\": \"15\",\n      \"market_value\": \"15\",\n      \"qty\": \"1\",\n      \"side\": \"long\",\n      \"symbol\": \"MSFT\"\n    }\n  ],\n  \"schema_version\": \"blackpod.paper_broker_snapshot.v1\",\n  \"snapshot_id\": \"accounting-end\"\n}\n",
+    "d7366306c740729ff9c39034f70bfa99549007a5bdc01c9fa935c9a431be109d": "{\n  \"account\": {\n    \"account_blocked\": false,\n    \"buying_power\": \"99980\",\n    \"cash\": \"99980\",\n    \"currency\": \"USD\",\n    \"equity\": \"100000\",\n    \"status\": \"ACTIVE\",\n    \"trading_blocked\": false\n  },\n  \"account_id\": \"fixture-account\",\n  \"capture_window\": {\n    \"completed_at\": \"2026-10-15T00:04:00Z\",\n    \"started_at\": \"2026-10-15T00:04:00Z\"\n  },\n  \"completeness\": {\n    \"open_orders_complete\": true,\n    \"positions_complete\": true,\n    \"tracked_orders_complete\": true\n  },\n  \"mode\": \"PAPER\",\n  \"orders\": [\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-buy-1\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:01:00Z\",\n      \"filled_avg_price\": \"10\",\n      \"filled_qty\": \"2\",\n      \"id\": \"buy-1\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"2\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"buy\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:01:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:01:00Z\"\n    },\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-buy-2\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:02:00Z\",\n      \"filled_avg_price\": \"12\",\n      \"filled_qty\": \"3\",\n      \"id\": \"buy-2\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"3\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"buy\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:02:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:02:00Z\"\n    },\n    {\n      \"canceled_at\": null,\n      \"client_order_id\": \"client-sell-1\",\n      \"expired_at\": null,\n      \"failed_at\": null,\n      \"filled_at\": \"2026-10-15T00:03:00Z\",\n      \"filled_avg_price\": \"15\",\n      \"filled_qty\": \"4\",\n      \"id\": \"sell-1\",\n      \"leg_ids\": [],\n      \"notional\": null,\n      \"parent_order_id\": null,\n      \"qty\": \"4\",\n      \"replaced_at\": null,\n      \"replaced_by\": null,\n      \"replaces\": null,\n      \"side\": \"sell\",\n      \"status\": \"filled\",\n      \"submitted_at\": \"2026-10-15T00:03:00Z\",\n      \"symbol\": \"MSFT\",\n      \"time_in_force\": \"day\",\n      \"type\": \"market\",\n      \"updated_at\": \"2026-10-15T00:03:00Z\"\n    }\n  ],\n  \"positions\": [\n    {\n      \"avg_entry_price\": \"12\",\n      \"current_price\": \"15\",\n      \"market_value\": \"15\",\n      \"qty\": \"1\",\n      \"side\": \"long\",\n      \"symbol\": \"MSFT\"\n    }\n  ],\n  \"schema_version\": \"blackpod.paper_broker_fixture.v1\"\n}\n"
+  },
+  "schema_version": "blackpod.paper_accounting_prelude.fixture.v1"
+}
