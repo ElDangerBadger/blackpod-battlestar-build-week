@@ -276,3 +276,15 @@ temporary simulation risk only. Original plans and the previous calculation
 versions remain immutable. Auto-trading stays **OFF**. See the
 [validation report](docs/TRADING_SHADOW_EVIDENCE_VALIDATION.md) for actual
 captures, test results, unchanged journals and unresolved evidence.
+
+## Native evidence-closure review
+
+[Governed native closure review](docs/NATIVE_EVIDENCE_CLOSURE.md) now replays exact
+native shadow qualifications and retains descriptive source findings, immutable
+candidate comparisons and reproducible quote-extrema witnesses in journal v21.
+Supplemental checklists, reviewer labels and source URLs cannot replace native
+continuity, cost/capacity, risk or uncertainty prerequisites. Wide spreads remain
+unclipped; a ready shadow study design establishes no economic or execution
+authority. Auto-trading stays **OFF**. See the
+[validation record](docs/NATIVE_EVIDENCE_CLOSURE_VALIDATION.md) for exact commands,
+fixture and retained-real coverage, results and remaining native prerequisites.

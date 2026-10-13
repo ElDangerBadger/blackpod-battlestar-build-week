@@ -541,6 +541,12 @@ class JournalStore:
                 validate_segmented_qualification_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid segmented evidence qualification: {exc}") from exc
+        elif source["kind"] == "TRADING_NATIVE_EVIDENCE_CLOSURE_REVIEW":
+            from .native_evidence_closure_journal import validate_native_closure_event
+            try:
+                validate_native_closure_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid native evidence-closure review: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:
