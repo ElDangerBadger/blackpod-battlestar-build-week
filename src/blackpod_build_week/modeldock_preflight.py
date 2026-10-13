@@ -199,7 +199,11 @@ def run_modeldock_preflight(
             latency = result.latency_ms
         except ModelDockClientError as exc:
             failure = exc.failure
-            endpoint_available = failure.raw_response_sha256 is not None
+            # An HTTP status proves delivery even when an untrusted error body
+            # was deliberately not read (and therefore has no response hash).
+            endpoint_available = failure.raw_response_sha256 is not None or (
+                failure.delivery is not None and failure.delivery.get("http_status") is not None
+            )
             latency = failure.latency_ms
             issues.append(
                 {

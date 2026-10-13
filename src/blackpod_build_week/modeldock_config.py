@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 MODELDOCK_BASE_URL_ENV = "MODELDOCK_BASE_URL"
 MODELDOCK_TIMEOUT_SECONDS_ENV = "MODELDOCK_TIMEOUT_SECONDS"
+MODELDOCK_DELIVERY_GRACE_SECONDS_ENV = "MODELDOCK_DELIVERY_GRACE_SECONDS"
 MODELDOCK_PROFILE_ENV = "MODELDOCK_PROFILE"
 MODELDOCK_MODEL_ENV = "MODELDOCK_MODEL"
 MODELDOCK_PROVIDER_ENV = "MODELDOCK_PROVIDER"
@@ -25,7 +26,9 @@ MODELDOCK_PROVIDER_ENV = "MODELDOCK_PROVIDER"
 DEFAULT_MODELDOCK_PROFILE = "default"
 DEFAULT_MODELDOCK_PROVIDER = "mlx"
 MODELDOCK_MAX_RESPONSE_BYTES = 1024 * 1024
-_MAX_TIMEOUT_SECONDS = 300.0
+_MAX_TIMEOUT_SECONDS = 1800.0
+_DEFAULT_DELIVERY_GRACE_SECONDS = 30.0
+_MAX_DELIVERY_GRACE_SECONDS = 120.0
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+-]{0,254}\Z")
 _SECRET_LIKE = re.compile(
     r"(?i)(?:^|[._:@/+\-])(?:api[_-]?key|access[_-]?token|token|password|passwd|secret)"
@@ -45,6 +48,10 @@ class ModelDockConfig:
     New LIVE requests leave model routing entirely to ModelDock. Direct
     construction retains this field so recorded replay requests can still be
     validated; it does not pin or constrain a LIVE response.
+
+    ``timeout_seconds`` is the explicitly configured service/request budget.
+    LIVE transport gets a separate, bounded delivery grace so the service can
+    return its result or timeout receipt before the client stops waiting.
     """
 
     base_url: str
@@ -53,6 +60,7 @@ class ModelDockConfig:
     model: str | None = None
     provider: str = DEFAULT_MODELDOCK_PROVIDER
     max_response_bytes: int = MODELDOCK_MAX_RESPONSE_BYTES
+    delivery_grace_seconds: float = _DEFAULT_DELIVERY_GRACE_SECONDS
 
     def __post_init__(self) -> None:
         """Enforce the same safety policy for direct and environment loading."""
@@ -72,6 +80,21 @@ class ModelDockConfig:
             raise ModelDockConfigurationError(
                 "ModelDock timeout_seconds must be greater than zero and no more "
                 f"than {_MAX_TIMEOUT_SECONDS:g}"
+            )
+        if isinstance(self.delivery_grace_seconds, bool) or not isinstance(
+            self.delivery_grace_seconds, (int, float)
+        ):
+            raise ModelDockConfigurationError(
+                "ModelDock delivery_grace_seconds must be a finite number"
+            )
+        delivery_grace = float(self.delivery_grace_seconds)
+        if (
+            not math.isfinite(delivery_grace)
+            or not 0 <= delivery_grace <= _MAX_DELIVERY_GRACE_SECONDS
+        ):
+            raise ModelDockConfigurationError(
+                "ModelDock delivery_grace_seconds must be between zero and "
+                f"{_MAX_DELIVERY_GRACE_SECONDS:g}"
             )
         if (
             isinstance(self.max_response_bytes, bool)
@@ -94,9 +117,20 @@ class ModelDockConfig:
         normalized_url = _validate_base_url(self.base_url)
         object.__setattr__(self, "base_url", normalized_url)
         object.__setattr__(self, "timeout_seconds", timeout)
+        object.__setattr__(self, "delivery_grace_seconds", delivery_grace)
         object.__setattr__(self, "provider", provider)
         object.__setattr__(self, "profile", profile)
         object.__setattr__(self, "model", model)
+
+    @property
+    def delivery_timeout_seconds(self) -> float:
+        """LIVE transport deadline after the integer service budget plus grace.
+
+        The request budget rounds up to whole seconds on the wire. REPLAY
+        callers retain their existing ``timeout_seconds`` transport behavior.
+        """
+
+        return math.ceil(self.timeout_seconds) + self.delivery_grace_seconds
 
     def endpoint(self, path: str) -> str:
         """Return one known absolute endpoint below the validated origin."""
@@ -109,7 +143,7 @@ class ModelDockConfig:
 def load_modeldock_config(
     *, environ: Mapping[str, str] | None = None
 ) -> ModelDockConfig:
-    """Load the endpoint, deadline, and appliance profile; never select a model.
+    """Load endpoint, service budget, delivery grace, and appliance profile.
 
     Both the URL and timeout are required so a LIVE invocation can never
     inherit a surprising network target or an unbounded deadline. Legacy
@@ -131,6 +165,12 @@ def load_modeldock_config(
 
     base_url = _validate_base_url(raw_url)
     timeout_seconds = _validate_timeout(raw_timeout)
+    delivery_grace_seconds = _validate_delivery_grace(
+        environment.get(
+            MODELDOCK_DELIVERY_GRACE_SECONDS_ENV,
+            str(_DEFAULT_DELIVERY_GRACE_SECONDS),
+        ).strip()
+    )
     profile = _validate_name(
         environment.get(MODELDOCK_PROFILE_ENV, DEFAULT_MODELDOCK_PROFILE).strip(),
         MODELDOCK_PROFILE_ENV,
@@ -151,6 +191,7 @@ def load_modeldock_config(
         profile=profile,
         model=None,
         provider=provider,
+        delivery_grace_seconds=delivery_grace_seconds,
     )
 
 
@@ -217,6 +258,21 @@ def _validate_timeout(value: str) -> float:
         raise ModelDockConfigurationError(
             f"{MODELDOCK_TIMEOUT_SECONDS_ENV} must be greater than zero and no more "
             f"than {_MAX_TIMEOUT_SECONDS:g}"
+        )
+    return parsed
+
+
+def _validate_delivery_grace(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ModelDockConfigurationError(
+            f"{MODELDOCK_DELIVERY_GRACE_SECONDS_ENV} must be a finite number"
+        ) from exc
+    if not math.isfinite(parsed) or not 0 <= parsed <= _MAX_DELIVERY_GRACE_SECONDS:
+        raise ModelDockConfigurationError(
+            f"{MODELDOCK_DELIVERY_GRACE_SECONDS_ENV} must be between zero and "
+            f"{_MAX_DELIVERY_GRACE_SECONDS:g}"
         )
     return parsed
 

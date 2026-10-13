@@ -115,6 +115,19 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class ModelDockTransportTimeout(TimeoutError):
+    """Safe local delivery phase, not a claim about the provider's work stage."""
+
+    def __init__(self, phase: str, *, received: bytes = b"", status: int | None = None):
+        if phase not in {"CONNECT_OR_WAIT_HEADERS", "READING_RESPONSE_BODY"}:
+            raise ValueError("Unsupported local delivery phase")
+        super().__init__("ModelDock delivery deadline exceeded")
+        self.phase = phase
+        self.received_bytes = len(received)
+        self.partial_response_sha256 = sha256_bytes(received) if received else None
+        self.http_status = status
+
+
 class UrlLibTransport:
     """One-shot urllib transport with bounded reads and a monotonic deadline."""
 
@@ -158,7 +171,12 @@ class UrlLibTransport:
                 status=int(exc.code),
                 headers=response_headers,
                 body=b"",
+                complete=False,
             )
+        except (TimeoutError, urllib.error.URLError) as exc:
+            if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+                raise ModelDockTransportTimeout("CONNECT_OR_WAIT_HEADERS") from None
+            raise
         with response:
             response_headers = dict(response.headers.items())
             declared = _content_length(response_headers)
@@ -174,11 +192,16 @@ class UrlLibTransport:
             while byte_count <= max_response_bytes:
                 remaining = deadline - self._monotonic()
                 if remaining <= 0:
-                    raise TimeoutError("ModelDock response read exceeded deadline")
+                    raise ModelDockTransportTimeout("READING_RESPONSE_BODY", received=b"".join(chunks),
+                                                    status=int(response.status))
                 _set_response_socket_timeout(response, remaining)
-                chunk = response.read(
-                    min(_READ_CHUNK_BYTES, max_response_bytes + 1 - byte_count)
-                )
+                try:
+                    chunk = response.read(
+                        min(_READ_CHUNK_BYTES, max_response_bytes + 1 - byte_count)
+                    )
+                except TimeoutError:
+                    raise ModelDockTransportTimeout("READING_RESPONSE_BODY", received=b"".join(chunks),
+                                                    status=int(response.status)) from None
                 if not chunk:
                     break
                 if not isinstance(chunk, bytes):
@@ -232,9 +255,10 @@ class ModelDockFailure:
     response_byte_size: int | None = None
     safe_response: Mapping[str, Any] | None = None
     safe_response_bytes: bytes | None = None
+    delivery: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "code": self.code,
             "error_type": self.error_type,
             "message": self.message,
@@ -250,6 +274,9 @@ class ModelDockFailure:
                 else None
             ),
         }
+        if self.delivery is not None:
+            value["delivery"] = copy.deepcopy(dict(self.delivery))
+        return value
 
 
 class ModelDockClientError(RuntimeError):
@@ -286,6 +313,7 @@ class ModelDockCallResult:
     started_at: str
     observed_at: str
     parsed_content: Any
+    delivery: Mapping[str, Any] | None = None
 
 
 ContentValidator = Callable[[Mapping[str, Any]], Any]
@@ -327,10 +355,10 @@ class ModelDockClient:
         trusted from request metadata. Callers that deterministically apply the
         already-validated envelope correlation may set
         ``content_requires_correlation=False``; the default preserves the
-        standalone canonical-narrative contract. ``timeout_seconds`` covers
-        request validation, one transport attempt, bounded response reads, and
-        response validation. The method never retries or changes provider or
-        run mode.
+        standalone canonical-narrative contract. For LIVE, the configured service
+        budget plus bounded delivery grace covers validation and one buffered
+        response. REPLAY keeps its historical deadline. Neither a timeout nor
+        server HTTP error proves that provider computation has stopped.
         """
 
         started_at = _timestamp(self._now())
@@ -338,9 +366,21 @@ class ModelDockClient:
         response_hash: str | None = None
         response_size: int | None = None
         safe_response: dict[str, Any] | None = None
+        delivery: dict[str, Any] = {
+            "schema_version": "blackpod.modeldock_delivery.v1",
+            "phase": "REQUEST_VALIDATION", "request_id": None, "http_request_id": None,
+            "request_sha256": None, "provider_timeout_seconds": None,
+            "client_deadline_seconds": None, "http_status": None,
+            "response_bytes_received": 0, "response_complete": None,
+            "response_request_id_matched": None, "partial_response_sha256": None,
+            "server_completion": "UNKNOWN", "automatic_retry_allowed": False,
+        }
 
         try:
             normalized_mode = _run_mode(run_mode)
+            client_deadline = (self.config.delivery_timeout_seconds if normalized_mode == "LIVE"
+                               else self.config.timeout_seconds)
+            delivery["client_deadline_seconds"] = client_deadline
             (
                 normalized_request,
                 expected_correlation,
@@ -353,24 +393,33 @@ class ModelDockClient:
                 run_mode=normalized_mode,
             )
             request_bytes = canonical_json_bytes(normalized_request)
-            remaining = self.config.timeout_seconds - (
+            # ModelDock accepts this restricted header alphabet; hash other safe
+            # correlation IDs rather than truncating them or changing the body.
+            http_request_id = (request_id if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", request_id)
+                               else "blackpod-" + sha256_bytes(request_id.encode()))
+            delivery.update(request_id=request_id,
+                            http_request_id=http_request_id if normalized_mode == "LIVE" else None,
+                            request_sha256=sha256_bytes(request_bytes),
+                            provider_timeout_seconds=normalized_request["timeout"])
+            remaining = client_deadline - (
                 self._monotonic() - started
             )
             if remaining <= 0:
                 raise TimeoutError("ModelDock deadline elapsed before transport")
+            delivery["phase"] = "TRANSPORT"
             response = self.transport.request(
                 method="POST",
                 url=self.config.endpoint(MODELDOCK_TEXT_GENERATE_PATH),
                 headers={
                     "Accept": "application/json",
                     "Content-Type": "application/json; charset=utf-8",
+                    **({"X-Request-ID": http_request_id} if normalized_mode == "LIVE" else {}),
                 },
                 body=request_bytes,
                 timeout_seconds=remaining,
                 max_response_bytes=self.config.max_response_bytes,
             )
-            if self._monotonic() - started > self.config.timeout_seconds:
-                raise TimeoutError("ModelDock transport exceeded total deadline")
+            received_at = self._monotonic()
             if not isinstance(response, HttpResponse):
                 raise _ProtocolIssue(
                     "transport_contract",
@@ -383,8 +432,21 @@ class ModelDockClient:
                     "ModelDockProtocolError",
                     "ModelDock transport response body must be bytes",
                 )
+            if (type(response.status) is not int or not 100 <= response.status <= 599
+                    or not isinstance(response.headers, Mapping) or type(response.complete) is not bool):
+                raise _ProtocolIssue("transport_contract", "ModelDockProtocolError",
+                                     "ModelDock transport returned invalid response metadata")
             response_size = len(response.body)
-            response_hash = sha256_bytes(response.body)
+            if response_size <= self.config.max_response_bytes and (response.complete or response_size):
+                response_hash = sha256_bytes(response.body)
+            delivery.update(phase="RESPONSE_RECEIVED", response_bytes_received=response_size,
+                            response_complete=response.complete,
+                            http_status=response.status if type(response.status) is int else None)
+            for key, value in response.headers.items():
+                if normalized_mode == "LIVE" and isinstance(key, str) and key.lower() == "x-request-id":
+                    delivery["response_request_id_matched"] = value == http_request_id
+            if received_at - started > client_deadline:
+                raise TimeoutError("ModelDock transport exceeded total delivery deadline")
             if response.status != 200:
                 raise _ProtocolIssue(
                     "http_status",
@@ -410,6 +472,7 @@ class ModelDockClient:
                     "ModelDock response was truncated",
                     resumable=True,
                 )
+            delivery["phase"] = "RESPONSE_VALIDATION"
             envelope = _strict_json_object(response.body, "ModelDock response")
             safe_response = _safe_response_projection(envelope, include_content=False)
             parsed_content, model_revision = self._validate_envelope(
@@ -424,10 +487,12 @@ class ModelDockClient:
             safe_response = _safe_response_projection(envelope, include_content=True)
             safe_response_bytes = canonical_json_bytes(safe_response)
             finished = self._monotonic()
-            if finished - started > self.config.timeout_seconds:
+            if finished - started > client_deadline:
                 raise TimeoutError("ModelDock validation exceeded total deadline")
             latency = _latency_ms(started, finished)
             observed_at = _timestamp(self._now())
+            delivery.update(phase="COMPLETE", server_completion=("VALIDATED_RESPONSE_RECEIVED"
+                            if normalized_mode == "LIVE" else "VALIDATED_REPLAY_RECEIVED"))
             return ModelDockCallResult(
                 request_bytes=request_bytes,
                 request_sha256=hashlib.sha256(request_bytes).hexdigest(),
@@ -444,6 +509,7 @@ class ModelDockClient:
                 started_at=started_at,
                 observed_at=observed_at,
                 parsed_content=parsed_content,
+                delivery=MappingProxyType(copy.deepcopy(delivery)),
             )
         except ModelDockClientError:
             raise
@@ -458,9 +524,15 @@ class ModelDockClient:
                 raw_response_sha256=response_hash,
                 response_byte_size=response_size,
                 safe_response=safe_response,
+                delivery=delivery,
             ) from None
 
         except (TimeoutError, socket.timeout) as exc:
+            if isinstance(exc, ModelDockTransportTimeout):
+                delivery.update(phase=exc.phase, http_status=exc.http_status,
+                                response_bytes_received=exc.received_bytes,
+                                partial_response_sha256=exc.partial_response_sha256,
+                                response_complete=False if exc.http_status is not None else None)
             raise self._error(
                 "timeout",
                 type(exc).__name__,
@@ -468,6 +540,10 @@ class ModelDockClient:
                 True,
                 started,
                 started_at,
+                raw_response_sha256=response_hash,
+                response_byte_size=response_size,
+                safe_response=_without_failed_content(safe_response),
+                delivery=delivery,
             ) from None
         except (urllib.error.URLError, ConnectionError, OSError) as exc:
             reason = getattr(exc, "reason", None)
@@ -479,6 +555,10 @@ class ModelDockClient:
                     True,
                     started,
                     started_at,
+                    raw_response_sha256=response_hash,
+                    response_byte_size=response_size,
+                    safe_response=_without_failed_content(safe_response),
+                    delivery=delivery,
                 ) from None
             raise self._error(
                 "connection_failure",
@@ -487,6 +567,7 @@ class ModelDockClient:
                 True,
                 started,
                 started_at,
+                delivery=delivery,
             ) from None
         except (TypeError, ValueError) as exc:
             # Configuration/request failures are intentionally terse: exception
@@ -501,6 +582,7 @@ class ModelDockClient:
                 raw_response_sha256=response_hash,
                 response_byte_size=response_size,
                 safe_response=safe_response,
+                delivery=delivery,
             ) from None
 
     def _validate_request(
@@ -799,7 +881,17 @@ class ModelDockClient:
                 "ModelDockProtocolError",
                 "ModelDock response lacks its MLX model reference",
             )
-        if metadata.get("stop_reason") != "completed_or_eos":
+        # LIVE completion must be observed by the native engine. Historical
+        # REPLAY captures retain their original, legacy metadata unchanged.
+        if (
+            run_mode == "LIVE"
+            and (
+                metadata.get("stop_reason") != "stop"
+                or metadata.get("stop_reason_source") != "native"
+            )
+        ) or (
+            run_mode == "REPLAY" and metadata.get("stop_reason") != "completed_or_eos"
+        ):
             raise _ProtocolIssue(
                 "response_truncated_generation",
                 "ModelDockProtocolError",
@@ -816,6 +908,10 @@ class ModelDockClient:
             or not isinstance(generated, int)
             or generated < 0
             or generated > effective
+            or (
+                run_mode == "LIVE"
+                and metadata.get("generated_token_count_source") != "native"
+            )
             or (
                 requested is not None
                 and (
@@ -896,6 +992,7 @@ class ModelDockClient:
         raw_response_sha256: str | None = None,
         response_byte_size: int | None = None,
         safe_response: Mapping[str, Any] | None = None,
+        delivery: Mapping[str, Any] | None = None,
     ) -> ModelDockClientError:
         safe_bytes = (
             canonical_json_bytes(dict(safe_response))
@@ -919,8 +1016,22 @@ class ModelDockClient:
                     else None
                 ),
                 safe_response_bytes=safe_bytes,
+                delivery=MappingProxyType(copy.deepcopy(dict(delivery))) if delivery is not None else None,
             )
         )
+
+
+def _without_failed_content(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Keep validated diagnostic metadata, never turn a late response into prose."""
+    if value is None:
+        return None
+    projected = copy.deepcopy(dict(value))
+    content = projected.pop("content", None)
+    if isinstance(content, str):
+        data = content.encode("utf-8")
+        projected["content_sha256"] = sha256_bytes(data)
+        projected["content_byte_size"] = len(data)
+    return projected
 
 
 @dataclass(frozen=True, slots=True)
@@ -1042,7 +1153,9 @@ def _safe_response_projection(
             "requested_max_tokens",
             "effective_max_tokens",
             "generated_token_count",
+            "generated_token_count_source",
             "stop_reason",
+            "stop_reason_source",
         ):
             if field_name in metadata:
                 candidate = metadata[field_name]
@@ -1050,7 +1163,9 @@ def _safe_response_projection(
                     isinstance(candidate, int) and not isinstance(candidate, bool)
                 ):
                     projected_metadata[field_name] = candidate
-                elif field_name == "stop_reason":
+                elif field_name in {
+                    "generated_token_count_source", "stop_reason", "stop_reason_source"
+                }:
                     projected = _safe_projected_scalar(candidate)
                     if projected is not None:
                         projected_metadata[field_name] = projected

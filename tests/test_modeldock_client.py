@@ -129,7 +129,9 @@ def response_envelope(
             "requested_max_tokens": 256,
             "effective_max_tokens": 256,
             "generated_token_count": 72,
-            "stop_reason": "completed_or_eos",
+            "stop_reason": "stop" if run_mode == "LIVE" else "completed_or_eos",
+            **({"generated_token_count_source": "native", "stop_reason_source": "native"}
+               if run_mode == "LIVE" else {}),
             "generation_options": {"temperature": 0.0},
         },
         "trace_id": "trace-modeldock-test",
@@ -203,7 +205,7 @@ class ModelDockClientTests(unittest.TestCase):
         self.assertEqual(result.started_at, "2026-07-19T12:00:00.000000Z")
         self.assertEqual(transport.calls, 1)
         self.assertEqual(transport.last_request["url"], "http://127.0.0.1:8000/text/generate")
-        self.assertEqual(transport.last_request["timeout_seconds"], 9.875)
+        self.assertEqual(transport.last_request["timeout_seconds"], 39.875)
         self.assertNotIn("model", json.loads(transport.last_request["body"]))
         self.assertNotIn("Authorization", transport.last_request["headers"])
 
@@ -465,6 +467,100 @@ class ModelDockClientTests(unittest.TestCase):
             "response_mlx_data_invalid", FakeTransport(http_response(envelope))
         )
 
+    def test_live_preserves_native_telemetry_including_stop_at_token_budget(self) -> None:
+        for engine in ("mlx-lm", "mlx-vlm"):
+            for count in (0, 72, 256):
+                with self.subTest(engine=engine, count=count):
+                    envelope = response_envelope(engine=engine)
+                    envelope["metadata"]["generated_token_count"] = count
+                    transport = FakeTransport(http_response(envelope))
+                    result = self.invoke(transport)
+                    metadata = result.safe_response["metadata"]
+                    self.assertEqual(metadata["generated_token_count"], count)
+                    self.assertEqual(metadata["generated_token_count_source"], "native")
+                    self.assertEqual(metadata["stop_reason"], "stop")
+                    self.assertEqual(metadata["stop_reason_source"], "native")
+                    self.assertEqual(result.raw_response_sha256, sha256_bytes(transport.response.body))
+                    self.assertEqual(transport.calls, 1)
+
+    def test_live_rejects_unproven_or_incomplete_native_generation(self) -> None:
+        cases = (
+            ("stop_reason", "length", "response_truncated_generation"),
+            ("stop_reason", "unknown", "response_truncated_generation"),
+            ("stop_reason", "completed_or_eos", "response_truncated_generation"),
+            ("stop_reason", None, "response_truncated_generation"),
+            ("stop_reason_source", "unavailable", "response_truncated_generation"),
+            ("stop_reason_source", "estimated", "response_truncated_generation"),
+            ("stop_reason_source", None, "response_truncated_generation"),
+            ("stop_reason_source", True, "response_truncated_generation"),
+            ("generated_token_count_source", "unavailable", "response_mlx_metadata_invalid"),
+            ("generated_token_count_source", "estimated", "response_mlx_metadata_invalid"),
+            ("generated_token_count_source", None, "response_mlx_metadata_invalid"),
+            ("generated_token_count_source", True, "response_mlx_metadata_invalid"),
+            ("generated_token_count", None, "response_mlx_metadata_invalid"),
+            ("generated_token_count", True, "response_mlx_metadata_invalid"),
+            ("generated_token_count", -1, "response_mlx_metadata_invalid"),
+            ("generated_token_count", 1.5, "response_mlx_metadata_invalid"),
+            ("generated_token_count", "72", "response_mlx_metadata_invalid"),
+            ("generated_token_count", 257, "response_mlx_metadata_invalid"),
+        )
+        for field, value, code in cases:
+            with self.subTest(field=field, value=value):
+                envelope = response_envelope()
+                envelope["metadata"][field] = value
+                transport = FakeTransport(http_response(envelope))
+                self.assert_code(code, transport)
+                self.assertEqual(transport.calls, 1)
+        for field, code in (
+            ("stop_reason", "response_truncated_generation"),
+            ("stop_reason_source", "response_truncated_generation"),
+            ("generated_token_count", "response_mlx_metadata_invalid"),
+            ("generated_token_count_source", "response_mlx_metadata_invalid"),
+        ):
+            with self.subTest(missing=field):
+                envelope = response_envelope()
+                del envelope["metadata"][field]
+                transport = FakeTransport(http_response(envelope))
+                self.assert_code(code, transport)
+                self.assertEqual(transport.calls, 1)
+
+    def test_rejected_projection_preserves_unknown_and_native_telemetry_truthfully(self) -> None:
+        cases = (
+            (None, "unavailable", "unknown", "unavailable"),
+            (256, "native", "length", "native"),
+            (256, "native", "unknown", "unavailable"),
+            (None, "unavailable", "stop", "native"),
+        )
+        fields = ("generated_token_count", "generated_token_count_source",
+                  "stop_reason", "stop_reason_source")
+        for values in cases:
+            with self.subTest(values=values):
+                envelope = response_envelope()
+                telemetry = dict(zip(fields, values))
+                envelope["metadata"].update(telemetry)
+                transport = FakeTransport(http_response(envelope))
+                with self.assertRaises(ModelDockClientError) as caught:
+                    self.invoke(transport)
+                safe = caught.exception.safe_response
+                self.assertIsNotNone(safe)
+                self.assertEqual({field: safe["metadata"][field] for field in fields}, telemetry)
+                self.assertNotIn("content", safe)
+                self.assertNotIn("model_path", str(safe))
+                self.assertNotIn("/Users/private", str(safe))
+                self.assertEqual(caught.exception.raw_response_sha256, sha256_bytes(transport.response.body))
+                self.assertEqual(transport.calls, 1)
+
+    def test_replay_preserves_legacy_telemetry_without_native_source_fields(self) -> None:
+        envelope = response_envelope(run_mode="REPLAY", mocked=True)
+        transport = FakeTransport(http_response(envelope))
+        result = self.invoke(transport, run_mode="REPLAY")
+        metadata = result.safe_response["metadata"]
+        self.assertEqual(metadata["stop_reason"], "completed_or_eos")
+        self.assertEqual(metadata["generated_token_count"], 72)
+        self.assertNotIn("stop_reason_source", metadata)
+        self.assertNotIn("generated_token_count_source", metadata)
+        self.assertEqual(transport.calls, 1)
+
     def test_response_token_budget_must_equal_request(self) -> None:
         for field, value in (
             ("requested_max_tokens", 128),
@@ -514,6 +610,7 @@ class ModelDockClientTests(unittest.TestCase):
             ModelDockConfig(
                 base_url="http://127.0.0.1:8000",
                 timeout_seconds=1.0,
+                delivery_grace_seconds=0,
                 model=MODEL,
             ),
             transport=FakeTransport(http_response(response_envelope())),

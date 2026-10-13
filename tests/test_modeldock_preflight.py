@@ -68,7 +68,9 @@ def smoke(*, mocked: bool = False, engine: str = "mlx-vlm", model: str = "mlx-co
                 "requested_max_tokens": 128,
                 "effective_max_tokens": 128,
                 "generated_token_count": 30,
-                "stop_reason": "completed_or_eos",
+                "generated_token_count_source": "native",
+                "stop_reason": "stop",
+                "stop_reason_source": "native",
                 "generation_options": {},
             },
             "trace_id": "trace-preflight",
@@ -141,6 +143,15 @@ class ModelDockPreflightTests(unittest.TestCase):
         self.assertEqual(report.issues[-1]["code"], "connection_failure")
         self.assertIsNone(report.model)
         self.assertIsNone(report.provider)
+
+    def test_unread_http_error_is_delivery_evidence_not_inference_readiness(self) -> None:
+        transport = QueueTransport([health(), HttpResponse(504, {}, b"", complete=False)])
+        report = self.run_preflight(transport)
+        self.assertTrue(report.text_generate_endpoint_available)
+        self.assertFalse(report.inference_ready)
+        self.assertFalse(report.ready)
+        self.assertEqual(report.issues[-1]["code"], "http_status")
+        self.assertEqual(len(transport.calls), 2)
 
     def test_current_health_requires_real_inference_for_ready_and_busy_states(self) -> None:
         for state in ("READY", "BUSY"):

@@ -103,7 +103,8 @@ class BriefTransport:
                 "metadata": {"blackpod_correlation": wire["metadata"]["blackpod_correlation"],
                     **({"structured_output": {"mode": "json_schema", "validated": True}} if self.structured_confirmed else {}),
                     "requested_max_tokens": wire["max_tokens"], "effective_max_tokens": wire["max_tokens"],
-                    "generated_token_count": 500, "stop_reason": "completed_or_eos", "generation_options": {"temperature": 0.0}},
+                    "generated_token_count": 500, "generated_token_count_source": "native",
+                    "stop_reason": "stop", "stop_reason_source": "native", "generation_options": {"temperature": 0.0}},
                 "trace_id": "trace-brief-test", "mocked": False,
             })
         return HttpResponse(200, {"Content-Length": str(len(body))}, body)
