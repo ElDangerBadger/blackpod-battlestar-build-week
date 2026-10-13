@@ -517,6 +517,12 @@ class JournalStore:
                 validate_research_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid offline trading research: {exc}") from exc
+        elif source["kind"] == "RESEARCH_ASSESSMENT":
+            from .research_acceptance_journal import validate_assessment_event
+            try:
+                validate_assessment_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid research acceptance assessment: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:

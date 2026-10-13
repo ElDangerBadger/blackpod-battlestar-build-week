@@ -132,6 +132,7 @@ testing; they do not govern live-product acceptance. Browser setup and checks:
 - [Passive Decision Journal and two-desk foundation](docs/DECISION_JOURNAL.md)
 - [Source-bound investment hypotheses in shadow mode](docs/INVESTMENT_HYPOTHESES.md)
 - [Shadow hypothesis challenge and outcome evaluation](docs/INVESTMENT_REVIEW.md)
+- [Research validation and evidence gate](docs/RESEARCH_ACCEPTANCE.md)
 - [Product specification and roadmap](docs/PRODUCT_SPEC.md)
 - [Live product runbook](docs/LIVE_PRODUCT_RUNBOOK.md)
 - [Architecture](docs/ARCHITECTURE.md)
