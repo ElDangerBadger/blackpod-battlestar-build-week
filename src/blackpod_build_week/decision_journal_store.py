@@ -535,6 +535,12 @@ class JournalStore:
                 validate_train_market_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid TRAIN market capture/export: {exc}") from exc
+        elif source["kind"] in {"SEGMENTED_TRAIN_EVIDENCE_BINDING", "SEGMENTED_TRAIN_EVIDENCE_QUALIFICATION"}:
+            from .segmented_evidence_qualification_journal import validate_segmented_qualification_event
+            try:
+                validate_segmented_qualification_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid segmented evidence qualification: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:

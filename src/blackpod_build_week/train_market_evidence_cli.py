@@ -42,6 +42,8 @@ def build_parser():
     capture.add_argument("--capture-root", type=Path, required=True); capture.add_argument("--credential-source", type=Path, required=True)
     capture.add_argument("--credential-format", choices=("GALACTICA_YAML", "PAPER_ENV", "NAVIGATOR_ENV"), required=True)
     capture.add_argument("--request-budget", type=int)
+    capture.add_argument("--verified-invocation-cache", action="store_true",
+        help="Opt in to full boundary replay with native-validated invocation-local cursor state")
     capture.add_argument("--allow-market-data-get", action="store_true", required=True)
     snapshot = commands.add_parser("snapshot")
     snapshot.add_argument("--plan-event-id", required=True); snapshot.add_argument("--journal-root", type=Path, required=True)
@@ -53,6 +55,8 @@ def build_parser():
     export.add_argument("--export-id", required=True); export.add_argument("--output", type=Path, required=True)
     export.add_argument("--continuity-event-id"); export.add_argument("--coverage-review", type=Path)
     export.add_argument("--coverage-evidence-root", type=Path)
+    export.add_argument("--batched-journal-append", action="store_true",
+        help="Validate the complete immutable export suffix under one writer lock before publication")
     commands.add_parser("verify").add_argument("--journal-root", type=Path, required=True)
     show = commands.add_parser("show"); show.add_argument("--journal-root", type=Path, required=True); show.add_argument("--event-id", required=True)
     return parser
@@ -80,7 +84,7 @@ def _export(args, store, events, blobs):
     _load_refs([ref for segment in snapshot.segments for page in segment["pages"] for ref in page.values()], blobs, args.evidence_root)
     from .train_market_capture import validate_capture_snapshot
     validate_capture_snapshot(context["plan"], snapshot, blobs)
-    ids, written = [], []
+    ids, written, pending = [], [], []
     for segment in snapshot.segments:
         if segment["status"] == "NOT_STARTED":
             if segment["pages"]: raise ValueError("uncaptured segment cannot contain hidden source evidence")
@@ -96,7 +100,11 @@ def _export(args, store, events, blobs):
             "auto_trading_enabled": False, "authority": context["plan"].authority})
         material = segment_material(request, events, blobs)
         if (segment["status"] == "COMPLETE") != material["result"]["capture_complete"]: raise ValueError("snapshot completion disagrees with exact native source replay")
-        appended = store.append(material["event"], material["evidence"]); ids.append(appended.event_id); written.append(appended.written)
+        if args.batched_journal_append:
+            pending.append(material)
+            ids.append(material["event"].event_id)
+        else:
+            appended = store.append(material["event"], material["evidence"]); ids.append(appended.event_id); written.append(appended.written)
         if all(event.event_id != material["event"].event_id for event in events): events = (*events, material["event"])
         blobs.update({sha256_bytes(raw): raw for raw in material["evidence"].values()})
     coverage_ref = None
@@ -113,7 +121,14 @@ def _export(args, store, events, blobs):
         "capture_checkpoint_evidence": snapshot.checkpoint_evidence,
         "auto_trading_enabled": False, "authority": context["plan"].authority})
     blobs[request.capture_snapshot_evidence["sha256"]] = snapshot.to_bytes()
-    material = export_material(request, events, blobs); appended = store.append(material["event"], material["evidence"])
+    material = export_material(request, events, blobs)
+    if args.batched_journal_append:
+        from .decision_journal_batch import append_journal_batch
+        appended_results = append_journal_batch(store, [*pending, material])
+        written = [result.written for result in appended_results[:-1]]
+        appended = appended_results[-1]
+    else:
+        appended = store.append(material["event"], material["evidence"])
     _write(args.output, canonical_json_bytes(material["result"]), [store.root, args.evidence_root, args.snapshot.parent])
     return {**asdict(appended), "segment_events_written": sum(written), "capture_complete": material["result"]["capture_complete"],
         "coverage_complete": material["result"]["coverage_complete"], "counts": material["result"]["counts"], "consumer_v18": material["result"]["consumer_v18"]}
@@ -142,6 +157,9 @@ def main(argv=None):
                 from .paper_account_probe import parse_credentials, MAX_CREDENTIAL_BYTES
                 credentials = parse_credentials(_read(args.credential_source, MAX_CREDENTIAL_BYTES), args.credential_format)
                 from .train_market_capture import capture_train_quotes
+                if args.verified_invocation_cache:
+                    from .train_market_capture_incremental import capture_train_quotes_incremental
+                    capture_train_quotes = capture_train_quotes_incremental
                 output = capture_train_quotes(context["plan"], args.capture_root, credentials, request_budget=args.request_budget, source_blobs=blobs)
             elif args.command == "snapshot":
                 context = registered_capture_context(args.plan_event_id, events, blobs)

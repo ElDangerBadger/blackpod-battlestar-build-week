@@ -10,7 +10,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from ..hashing import canonical_json_bytes, sha256_bytes
@@ -40,6 +40,7 @@ JOURNAL_EVENT_V16_SCHEMA_VERSION = "blackpod.decision_journal_event.v16"
 JOURNAL_EVENT_V17_SCHEMA_VERSION = "blackpod.decision_journal_event.v17"
 JOURNAL_EVENT_V18_SCHEMA_VERSION = "blackpod.decision_journal_event.v18"
 JOURNAL_EVENT_V19_SCHEMA_VERSION = "blackpod.decision_journal_event.v19"
+JOURNAL_EVENT_V20_SCHEMA_VERSION = "blackpod.decision_journal_event.v20"
 INVESTMENT_HYPOTHESIS_EVENT_TYPE = "INVESTMENT_HYPOTHESIS_RECORDED"
 INVESTMENT_CHALLENGE_EVENT_TYPE = "INVESTMENT_CHALLENGE_RECORDED"
 INVESTMENT_OUTCOME_EVALUATION_EVENT_TYPE = "INVESTMENT_OUTCOME_EVALUATION_RECORDED"
@@ -306,6 +307,9 @@ def _event(value: object) -> dict[str, Any]:
         return validate_journal_event(result)
     if result["schema_version"] == JOURNAL_EVENT_V19_SCHEMA_VERSION:
         from .train_market_evidence import validate_journal_event
+        return validate_journal_event(result)
+    if result["schema_version"] == JOURNAL_EVENT_V20_SCHEMA_VERSION:
+        from .segmented_evidence_qualification import validate_journal_event
         return validate_journal_event(result)
     if result["schema_version"] != JOURNAL_EVENT_SCHEMA_VERSION:
         raise ContractValidationError("unsupported journal event schema_version")
@@ -855,14 +859,20 @@ def _review_event(result: dict[str, Any]) -> dict[str, Any]:
 
 @dataclass(frozen=True, slots=True, init=False)
 class _ImmutableDocument:
-    """Retain only canonical bytes; callers cannot mutate nested validated data."""
+    """Retain canonical bytes; callers receive fresh copies of validated fields."""
 
     _canonical_bytes: bytes
+    _canonical_fields: tuple[tuple[str, bytes], ...] = field(repr=False, compare=False)
     _validator: ClassVar[Any]
 
     def __init__(self, value: Mapping[str, Any]) -> None:
         validated = self._validator(value)
         object.__setattr__(self, "_canonical_bytes", canonical_json_bytes(validated))
+        # Bind these immutable fragments to the canonical document, rather
+        # than retaining a mutable decoded object or the caller's input.
+        object.__setattr__(self, "_canonical_fields", tuple(
+            (name, canonical_json_bytes(item)) for name, item in
+            json.loads(self._canonical_bytes).items()))
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]):
@@ -881,13 +891,34 @@ class _ImmutableDocument:
     def to_bytes(self) -> bytes:
         return self._canonical_bytes
 
+    def __getstate__(self):
+        # Keep the original one-slot pickle representation. Field fragments
+        # are an internal optimization, never persisted as authoritative data.
+        return [self._canonical_bytes]
+
+    def __setstate__(self, state):
+        if not isinstance(state, (list, tuple)) or len(state) not in {1, 2} or not isinstance(state[0], bytes):
+            raise TypeError("immutable document pickle state requires canonical bytes")
+        raw = state[0]
+        fields = tuple((name, canonical_json_bytes(item)) for name, item in json.loads(raw).items())
+        object.__setattr__(self, "_canonical_bytes", raw)
+        object.__setattr__(self, "_canonical_fields", fields)
+
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
-        value = self.to_dict()
-        if name not in value:
-            raise AttributeError(name)
-        return value[name]
+        try:
+            fields = object.__getattribute__(self, "_canonical_fields")
+        except AttributeError:
+            # Older Python pickle state contains only the canonical document.
+            # Rebuild the immutable optimization without changing that state.
+            fields = tuple((key, canonical_json_bytes(item)) for key, item in
+                json.loads(self._canonical_bytes).items())
+            object.__setattr__(self, "_canonical_fields", fields)
+        for field_name, raw in fields:
+            if field_name == name:
+                return json.loads(raw)
+        raise AttributeError(name)
 
 
 class JournalEvent(_ImmutableDocument):
