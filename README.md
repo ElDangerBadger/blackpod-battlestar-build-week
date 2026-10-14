@@ -35,6 +35,9 @@ also has a small read-only view at `/?view=research`. Start the reader with
 `SHADOW_EXPERIMENT_ROOT=/absolute/path/to/the/experiment/journal`; no mission
 configuration is required for that view. It shows saved predictions and linked
 gross price outcomes, with auto-trading OFF and net performance unqualified.
+The [historical reversal baseline](docs/REVERSAL_HISTORICAL_BASELINE.md) provides
+a separate retained-data comparison and 30-session historical context. It
+does not add retrospective rows to the prospective experiment.
 
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
