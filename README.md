@@ -30,6 +30,12 @@ Open [http://127.0.0.1:5174/](http://127.0.0.1:5174/). The configured source is
 `<CABIN_ARTIFACTS_ROOT>/missions/<CABIN_MISSION_ID>/`; select the artifact root,
 not the mission directory. Stop the process with **Ctrl+C**.
 
+The [prospective reversal experiment](docs/PROSPECTIVE_SHADOW_EXPERIMENT.md)
+also has a small read-only view at `/?view=research`. Start the reader with
+`SHADOW_EXPERIMENT_ROOT=/absolute/path/to/the/experiment/journal`; no mission
+configuration is required for that view. It shows saved predictions and linked
+gross price outcomes, with auto-trading OFF and net performance unqualified.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest

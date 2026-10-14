@@ -1,0 +1,48 @@
+.shadow-experiment-page { box-sizing: border-box; overflow: auto !important; padding: clamp(1rem, 4vw, 3rem); background: #101a21; color: #e3eaf0; font-family: system-ui, sans-serif; line-height: 1.6; }
+.experiment-page-inner { max-width: 78rem; margin-inline: auto; }
+.experiment-page-inner > nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; font-size: .9rem; }
+.experiment-page-inner > nav a { color: #b6dce9; text-underline-offset: .2em; }
+.experiment-page-inner > nav span { color: #a4b8c6; }
+.shadow-experiment { overflow-wrap: anywhere; }
+.shadow-experiment h1 { margin: .2rem 0 .6rem; font-size: clamp(1.65rem, 3vw, 2.5rem); line-height: 1.2; letter-spacing: -.035em; }
+.shadow-experiment h2 { font-size: 1.2rem; margin: 0 0 .7rem; color: #eef5fa; }
+.experiment-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: clamp(1rem, 3vw, 2rem); border: 1px solid #496172; border-radius: .5rem; background: #1b2e3c; }
+.experiment-banner p { margin: .35rem 0; max-width: 60ch; color: #c5d6e0; }
+.experiment-banner .experiment-eyebrow { font-size: .72rem; font-weight: 700; color: #b4d7cb; letter-spacing: .09em; text-transform: uppercase; }
+.experiment-banner button { flex-shrink: 0; border: 1px solid #89abbe; border-radius: .25rem; background: #314c5e; color: #f1f7fb; padding: .7rem .9rem; font-family: inherit; font-size: .86rem; cursor: pointer; }
+.experiment-banner button:disabled { opacity: .6; cursor: default; }
+.shadow-experiment :is(a, button, summary, [tabindex]):focus-visible { outline: 3px solid #b7dfef; outline-offset: 3px; }
+.experiment-boundary { border-left: 3px solid #b2c6a1; padding: .6rem .9rem; font-size: .9rem; color: #c9d7df; }
+.shadow-experiment > section { margin: 1.5rem 0; padding: 1.3rem; border: 1px solid #354b59; border-radius: .4rem; background: #15242e; }
+.shadow-experiment p { max-width: 90ch; }
+.experiment-section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; }
+.experiment-tag { color: #c0d8ce; border: 1px solid #628171; border-radius: 1rem; padding: .15rem .65rem; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.experiment-facts { font-size: .88rem; }
+.experiment-facts > div { display: grid; grid-template-columns: minmax(10rem, .7fr) minmax(0, 2fr); gap: .7rem; padding: .6rem 0; border-bottom: 1px solid #314752; }
+.experiment-facts dt { color: #b5c8d3; }
+.experiment-facts dd { margin: 0; }
+.experiment-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin: 1rem 0; }
+.experiment-counts > div { padding: 1rem; border: 1px solid #3c5665; border-radius: .3rem; background: #1e3441; }
+.experiment-counts dt { color: #b6cbd7; font-size: .8rem; }
+.experiment-counts dd { margin: .35rem 0 0; font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.experiment-conclusion { margin-bottom: 0; padding: .6rem .9rem; border-left: 3px solid #b9b68d; background: #26333a; }
+.shadow-experiment details { padding: .8rem 0; }
+.shadow-experiment summary { cursor: pointer; font-weight: 600; }
+.shadow-experiment details li { margin-block: .45rem; }
+.shadow-experiment code { font-size: .8em; overflow-wrap: anywhere; }
+.experiment-alert { border-color: #a88a60 !important; }
+.experiment-table-scroll { overflow: auto; border: 1px solid #466071; border-radius: .3rem; }
+.shadow-experiment table { border-collapse: collapse; min-width: 66rem; width: 100%; font-size: .78rem; }
+.shadow-experiment caption { text-align: left; padding: .8rem; color: #bbceda; background: #203642; }
+.shadow-experiment :is(th, td) { text-align: left; vertical-align: top; border-bottom: 1px solid #344d5c; padding: .85rem .7rem; }
+.shadow-experiment th { color: #c8dce7; background: #1c303e; font-weight: 600; }
+.shadow-experiment td { font-variant-numeric: tabular-nums; }
+.shadow-experiment :is(th, td) > :is(span, small, code) { display: block; margin-top: .35rem; }
+.shadow-experiment td small { color: #b4c7d2; font-size: .9em; }
+.shadow-experiment td details { max-width: 22rem; padding: 0; }
+.shadow-experiment-shortcut { position: absolute; z-index: 84; left: 6.5%; top: 16.6%; display: block; padding: .35em .65em; border: 1px solid #8a744e; border-radius: .25rem; color: #efd5a0; background: #231a10; text-decoration: none; font: clamp(9px, .75cqw, 13px)/1.4 Georgia, serif; }
+.shadow-experiment-shortcut small { margin-left: .6em; color: #c5d0b2; }
+.shadow-experiment-shortcut:focus-visible { outline: 2px solid #e1bd71; outline-offset: 3px; }
+.cabin-loading .experiment-loading-link { margin-block: 1rem; color: #efd5a0; }
+@media (max-width: 750px) { .experiment-banner { flex-direction: column; gap: .8rem; } .experiment-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .experiment-facts > div { grid-template-columns: 1fr; gap: .2rem; } .shadow-experiment > section { padding: 1rem; } }
+@media (max-width: 420px) { .experiment-counts { grid-template-columns: 1fr; } }

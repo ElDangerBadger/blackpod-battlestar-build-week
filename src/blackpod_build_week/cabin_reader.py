@@ -65,6 +65,7 @@ from .navigator_live import (
 from .sentry_reader import SentryReader
 from .sentry_research_reader import SentryResearchReader
 from .sentry_scan_reader import SentryScanReader
+from .shadow_experiment_reader import ShadowExperimentReader
 from .navigator_reference_reader import NavigatorReferenceReader
 from .oracle_brief_reader import (
     BRIEF_PATH, BRIEF_SCHEMA, MAX_BRIEF_BYTES, SOURCE_NAMES as BRIEF_SOURCE_NAMES,
@@ -531,11 +532,13 @@ class CabinHTTPServer(ThreadingHTTPServer):
                  sentry_reader: SentryReader | None = None,
                  sentry_research_reader: SentryResearchReader | None = None,
                  sentry_scan_reader: SentryScanReader | None = None,
+                 shadow_experiment_reader: ShadowExperimentReader | None = None,
                  navigator_reference_root: Path | None = None):
         self.reader = reader
         self.sentry_reader = sentry_reader if sentry_reader is not None else SentryReader()
         self.sentry_research_reader = sentry_research_reader if sentry_research_reader is not None else SentryResearchReader()
         self.sentry_scan_reader = sentry_scan_reader if sentry_scan_reader is not None else SentryScanReader()
+        self.shadow_experiment_reader = shadow_experiment_reader if shadow_experiment_reader is not None else ShadowExperimentReader()
         self.ui_root = Path(ui_root)
         self.navigator_live = NavigatorLiveBridge(navigator_live_url) if navigator_live_url else None
         self.navigator_reference = NavigatorReferenceReader(navigator_reference_root)
@@ -636,7 +639,7 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             parsed = urlsplit(self.path)
-            allowed_ui_query = parsed.path in {"/", "/index.html"} and parsed.query == "mode=live"
+            allowed_ui_query = parsed.path in {"/", "/index.html"} and parsed.query in {"mode=live", "view=research"}
             if parsed.scheme or parsed.netloc or (parsed.query and not allowed_ui_query) or parsed.fragment or not parsed.path.startswith("/"):
                 raise UnsafePathError("request target is not a local file")
             relative = unquote(parsed.path, errors="strict")[1:]
@@ -654,6 +657,9 @@ class CabinRequestHandler(BaseHTTPRequestHandler):
                 return
             if relative == "live/sentry/scan.json":
                 self._send(200, canonical_json_bytes(self.server.sentry_scan_reader.current()), "application/json")
+                return
+            if relative == "live/shadow-experiment/current.json":
+                self._send(200, canonical_json_bytes(self.server.shadow_experiment_reader.current()), "application/json")
                 return
             parts = PurePosixPath(relative).parts
             if len(parts) == 7 and parts[:3] == ("live", "navigator", "reference") and _PUBLICATION_ID.fullmatch(parts[3]):
@@ -711,6 +717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--sentry-research-root", type=Path, help="Optional explicit frozen Calibration V2 research directory; no scans or discovery.")
     parser.add_argument("--sentry-research-closeout-root", type=Path, help="Matching explicit Calibration V2 closeout directory; recorded state only.")
     parser.add_argument("--sentry-scan-archive", type=Path, help="Optional explicit canonical offline scan JSON receipt; reads only, never starts a scan.")
+    parser.add_argument("--shadow-experiment-root", type=Path, help="Optional explicit single shadow experiment root; reads verified records only, never collects or evaluates.")
     arguments = parser.parse_args(argv)
     if not 1 <= arguments.port <= 65535:
         parser.error("port must be between 1 and 65535")
@@ -719,12 +726,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                                      arguments.sentry_source_label, arguments.sentry_canonical_root)
         sentry_research_reader = SentryResearchReader(arguments.sentry_research_root, arguments.sentry_research_closeout_root)
         sentry_scan_reader = SentryScanReader(arguments.sentry_scan_archive)
+        shadow_experiment_reader = ShadowExperimentReader(arguments.shadow_experiment_root)
     except ValueError as exc:
         parser.error(str(exc))
     try:
         server = CabinHTTPServer(CabinReader(arguments.artifacts_root, arguments.mission_id), arguments.ui_root, arguments.port,
                                  navigator_live_url=arguments.navigator_live_url, sentry_reader=sentry_reader,
                                  sentry_research_reader=sentry_research_reader, sentry_scan_reader=sentry_scan_reader,
+                                 shadow_experiment_reader=shadow_experiment_reader,
                                  navigator_reference_root=arguments.navigator_reference_root)
     except ValueError:
         parser.error("Navigator live URL must be an explicit loopback HTTP origin and port")

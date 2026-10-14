@@ -219,6 +219,7 @@ describe("Captain's Cabin", () => {
     expect(screen.getByText("Rotate device")).toBeInTheDocument();
     expect(screen.getByText("Navigator chart not configured.")).toBeInTheDocument();
     expect(screen.getByText("Recorded Governor disposition")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Research experiment Read-only" })).toHaveAttribute("href", "/?view=research");
     expect(document.querySelector(".route-line")).toBeNull();
     expect(mockedLoadMissionBundle).toHaveBeenCalledWith("/demo/approved/");
     expect(screen.getAllByText("DEMO").length).toBeGreaterThan(0);

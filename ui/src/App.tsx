@@ -16,6 +16,7 @@ import { CabinPanelDetails, CABIN_PANEL_TITLES } from "./components/CabinPanelDe
 import type { CabinPanelId } from "./components/cabinPanelTypes";
 import { ShadowPlanDetails } from "./components/ShadowPlanDetails";
 import { SentryPanel } from "./components/SentryPanel";
+import { ShadowExperimentPage } from "./components/ShadowExperiment";
 import { MarketConditions, MissionChart, SentryAlerts, ShadowPlanPaper } from "./components/DeskPanels";
 import { Notice } from "./components/Notice";
 import { MissionWarnings } from "./components/MissionWarnings";
@@ -49,6 +50,7 @@ function panelFromNotice(notice: NoticeState): CabinPanelId | null {
 }
 
 export default function App() {
+  const [researchView, setResearchView] = useState(() => new URLSearchParams(window.location.search).get("view") === "research");
   const [presentationMode, setPresentationMode] = useState<PresentationMode>(() => modeFromSearch(window.location.search));
   const chooseMode = (mode: PresentationMode) => {
     const url = new URL(window.location.href);
@@ -58,10 +60,14 @@ export default function App() {
     setPresentationMode(mode);
   };
   useEffect(() => {
-    const followHistory = () => setPresentationMode(modeFromSearch(window.location.search));
+    const followHistory = () => {
+      setPresentationMode(modeFromSearch(window.location.search));
+      setResearchView(new URLSearchParams(window.location.search).get("view") === "research");
+    };
     window.addEventListener("popstate", followHistory);
     return () => window.removeEventListener("popstate", followHistory);
   }, []);
+  if (researchView) return <ShadowExperimentPage />;
   return presentationMode === "LIVE" ? <LiveCabin /> : <ReplayCabin onSelectMode={chooseMode} />;
 }
 
@@ -80,6 +86,7 @@ function LiveCabin() {
         <p>No replay data is substituted. This Cabin follows recorded LIVE mission artifacts; it does not run missions. Separately configured Navigator live prices do not replace mission evidence.</p>
         <p>Read-only · SHADOW only · no approvals, mission changes, or order execution.</p>
         <div className="load-mode-actions"><button type="button" disabled={live.refreshing} onClick={live.refresh}>Refresh evidence</button></div>
+        <a className="experiment-loading-link" href="/?view=research">Open research experiment</a>
       </main>
     );
   }
@@ -340,10 +347,10 @@ function MissionCabin({
           prohibitedOperations={mission.safety.prohibitedOperations}
         />}
         navigation={<BottomNavigation active={activeDestination} onNavigate={navigate} />}
-        backgroundControls={live ? <LiveEvidenceControls live={live} mission={mission} /> : <>
+        backgroundControls={<><a className="shadow-experiment-shortcut" href="/?view=research">Research experiment <small>Read-only</small></a>{live ? <LiveEvidenceControls live={live} mission={mission} /> : <>
           <PresentationModeControl mode={presentationMode} runMode={mission.status.runMode} onSelect={onSelectMode!} />
           <ReplayControls theater={theater} announcement={announcement} />
-        </>}
+        </>}</>}
         foreground={<>
           {selectedBook ? <BookFocus book={selectedBook} artifactBaseUrl={mission.baseUrl} onClose={closeFocus} /> : null}
           {notice ? <CabinNotice notice={notice} mission={mission} onClose={closeFocus}

@@ -565,6 +565,12 @@ class JournalStore:
                 validate_reconciled_shadow_qualification_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid reconciled shadow qualification: {exc}") from exc
+        elif source["kind"] == "SHADOW_EXPERIMENT":
+            from .shadow_experiment import validate_shadow_experiment_event
+            try:
+                validate_shadow_experiment_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid prospective shadow experiment: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:
