@@ -547,6 +547,12 @@ class JournalStore:
                 validate_native_closure_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid native evidence-closure review: {exc}") from exc
+        elif source["kind"] == "TRADING_INDEPENDENT_EVIDENCE_RECONCILIATION":
+            from .evidence_reconciliation_journal import validate_evidence_reconciliation_event
+            try:
+                validate_evidence_reconciliation_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid independent evidence reconciliation: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:

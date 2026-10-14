@@ -288,3 +288,10 @@ unclipped; a ready shadow study design establishes no economic or execution
 authority. Auto-trading stays **OFF**. See the
 [validation record](docs/NATIVE_EVIDENCE_CLOSURE_VALIDATION.md) for exact commands,
 fixture and retained-real coverage, results and remaining native prerequisites.
+
+[Independent effective-date and historical applicability reconciliation](docs/INDEPENDENT_EVIDENCE_RECONCILIATION.md)
+adds a passive v22 report for retained independent action inventories, feed/size
+scope, fee documentation and account/mode applicability. Matching declarations
+cannot replace native gates or populate cost parameters. Auto-trading remains
+**OFF**. Actual test and evidence results are recorded in the
+[validation report](docs/INDEPENDENT_EVIDENCE_RECONCILIATION_VALIDATION.md).
