@@ -295,3 +295,9 @@ scope, fee documentation and account/mode applicability. Matching declarations
 cannot replace native gates or populate cost parameters. Auto-trading remains
 **OFF**. Actual test and evidence results are recorded in the
 [validation report](docs/INDEPENDENT_EVIDENCE_RECONCILIATION_VALIDATION.md).
+
+[Governed reconciled action intake](docs/RECONCILED_ACTION_INTAKE.md) freezes
+provider and issuer evidence under a new shadow policy and retains a separate
+candidate overlay. Original native masks and policies remain unchanged; the
+overlay grants no execution authority. Auto-trading remains **OFF**. See its
+[validation record](docs/RECONCILED_ACTION_INTAKE_VALIDATION.md).

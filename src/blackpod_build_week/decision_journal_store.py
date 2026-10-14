@@ -553,6 +553,12 @@ class JournalStore:
                 validate_evidence_reconciliation_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid independent evidence reconciliation: {exc}") from exc
+        elif source["kind"] in {"TRADING_RECONCILED_ACTION_POLICY", "TRADING_RECONCILED_ACTION_INTAKE"}:
+            from .reconciled_action_journal import validate_reconciled_action_event
+            try:
+                validate_reconciled_action_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid reconciled action intake: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:
