@@ -40,10 +40,10 @@ separate terminal, then build/start the reader with the optional URL:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python3.11 -m http.server 5182 \
-  --bind 127.0.0.1 --directory output/reversal-historical-baseline-002
+  --bind 127.0.0.1 --directory output/reversal-historical-dashboard-002
 
 # Separate terminal. This changes presentation only; it does not collect data.
-VITE_SHADOW_HISTORICAL_REPORT_URL=http://127.0.0.1:5182/report.html \
+VITE_SHADOW_HISTORICAL_REPORT_URL=http://127.0.0.1:5182/dashboard.html \
   make cabin-live CABIN_LIVE_PORT=5181 \
   SHADOW_EXPERIMENT_ROOT="$PWD/output/prospective-reversal-pilot-2026-10-14/journal"
 ```
@@ -181,7 +181,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
 ```
 
 Run after 20:15 New York time and before the next source session's 03:55 New
-York deadline. The scheduled collection uses 18:30 Los Angeles time, including
+York deadline. The scheduled collection uses 01:30 UTC daily, including
 weekends, to capture completed data before the next possible source opening.
 The machine and Codex scheduler must be available; missed deadlines stay
 missed. Collection stops making provider calls once the completed cohort has
@@ -261,7 +261,7 @@ hash and semantic replay. This does not claim a new full replay of its later
 was modified.
 
 The active Codex thread follow-up, **Collect BlackPod reversal pilot**, captures
-daily at 18:30 Los Angeles time, with a schedule cap after December 4. It stops
+daily at 01:30 UTC, with the unchanged schedule cap after December 4 Los Angeles. It stops
 collection after completed rows are resolved and calls for manual review.
 Scheduler/application availability is required; this is a local collector,
 not a deployed always-on service. Auto-trading was checked OFF before and

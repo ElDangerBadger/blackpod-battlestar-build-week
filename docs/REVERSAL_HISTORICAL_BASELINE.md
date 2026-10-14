@@ -6,6 +6,54 @@ baseline. Across **6,165 paired observations**, the mean candidate response is
 Mean excess is **−0.0008975071%** per candidate window, before costs.
 This pooled historical comparison does not show an advantage over the control.
 
+## Simple dashboard
+
+Open [the historical dashboard](http://127.0.0.1:5182/dashboard.html). It shows
+two bars on the same zero-based scale, the rule/control averages and their
+difference in percentage points. The plain-language conclusion follows the
+exact retained difference, not rounded labels. For this real baseline, the
+rule and control are nearly tied, with the control slightly ahead before costs.
+This does not demonstrate a trading edge or net profitability.
+
+The original detailed report remains at
+[report.html](http://127.0.0.1:5182/report.html), accessible under
+**Data, original report & limitations**. Its bytes, calculations and evidence
+are preserved. The dashboard is a separate presentation, not another trial or
+backtest. It adds no trading controls.
+
+Export an immutable presentation copy from the already verified baseline:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.shadow_historical_dashboard export \
+  --baseline-root output/reversal-historical-baseline-002 \
+  --output-root output/reversal-historical-dashboard-002
+
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python3.11 -m http.server 5182 \
+  --bind 127.0.0.1 --directory output/reversal-historical-dashboard-002
+
+# Separate terminal: build the Cabin with the simple historical view linked.
+VITE_SHADOW_HISTORICAL_REPORT_URL=http://127.0.0.1:5182/dashboard.html \
+  make cabin-live CABIN_LIVE_PORT=5181 \
+  SHADOW_EXPERIMENT_ROOT="$PWD/output/prospective-reversal-pilot-2026-10-14/journal"
+```
+
+The exporter verifies the full original bundle, copies its exact declared
+files, retains the new renderer and publishes a source-bound dashboard manifest.
+It never writes into the source or journal. Exact retries are idempotent;
+conflicting output is rejected. Interrupted exports can be retried. The
+original bundle verifier also verifies the evidence copy. The dashboard's
+**auto-trading OFF** statement describes the retained research record, not a
+live runtime poll. Runtime OFF is checked separately.
+
+Both pages are local read-only servers; keep their processes running. The
+separate collector now runs daily at 01:30 UTC: 6:30 p.m. Los Angeles before
+November's clock change and 5:30 p.m. afterward. Both times satisfy the frozen
+readiness/deadline window. The existing December 4 local schedule cap, cohort
+and criteria are unchanged. The previous 18:30 setting was being evaluated in
+UTC and ran too early. This clock correction does not add observations or
+extend the experiment. Collection requires the computer and Codex scheduler.
+
 The [prospective experiment](PROSPECTIVE_SHADOW_EXPERIMENT.md) remains unchanged:
 30 sessions, its original universe and criteria, append-only predictions and
 outcomes, and auto-trading OFF. Historical reconstructions never enter its
@@ -17,9 +65,8 @@ ModelDock, brokers, desk budgets, execution or the existing UI.
 
 Open [the experiment](http://127.0.0.1:5181/?view=research) and use **Refresh
 saved records** when returning to a hidden/paused tab. Refresh reads the saved
-journal; it does not collect prices. Daily collection is scheduled for 18:30
-Los Angeles time and requires the local machine and Codex scheduler to be
-available.
+journal; it does not collect prices. Daily collection uses the verified UTC
+clock described above and requires the local machine and Codex scheduler.
 
 Watch the page in this order:
 
