@@ -307,3 +307,13 @@ adds versioned window witnesses and restrictive vetoes while retaining every
 original native gate. Current effective study eligibility remains false and
 auto-trading stays **OFF**. Actual checks are recorded in its
 [validation record](docs/RECONCILED_SHADOW_QUALIFICATION_VALIDATION.md).
+
+The [research consolidation inventory](docs/RESEARCH_ACCEPTANCE.md) distinguishes
+existing desk research from empirical validation. Read-only acceptance-state
+and baseline exports preserve original journal records, separate eligibility
+from outcomes, retain domain/horizon differences and report unavailable metrics
+explicitly. Oracle's existing supplement validator adds bounded semantic
+contradiction checks without claiming general entailment. The
+[completion report](docs/RESEARCH_ACCEPTANCE_VALIDATION.md) records actual tests,
+retained-data coverage and prospective-readiness blockers. Auto-trading remains
+**OFF**; no research publication activates capital or execution.

@@ -1,5 +1,44 @@
 # Research validation and evidence gate
 
+## Consolidation checkpoint after journal v24
+
+The completion/validation sprint starts at
+`9f221a6c36f532dfb084a53a078af600ba07840c`, with a clean working tree. It
+consolidates the existing architecture rather than implementing the previously
+recommended coverage-admission burst. That burst remains outstanding. The
+[validation report](RESEARCH_ACCEPTANCE_VALIDATION.md) separates this sprint's
+executed checks and retained-data baseline from the original v17 checkpoint.
+
+| Component | Actual implementation and validation boundary | Remaining limitation |
+| --- | --- | --- |
+| Acquisition and normalization | `trading_historical_intake.py` binds retained bars/calendar responses; `train_market_capture.py`, `train_market_export.py` and the segmented consumer retain scoped TRAIN quote chains. The retained QQQ/SPY acquisition completed 228 windows and 456 symbol/session pairs. | Complete retrieval does not prove action coverage, point-in-time vintages, quote-size normalization, costs or executable capacity. |
+| Forecasting and historical research | `forecast_producer_export.py`, `shadow_quantitative_producer.py`, `trading_shadow_intents.py` and `trading_shadow_evaluation.py` retain explicit horizons, original hypotheses, reproducible arithmetic and controls. | Retained current forecast records have no subsequent governed outcome measurements. Real trading hypotheses remain deferred; no predictive edge is established. |
+| Brigade and Senate | `shadow_brigade_analysis.py`, structured response contracts and `brigade_shadow_transport.py` preserve advisory opinions/dissent. `council_adapter.py` delegates the canonical Council/Senate boundary. | Structured validity is not independent corroboration or semantic truth. The separate Brigade consistency diagnostic is not implemented. |
+| Microcap Sentry | `sentry_reader.py`, `sentry_history_cache.py`, `sentry_history_recovery.py`, `sentry_research_reader.py` and `sentry_scan_reader.py` validate retained snapshots, recovery evidence and frozen research. | The legacy observation archive is synthetic; the real universe is not a verified microcap universe. The frozen V2 study selected no successful policy and completed zero prospective sessions. Reader readiness is not scanner or collector health. |
+| Oracle | `oracle_adapter.py` delegates canonical observations; `oracle_enrichment_workflow.py` retains optional narration; `oracle_market_brief.py` and `oracle_brief_reader.py` prepare/validate the separate source-bound supplement. | Finite deterministic guards cannot establish arbitrary prose entailment, causality or a forecast. Missing MA, named-sector or historical-comparison evidence cannot be invented. |
+| ModelDock | `modeldock_client.py` validates requests/responses, deadlines, structured output, provenance and safe failures. Existing routing remains appliance-owned. | Offline transport tests do not establish current service health or narrative accuracy. No inference is run by this sprint. |
+| Navigator | `navigator_adapter.py` checks mission/operator lineage and native SHADOW outputs; reference readers display explicitly selected captured charts. | A SHADOW handoff is not order authorization. The separate legacy PAPER controller remains OFF and is not the replacement Trading Desk strategy. |
+| Decision Journal | `decision_journal_store.py` verifies retained evidence and complete mixed-version history; `decision_journal_batch.py` preflights locked immutable suffix publication. Versions v1–v24 remain supported. | Integrity is local retained-byte reproducibility, not authenticated source truth. Large quote-history replay remains expensive; raw local artifacts are not Git backups. |
+| Investment Desk | `investment_hypothesis.py`, `investment_review.py`, `investment_governance.py` and `investment_approval.py` retain thesis/expectations, challenge, deadline evidence and portfolio-risk review. | Economic meanings, valuation, independent evidence and full-horizon monitoring are not established by generic scalar predicates. Review identities remain declarations. |
+| Trading Desk | Independent frozen hypotheses, next-open shadow producers, matched-entry-notional/duration controls, cost stresses, native qualification and v24 overlay witnesses are implemented. | All 450 selected real opportunities remain deferred. Existing Galactica execution logic is not reused as the replacement research strategy. |
+| Capital Allocation | `CapitalPolicyProposal` in `contracts/decision_journal.py` fixes 50%/50%, `PROPOSED`, `INITIAL_ALLOCATION_ONLY`, disabled activation/transfers/reallocation and explicit authorization for later changes. `paper_test_budget.py` retains the separate inactive 25%-of-captured-equity test allocation. | No active allocator, autonomous redistribution or operational desk budget is introduced. Neither research desk can change capital authorization. |
+| Research acceptance | Existing v17 contracts, separate desk evaluators and exact-source journal replay already implement all six classifications. | Original v1 presents one classification and a performed flag. The additive state view separates eligibility, integrity and outcome without rewriting that record. |
+
+The Captain's Cabin remains a reader. Opening, refreshing or publishing research
+does not start a mission, invoke ModelDock, install ownership or submit an order.
+Canonical mission workflows and sibling repositories are unchanged. Historical
+demo/replay commands and the OFF legacy executor are retained compatibility
+interfaces, not competing new research engines.
+
+Shared evidence does not confer shared decision authority. Trading and
+Investment records retain their originating domain, exact hypothesis revision,
+method and horizon. Comparisons concern coverage and evidence integrity;
+deadline predicates are not pooled with simulated trade returns as one accuracy
+score. CAPITAL_ALLOCATION remains separate oversight.
+
+No new journal version, product agent, dependency, live hook, capital policy or
+execution path is needed for this consolidation.
+
 Research acceptance describes what retained evidence permits BlackPod to
 conclude. It grants neither desk permission to trade, invest, activate capital,
 change a policy or promote a strategy. Trading and Investment use a common
@@ -170,6 +209,103 @@ policy change and promotion stay disabled. Realized trade P&L remains null for
 these non-executed studies. No assessment installs a budget, ownership book,
 order, strategy or automatic capital reallocation.
 
+## Separate eligibility, integrity and outcome
+
+`contracts/research_acceptance_state.py` and `research_acceptance_state.py`
+provide `blackpod.research_acceptance_state.v1`, a read-only projection of one
+exact verified v17 assessment. The existing journal format and all five frozen
+acceptance methods remain unchanged. This is not a new gate or an evaluation
+written back over the original record.
+
+| State field | Meaning |
+| --- | --- |
+| `eligibility` | `EVALUABLE` or `NOT_EVALUABLE`, derived from the original method's scope and source-bound prerequisites. A performed native calculation is not sufficient. |
+| `integrity` | `VALID` or `INVALID` for the selected source-consistency review; `VALID` does not mean authenticated or economically true. Corrupt source history rejects before projection. |
+| `outcome` | Null until an eligible scoped assessment has an outcome; otherwise `SUPPORTED`, `CONTRADICTED` or `INCONCLUSIVE`. |
+| `original_classification` | The original v17 value, retained verbatim even when the new view separates its eligibility and outcome differently. |
+| `classification` | Derived six-way presentation with integrity failure first, missing prerequisites next, then outcome or pre-outcome eligibility. |
+| `evaluation_performed`, `native_evaluation_performed` | Scoped outcome assessment versus the original calculation's performed flag. They need not be identical. |
+
+The exact strict original assessment and hypothesis remain embedded, preserving
+creation clock, statement, horizon, thresholds, scope, evidence, evaluation
+clock, methodology and provenance. Trading scope binds its retained original
+research plan; it cannot be replaced by a different symbol list. Source and
+projection-method hashes identify the calculation. Both broad
+`ECONOMIC_VALIDATION` scopes remain not evaluable under the original v1 evidence
+limits, even if descriptive arithmetic ran. Narrow Investment deadline support
+is not economic-thesis support. All authority flags remain false.
+
+For the existing authored example's exact pre-evaluation assessment:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m blackpod_build_week.research_acceptance_cli state \
+  --journal-root output/research-acceptance-example-001/journal \
+  --event-id journal-event-7dcbff71280107c9e2c24ea766ae545e89d3e087847bd5c72c927e4149844daa \
+  --output output/research-validation-completion-001/fixture-state.v1.json
+```
+
+Omitting `--output` prints the same state. The CLI verifies complete history,
+then the projector replays the exact assessment and its prefix. The projector
+alone does not attest to unrelated later history. No command appends an event.
+
+## Reproducible research baseline
+
+`research_baseline.py` consumes the existing journal and domain evaluators. It
+does not introduce another evaluator or acceptance policy. The explicit offline
+`research_baseline_cli` exports a content-identified report with a fixed `as_of`
+clock, bound source identities and calculation provenance. Its public path uses
+full semantic journal replay; the pure function labels its narrower checks and
+does not claim whole-history verification.
+
+Reports preserve desk, native methodology, horizon, evidence scope and original
+classification. They inventory hypotheses, dataset provenance, assessments and
+supersession, native measurements, forecast reviews and later evidence
+diagnostics. Repeated forecast source bytes remain distinct desk/intake reviews;
+unique raw-source counts are separate from review counts. Neither count is an
+independent prediction sample. Existing simulated cash/control comparisons stay
+per native fold and cost stress rather than becoming a cross-desk return.
+
+The caller must explicitly declare one of four cohorts:
+
+- `RECORDED_HISTORICAL_HYPOTHESES`
+- `RECONSTRUCTED_HISTORICAL_RESEARCH`
+- `PROSPECTIVE_SHADOW_RESEARCH`
+- `SYNTHETIC_FIXTURE_ONLY`
+
+Known incompatible synthetic or retrospective inputs reject. A prospective
+label alone does not authenticate precommitment, publication-time data or an
+independent prospective sample. A report does not transform later-captured
+history into historical predictions. The report clock must cover every selected
+record; it does not backdate those records or manufacture outcome observations.
+
+Run against the retained latest Trading history on this machine:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.research_baseline_cli \
+  --journal-root output/reconciled-shadow-qualification-real-001/journal \
+  --cohort RECONSTRUCTED_HISTORICAL_RESEARCH \
+  --as-of 2026-10-14T06:00:00Z \
+  --output output/research-validation-completion-001/current-trading-baseline.v1.json
+```
+
+This is an expensive full retained-history verification, not a health-check
+poll. Use explicitly selected smaller fixture histories during development.
+All exports are immutable and use existing source/runtime/path protections.
+Exact retries retain the same report bytes. The ignored local journals and
+reports are not supplied by a Git push.
+
+Directional accuracy, precision/recall, false-positive rates, forecast error,
+calibration, regime performance and predictive effectiveness remain null with
+explicit reason codes when appropriate labels, linked outcomes or independent
+samples do not exist. Elapsed targets are not measured outcomes. Existing
+native descriptive measurements are retained where available; synthetic
+measurements demonstrate software behavior only. Sustained prospective work
+still needs frozen hypotheses/methods, accountable source/recording clocks,
+subsequent governed observations and review of evidence prerequisites. It does
+not need a new hierarchy of agents.
+
 ## Representative offline cases
 
 The example reuses frozen authored fixtures without optimizing prices, rules,
@@ -268,14 +404,19 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
 The checkpoint validation report records actual final results and the selected
 offline regression commands; software test counts are not performance metrics.
 
-## Real-data limits and readiness
+## Original v17 real-data limits and readiness
 
-The retained real dataset contains 760 sessions per QQQ/SPY symbol. The existing
-real studies correctly deferred: corporate-action effective-date coverage is
-unverified, raw-price discontinuities are present, quote evidence covers one
-opening minute per symbol rather than the full history, cost assumptions are
-absent and sizing approval remains proposed. They produced no intents, fills or
-scores. This checkpoint reuses that history and adds no data/provider requests.
+At the original v17 checkpoint the retained real dataset contained 760 sessions
+per QQQ/SPY symbol. Those studies correctly deferred: corporate-action
+effective-date coverage was unverified, raw-price discontinuities were present,
+quotes covered one opening minute per symbol, cost assumptions were absent and
+sizing approval remained proposed. They produced no intents, fills or scores.
+Later bounded TRAIN acquisition completed the requested 456 symbol/session
+pairs; see the consolidation inventory above and the
+[segmented qualification validation](SEGMENTED_EVIDENCE_QUALIFICATION_VALIDATION.md).
+Retrieval completion does not close the remaining native gates. The newer v24
+overlay retains all 450 opportunities as deferred, without changing the old
+v17 result or claiming real performance.
 
 Trading can reproduce deterministic evaluations of fully specified authored
 fixtures. It cannot yet demonstrate a credible economically robust evaluation

@@ -35,6 +35,10 @@ def build_parser():
     command = commands.add_parser("show")
     command.add_argument("--journal-root", type=Path, required=True)
     command.add_argument("--event-id", required=True)
+    command = commands.add_parser("state", help="Project separate eligibility, integrity and outcome from an exact retained assessment")
+    command.add_argument("--journal-root", type=Path, required=True)
+    command.add_argument("--event-id", required=True)
+    command.add_argument("--output", type=Path)
     return parser
 
 
@@ -92,6 +96,12 @@ def main(argv=None):
                 path = args.output_directory / "request.v1.json"
                 _write(path, request.to_bytes(), protected)
                 result = {"request_path": str(path.absolute()), "assessment_id": request.assessment_id, "auto_trading_enabled": False}
+            elif args.command == "state":
+                from .research_acceptance_state import project_assessment_state
+                state = project_assessment_state(args.event_id, events, blobs)
+                if args.output is not None:
+                    _write(args.output, state.to_bytes(), [store.root])
+                result = state.to_dict()
             elif args.command == "show":
                 matches = [event for event in events if event.event_id == args.event_id and event.event_type == EVENT_TYPE]
                 if len(matches) != 1:

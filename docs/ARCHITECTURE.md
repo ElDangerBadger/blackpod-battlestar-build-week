@@ -1,5 +1,13 @@
 # Architecture
 
+The current research consolidation inventory and measured readiness are maintained
+in [Research acceptance](RESEARCH_ACCEPTANCE.md) and its
+[validation report](RESEARCH_ACCEPTANCE_VALIDATION.md). The acceptance journal,
+desk methods and later v24 qualification already exist. Consolidation adds
+read-only eligibility/outcome and coverage-baseline views, plus bounded Oracle
+semantic guardrails; it does not add another decision authority or journal.
+All desk/capital permissions remain separate and auto-trading remains OFF.
+
 BlackPod Battlestar's Captain's Cabin is a live, read-only presentation of
 canonical mission evidence. The repository retains its existing filesystem-backed
 mission orchestration and bounded ModelDock narrative seam, but the product's
