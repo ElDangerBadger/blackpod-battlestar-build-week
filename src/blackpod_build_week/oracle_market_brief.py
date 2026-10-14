@@ -27,6 +27,7 @@ from .hashing import canonical_json_bytes, sha256_bytes
 from .modeldock_client import ModelDockClient, ModelDockClientError, ModelDockCallResult
 from .modeldock_config import load_modeldock_config
 from .narrative_diagnostics import CanonicalBriefValidationError
+from .oracle_brief_reader import validate_brief_semantics
 from .oracle_enrichment_workflow import ORACLE_EVIDENCE_ARTIFACTS
 
 
@@ -165,8 +166,12 @@ def _validate_draft_with_diagnostics(module: types.ModuleType, value: Any, evide
     actual class from the trusted module, never a model-supplied class name.
     """
     try:
-        return module.validate_draft(value, evidence)
+        result = module.validate_draft(value, evidence)
     except module.OracleMarketBriefError as error:
+        raise CanonicalBriefValidationError(error) from None
+    try:
+        return validate_brief_semantics(result, evidence)
+    except ValueError as error:
         raise CanonicalBriefValidationError(error) from None
 
 
@@ -194,6 +199,7 @@ def _existing_brief(root: Path, module: types.ModuleType, evidence: dict) -> dic
         raw = _read_file(root, BRIEF_PATH, max_bytes=MAX_BRIEF_BYTES)
         value = parse_strict_json_object_bytes(raw)
         result = module.validate_brief(value, evidence)
+        validate_brief_semantics(result["report"], evidence)
         if canonical_json_bytes(result) != raw:
             raise ValueError("serialization differs")
         return result
@@ -437,7 +443,7 @@ def generate_market_brief(
             or acknowledgement.get("validated") is not True
         ):
             raise OracleMarketBriefError("ModelDock result lacks confirmed schema-constrained generation and validation")
-        draft = module.validate_draft(result.parsed_content, evidence)
+        draft = _validate_draft_with_diagnostics(module, result.parsed_content, evidence)
         provenance = {
             "provider": result.provider, "model": result.model,
             "model_revision": result.model_revision, "trace_id": result.trace_id,

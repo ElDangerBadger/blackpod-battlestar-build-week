@@ -12,6 +12,35 @@ links to recorded Oracle facts; exact values, their meanings, and model
 provenance are expandable. Market snapshot time and generation time are
 separate. A brief written today about an old mission is **not today's market**.
 
+## Deterministic semantic guardrails
+
+The existing Build Week publication validator now checks a finite set of
+recognizable directional and relationship contradictions against the canonical
+evidence catalog. Generation, existing-brief reuse and the read-only reader use
+the same checks. They compare positive participation and defensive/cyclical rank
+relationships, preserve the declared breadth posture, and reject recognizable
+unsupported aggregate price direction, moving-average relationships,
+named-sector leadership, market causes, forward certainty and temporal claims
+without prior evidence. A participation fraction is not an aggregate index
+return; cross-sectional rank strength is not a return or a probability.
+
+Supported explanatory prose, uncertainty and conditional scenarios remain
+available. The validator does not generate a metric-only replacement narrative,
+repair a response, alter the prompt or retry inference. Rejected prose is not
+published; existing sanitized diagnostics and durable attempt reservations
+remain in force. A historical brief that fails the current check remains intact
+on disk and is unavailable to the reader rather than rewritten.
+
+These English-pattern checks are deliberately bounded. They can miss
+paraphrases and do not establish arbitrary semantic entailment, causal truth,
+overall narrative quality or predictive effectiveness. The receipt retains
+`STRUCTURE_CITATIONS_AND_GUARDRAILS_CHECKED_NOT_ENTAILMENT_VERIFIED`. The current
+catalog contains aggregate proxy evidence, not MA histories or named-sector
+return observations. Testing unsupported assertions is not a claim that those
+missing analytical capabilities have been implemented. See the
+[consolidation validation](RESEARCH_ACCEPTANCE_VALIDATION.md) for the actual
+regressions, retained-narrative check and unresolved limits.
+
 ## Explicit generation from an existing LIVE mission
 
 Use the repository virtual environment and the existing local ModelDock service.

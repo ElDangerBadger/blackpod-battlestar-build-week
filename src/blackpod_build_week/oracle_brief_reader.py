@@ -6,6 +6,7 @@ Hashes and citations establish evidence identity, not semantic entailment.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import re
@@ -21,6 +22,126 @@ SOURCE_NAMES = frozenset({"oracle_measurements", "oracle_measurement_diagnostics
     "oracle_readiness_report", "oracle_assessment", "oracle_report"})
 SECTION_IDS = ("participation", "leadership", "rotation", "risk", "watchpoints", "limits")
 VALIDATION_STATUS = "STRUCTURE_CITATIONS_AND_GUARDRAILS_CHECKED_NOT_ENTAILMENT_VERIFIED"
+
+
+def validate_brief_semantics(report, evidence):
+    """Reject bounded, recognizable contradictions; never attest entailment.
+
+    This aggregate catalog contains participation fractions and relative group
+    ranks, but no moving averages, named-sector returns, causal identification,
+    or future outcomes. Those missing facts cannot be inferred from citations.
+    The checks deliberately do not grade arbitrary prose, economic truth, or
+    overall narrative quality. The receipt's original limitation remains true.
+    """
+    facts = {fact["fact_id"]: fact["value"] for fact in evidence["facts"]}
+
+    def fail(rule):
+        # Fixed messages only: callers must never persist rejected model prose.
+        raise ValueError("Oracle brief semantic check failed: " + rule)
+
+    def number(name):
+        value = facts.get("oracle.measurements." + name)
+        if type(value) not in (int, float):
+            fail("missing_relationship_evidence")
+        try:
+            result = Decimal(str(value))
+        except InvalidOperation:
+            fail("missing_relationship_evidence")
+        if not result.is_finite():
+            fail("missing_relationship_evidence")
+        return result
+
+    paragraphs = [report["headline"], *(
+        item for section in report["sections"] for item in section["paragraphs"]
+    )]
+    for paragraph in paragraphs:
+        text = paragraph["text"].lower().replace("-", " ")
+        # Only affirmative grammatical patterns are matched. Caveats such as
+        # "moving-average relationships are unavailable" remain useful prose.
+        if re.search(r"\b(?:price|prices|market|index|indices|stocks?)\b[^.;!?]{0,45}"
+                     r"\b(?:above|below|cross(?:es|ed|ing)?)\b[^.;!?]{0,35}"
+                     r"\b(?:moving average|ma|sma|ema)\b", text):
+            fail("unsupported_moving_average_relationship")
+        if re.search(r"\b(?:technology|financials?|energy|utilities|healthcare|"
+                     r"industrials?|materials?|real estate|consumer discretionary|"
+                     r"consumer staples|communication services)\b\s+"
+                     r"(?:(?:sector|stocks?|shares?)\s+)?(?:is\s+|are\s+|remains?\s+)?"
+                     r"(?:lead(?:s|ing)?|lag(?:s|ging)?|outperform\w*|underperform\w*|"
+                     r"strongest|weakest|the leader|the laggard)\b", text):
+            fail("unsupported_named_sector_leadership")
+        for clause in re.split(r"[.;!?]", text):
+            causal = re.search(r"\b(?:because(?: of)?|due to|driven by|caused by|owing to)\b", clause)
+            if causal and re.search(r"\b(?:rally|decline|market|participation|breadth|"
+                                      r"sectors?|risk posture|leadership|rotation)\b", clause[:causal.start()]):
+                # Missing evidence may explain an epistemic limitation, not a
+                # market move. Keep that distinction rather than banning causal
+                # conjunctions from useful uncertainty explanations.
+                premise, reason = clause[:causal.start()], clause[causal.end():]
+                limitation = re.search(r"\b(?:uncertain|unknown|unavailable|cannot|"
+                                       r"not established|not supported)\b", premise)
+                missing = re.search(r"\b(?:missing|absent|incomplete|unavailable|lack of)\b", reason)
+                if not (limitation and missing and (evidence.get("warnings") or evidence.get("blockers"))):
+                    fail("unsupported_causality")
+            if re.search(r"\binvestors? (?:are |were )?(?:rotat\w*|flee\w*|seek\w*|prefer\w*)\b", clause):
+                fail("unsupported_causality")
+        if re.search(r"\b(?:will|shall|is going to|are going to|is set to|"
+                     r"are set to|is poised to|are poised to|is expected to|"
+                     r"are expected to)\s+(?:\w+\s+){0,2}"
+                     r"(?:rise|fall|rally|decline|recover|rebound|gain|lose|"
+                     r"outperform|underperform|improve|deteriorate)\b", text):
+            fail("unsupported_forward_prediction")
+        # Explicit conditional sentences are scenarios, not assertions that
+        # their antecedents describe this snapshot. Certainty and absent-domain
+        # guards above still apply; this is not a general prose trust bypass.
+        assertions = " ".join(sentence for sentence in re.split(r"(?<=[.!?])\s+", text)
+                              if not re.match(r"\s*(?:if|unless|were)\b", sentence))
+        # A positive-participation fraction cannot establish aggregate price
+        # direction. In particular, a high concentration can include losses.
+        if re.search(r"\b(?:the )?(?:market|index|indices)\s+"
+                     r"(?:is\s+|are\s+|was\s+|were\s+)?"
+                     r"(?:rising|falling|rallying|declining|advancing|retreating)\b", assertions):
+            fail("unsupported_aggregate_price_direction")
+        for match in re.finditer(
+            r"\b(?P<amount>most|a majority of|all|no)\s+(?:of the\s+|the\s+)?"
+            r"(?:measured\s+|supplied\s+|recorded\s+)?proxies\s+"
+            r"(?:are|were|have)\s+(?:positive|advancing|negative|declining)\b", assertions
+        ):
+            claim = match.group(0)
+            positive = bool(re.search(r"\b(?:positive|advancing)\b", claim))
+            breadth = number("breadth_score")
+            amount = match.group("amount")
+            # Breadth counts strictly positive returns. Its complement can
+            # include unchanged proxies, so negative counts are not supplied.
+            if not positive:
+                fail("unsupported_negative_participation_count")
+            accepted = {"most": breadth > Decimal("0.5"),
+                        "a majority of": breadth > Decimal("0.5"),
+                        "all": breadth == 1, "no": breadth == 0}[amount]
+            if not accepted:
+                fail("contradictory_participation_direction")
+        for match in re.finditer(
+            r"\b(?P<left>defensive|cyclical)(?:\s+group)?\s+"
+            r"(?:is\s+|are\s+)?(?P<relation>stronger than|weaker than|"
+            r"outperforms?|outperforming|trails?|trailing|leads?|leading)\s+"
+            r"(?:the\s+)?(?P<right>defensive|cyclical)(?:\s+group)?\b", assertions
+        ):
+            left, right = match.group("left"), match.group("right")
+            stronger = match.group("relation") not in ("weaker than", "trail", "trails", "trailing")
+            comparison = number(left + "_strength") - number(right + "_strength")
+            if not (comparison > 0 if stronger else comparison < 0):
+                fail("contradictory_group_relationship")
+        for match in re.finditer(r"\bbreadth\s+(?:is\s+|remains?\s+)?"
+                                 r"(?P<posture>expanding|contracting|stable)\b", assertions):
+            expected = match.group("posture").upper() + "_BREADTH"
+            if facts.get("oracle.assessment.breadth_posture") != expected:
+                fail("contradictory_breadth_posture")
+        warnings = evidence.get("warnings", [])
+        if "MISSING_PRIOR_ORACLE_MEASUREMENTS" in warnings and re.search(
+            r"\b(?:rotation\s+(?:is\s+|remains?\s+)?(?:unchanged|stable)|"
+            r"(?:rotation|breadth|leadership|risk posture)\s+"
+            r"(?:has\s+|has been\s+)?(?:improved|worsened|accelerat\w*|decelerat\w*))\b", assertions):
+            fail("unsupported_temporal_comparison")
+    return report
 
 
 def _require(condition):
@@ -135,6 +256,7 @@ def validate_brief_presentation(value, *, mission_id, request_id, symbol, refere
         _require(bool(paragraphs))
         for item in paragraphs:
             paragraph(item)
+    validate_brief_semantics(report, evidence)
     provenance = _object(value["provenance"], "provider model model_revision trace_id mocked request_sha256 response_sha256 started_at observed_at canonical_module_sha256")
     _require(provenance["provider"] == "mlx" and provenance["mocked"] is False)
     for key in ("model", "trace_id"):

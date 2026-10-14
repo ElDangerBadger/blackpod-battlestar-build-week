@@ -61,6 +61,17 @@ _TEXT_RULES = (
 # combinations explicit rather than pretending a failure identifies a word,
 # field position, or narrower condition that the validator did not report.
 _BRIEF_EXACT_RULES = {
+    **{
+        "Oracle brief semantic check failed: " + rule: (rule, "brief_text")
+        for rule in (
+            "missing_relationship_evidence", "unsupported_moving_average_relationship",
+            "unsupported_named_sector_leadership", "unsupported_causality",
+            "unsupported_forward_prediction", "unsupported_aggregate_price_direction",
+            "unsupported_negative_participation_count", "contradictory_participation_direction",
+            "contradictory_group_relationship", "contradictory_breadth_posture",
+            "unsupported_temporal_comparison",
+        )
+    },
     "draft: fields do not match the contract": ("fields_mismatch", "brief"),
     "unsupported draft schema": ("schema_version", "schema_version"),
     "paragraph: fields do not match the contract": ("fields_mismatch", "brief_paragraph"),
