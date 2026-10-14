@@ -16,7 +16,7 @@ describe("independent research view routing", () => {
   afterEach(() => { window.history.replaceState(null, "", "/"); });
   it("opens the explicit research page without reading a mission", () => {
     window.history.replaceState(null, "", "/?view=research"); render(<App />);
-    expect(screen.getByRole("heading", { name: "One hypothesis. One frozen experiment." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reversal experiment" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "No experiment configured" })).toBeInTheDocument();
     expect(useLiveMission).not.toHaveBeenCalled(); expect(useShadowExperiment).toHaveBeenCalledWith({ enabled: true });
   });

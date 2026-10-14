@@ -6,6 +6,54 @@ session in QQQ or SPY is followed by a positive opening-price response. The
 purpose is to collect new predictions before their outcomes exist and learn
 from one fixed experiment. Auto-trading remains OFF.
 
+## Read this first
+
+This is a research test of one simple rule, not the combined output of Oracle,
+Senate, Brigade, or every BlackPod model. For each ETF independently, a down day
+records a candidate. A day that does not qualify records an abstention. A
+candidate is an observation to measure, not an order to buy.
+
+The read-only page has three main pictures:
+
+- **30-session progress:** two checks per date, QQQ then SPY. Letters and colors
+  distinguish candidates, abstentions, missing inputs and missed deadlines.
+  Empty checks are future or unrecorded observations, not zero returns.
+- **Did the rule beat the control?:** the saved rule average and its saved
+  difference from equal-weight QQQ/SPY over the same dates. A marker to the
+  right means the rule is ahead; left means the control is ahead. Both are
+  before costs. A dash means no measured result, not a flat result.
+- **Historical baseline:** a separate report replaying the same rule on old
+  prices. It gives context; it never fills the forward test's empty checks.
+
+The default table shows only recorded predictions. **Show all 60 scheduled
+checks** reveals the complete schedule. **Rules & evidence** retains the frozen
+criteria, exact status details, identities, provenance and limitations. Refresh
+reads saved records only. Timestamps on this page use Los Angeles time.
+
+The historical result was effectively tied, with the control slightly ahead
+before costs. This does not establish a profitable strategy. See
+[the historical baseline guide](REVERSAL_HISTORICAL_BASELINE.md) for the numbers,
+protected date cutoff and data-quality limitations.
+
+To include the local report link, first serve the existing verified report in a
+separate terminal, then build/start the reader with the optional URL:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python3.11 -m http.server 5182 \
+  --bind 127.0.0.1 --directory output/reversal-historical-baseline-002
+
+# Separate terminal. This changes presentation only; it does not collect data.
+VITE_SHADOW_HISTORICAL_REPORT_URL=http://127.0.0.1:5182/report.html \
+  make cabin-live CABIN_LIVE_PORT=5181 \
+  SHADOW_EXPERIMENT_ROOT="$PWD/output/prospective-reversal-pilot-2026-10-14/journal"
+```
+
+The optional URL is included at UI build time and must be an HTTP loopback URL
+without credentials. Without it, the page explicitly says the report link is
+not configured. The link reads an existing report; it does not verify it,
+recalculate it, or claim it is current. The report server must remain running.
+No historical statistics are copied into the forward experiment feed.
+
 ## Fixed method and comparisons
 
 The original hypothesis bytes remain unchanged. Its signal is

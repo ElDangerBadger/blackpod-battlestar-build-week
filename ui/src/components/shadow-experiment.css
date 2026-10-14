@@ -1,40 +1,86 @@
-.shadow-experiment-page { box-sizing: border-box; overflow: auto !important; padding: clamp(1rem, 4vw, 3rem); background: #101a21; color: #e3eaf0; font-family: system-ui, sans-serif; line-height: 1.6; }
-.experiment-page-inner { max-width: 78rem; margin-inline: auto; }
-.experiment-page-inner > nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; font-size: .9rem; }
-.experiment-page-inner > nav a { color: #b6dce9; text-underline-offset: .2em; }
-.experiment-page-inner > nav span { color: #a4b8c6; }
+.shadow-experiment-page { box-sizing: border-box; overflow: auto !important; padding: clamp(1rem, 3vw, 2.5rem); background: #0d1922; color: #e5edf2; font-family: system-ui, sans-serif; line-height: 1.5; }
+.experiment-page-inner { max-width: 74rem; margin-inline: auto; }
+.experiment-page-inner > nav { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; margin-bottom: 1.6rem; font-size: .8rem; }
+.experiment-page-inner > nav a, .shadow-experiment a { color: #abd8e6; text-underline-offset: .25em; }
+.experiment-page-inner > nav span { color: #8fa9b9; }
 .shadow-experiment { overflow-wrap: anywhere; }
-.shadow-experiment h1 { margin: .2rem 0 .6rem; font-size: clamp(1.65rem, 3vw, 2.5rem); line-height: 1.2; letter-spacing: -.035em; }
-.shadow-experiment h2 { font-size: 1.2rem; margin: 0 0 .7rem; color: #eef5fa; }
-.experiment-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: clamp(1rem, 3vw, 2rem); border: 1px solid #496172; border-radius: .5rem; background: #1b2e3c; }
-.experiment-banner p { margin: .35rem 0; max-width: 60ch; color: #c5d6e0; }
-.experiment-banner .experiment-eyebrow { font-size: .72rem; font-weight: 700; color: #b4d7cb; letter-spacing: .09em; text-transform: uppercase; }
-.experiment-banner button { flex-shrink: 0; border: 1px solid #89abbe; border-radius: .25rem; background: #314c5e; color: #f1f7fb; padding: .7rem .9rem; font-family: inherit; font-size: .86rem; cursor: pointer; }
+.shadow-experiment h1 { margin: .35rem 0 .5rem; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.1; letter-spacing: -.045em; }
+.shadow-experiment h2 { font-size: 1.18rem; margin: .2rem 0 .8rem; color: #eef5fa; letter-spacing: -.015em; }
+.shadow-experiment p { max-width: 85ch; }
+.experiment-banner { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.experiment-banner p { margin: .35rem 0; color: #adc2cf; }
+.shadow-experiment .experiment-eyebrow { font-size: .67rem; font-weight: 700; color: #a4c6bb; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 .4rem; }
+.experiment-eyebrow > span { margin-left: .7rem; border-left: 1px solid #4d6b68; padding-left: .7rem; color: #d8bd85; }
+.experiment-banner button { flex-shrink: 0; border: 1px solid #506b7b; border-radius: .4rem; background: #1c3341; color: #e9f4fa; padding: .65rem .9rem; font-family: inherit; font-size: .8rem; cursor: pointer; }
 .experiment-banner button:disabled { opacity: .6; cursor: default; }
-.shadow-experiment :is(a, button, summary, [tabindex]):focus-visible { outline: 3px solid #b7dfef; outline-offset: 3px; }
-.experiment-boundary { border-left: 3px solid #b2c6a1; padding: .6rem .9rem; font-size: .9rem; color: #c9d7df; }
-.shadow-experiment > section { margin: 1.5rem 0; padding: 1.3rem; border: 1px solid #354b59; border-radius: .4rem; background: #15242e; }
-.shadow-experiment p { max-width: 90ch; }
-.experiment-section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; }
-.experiment-tag { color: #c0d8ce; border: 1px solid #628171; border-radius: 1rem; padding: .15rem .65rem; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-.experiment-facts { font-size: .88rem; }
-.experiment-facts > div { display: grid; grid-template-columns: minmax(10rem, .7fr) minmax(0, 2fr); gap: .7rem; padding: .6rem 0; border-bottom: 1px solid #314752; }
-.experiment-facts dt { color: #b5c8d3; }
-.experiment-facts dd { margin: 0; }
-.experiment-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin: 1rem 0; }
-.experiment-counts > div { padding: 1rem; border: 1px solid #3c5665; border-radius: .3rem; background: #1e3441; }
-.experiment-counts dt { color: #b6cbd7; font-size: .8rem; }
-.experiment-counts dd { margin: .35rem 0 0; font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.experiment-conclusion { margin-bottom: 0; padding: .6rem .9rem; border-left: 3px solid #b9b68d; background: #26333a; }
+.shadow-experiment :is(a, button, summary, input, [tabindex]):focus-visible { outline: 3px solid #b7dfef; outline-offset: 3px; }
+.experiment-boundary { margin: 1rem 0; font-size: .78rem; color: #a6bdcb; }
+.experiment-boundary strong { color: #dfc68f; }
+.experiment-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; margin: 1.4rem 0 1.6rem; padding: 0; border-block: 1px solid #29404f; }
+.experiment-steps li { display: flex; align-items: center; gap: .7rem; padding: 1rem .8rem; font-size: .73rem; color: #97b1bf; }
+.experiment-steps li > span { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: #213c49; color: #b5dfdc; flex-shrink: 0; }
+.experiment-steps strong { display: block; font-size: .8rem; font-weight: 500; color: #e2ecf2; }
+.shadow-experiment > section, .experiment-comparison-layout > section { margin: 1.1rem 0; padding: 1.3rem; border: 1px solid #304956; border-radius: .65rem; background: #142630; }
+.experiment-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.experiment-tag { color: #c4d9d0; border: 1px solid #4b6b62; border-radius: 1rem; padding: .25rem .65rem; font-size: .7rem; }
+.experiment-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin: 1rem 0 1.25rem; }
+.experiment-counts > div { border-left: 2px solid #496c7a; padding-left: .9rem; }
+.experiment-counts dt, .experiment-result-numbers dt { color: #a5becd; font-size: .74rem; }
+.experiment-counts dd { margin: .15rem 0 0; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.experiment-session-grid { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); gap: .65rem .4rem; }
+.experiment-day { min-width: 0; text-align: center; }
+.experiment-day-date { display: block; color: #9bb5c5; font-size: .6rem; white-space: nowrap; margin-bottom: .3rem; }
+.experiment-day > div { display: flex; justify-content: center; gap: .15rem; }
+.experiment-check { display: inline-grid; place-items: center; width: 1.35rem; height: 1.6rem; border: 1px solid #54717d; border-radius: .2rem; font-size: .74rem; font-weight: 650; flex-shrink: 0; }
+.experiment-check.waiting { background: #182c37; color: #9bb1c1; border-color: #3a5361; }
+.experiment-check.candidate { background: #244b46; color: #c4f4db; border-color: #639789; }
+.experiment-check.abstained { background: #294050; color: #b3d5ec; border-color: #607f94; }
+.experiment-check.missing { background: #514024; color: #ffe2a6; border-color: #b29359; }
+.experiment-check.missed { background: #512f36; color: #ffd6df; border-color: #a26e7d; }
+.experiment-legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; list-style: none; padding: 0; margin: 1rem 0 .5rem; color: #bacbd5; font-size: .7rem; }
+.experiment-legend li { display: flex; align-items: center; gap: .35rem; }
+.experiment-legend .experiment-check { width: 1rem; height: 1.1rem; font-size: .6rem; }
+.shadow-experiment .experiment-caption { color: #a7bdc9; font-size: .73rem; line-height: 1.5; margin-bottom: .4rem; }
+.experiment-clock { font-size: .72rem; color: #a7bdc9; border-top: 1px solid #2d4856; padding-top: .8rem; margin-bottom: 0; }
+.experiment-clock strong { color: #d5e4ec; font-weight: 500; }
+.experiment-data-warning { border-left: 3px solid #d5b070; padding: .5rem .7rem; font-size: .8rem; background: #342e25; color: #ffe0a4; }
+.experiment-comparison-layout { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1rem; }
+.experiment-comparison-layout > section { margin: 0; }
+.experiment-result-numbers { display: flex; gap: 2.5rem; margin: 1.15rem 0; }
+.experiment-result-numbers dd { margin: .3rem 0; font-size: 1.8rem; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.experiment-chart-empty { border-block: 1px dashed #3e5b6b; margin: 1rem 0; padding: .6rem; text-align: center; color: #9cb3c2; }
+.experiment-chart-empty > span { font-size: 1.6rem; }
+.experiment-chart-empty p { margin: .2rem 0 .5rem; font-size: .8rem; }
+.experiment-difference { margin: 1.5rem 0; }
+.experiment-axis-labels { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .63rem; color: #a6becd; }
+.experiment-axis { height: 1rem; position: relative; background: #223c49; margin: .65rem 0; border-radius: .15rem; }
+.experiment-zero { position: absolute; left: 50%; top: -.3rem; bottom: -.3rem; width: 1px; background: #9cb6c6; }
+.experiment-difference-bar { position: absolute; top: .1rem; bottom: .1rem; background: #73bca5; }
+.experiment-difference-bar.negative { background: #d4a26d; }
+.experiment-marker { position: absolute; top: 50%; transform: translate(-50%, -50%); width: .5rem; height: 1.5rem; background: #e4edf1; border-radius: .12rem; }
+.experiment-history-symbol { color: #8bb6c4; font-size: 2.5rem; line-height: 1; margin: .7rem 0; }
+.experiment-history > p:not(.experiment-eyebrow):not(.experiment-caption) { font-size: .85rem; color: #ccdce5; max-width: 36ch; }
+.experiment-history > a { display: inline-block; font-size: .85rem; font-weight: 600; margin: .3rem 0 .7rem; }
+.experiment-history > a span { margin-left: .4rem; }
+.experiment-filter { display: flex; align-items: center; gap: .4rem; font-size: .73rem; color: #b6cbd8; cursor: pointer; }
+.experiment-filter input { accent-color: #7fbdac; }
+.experiment-empty { padding: 1rem 0; color: #d5e2eb; font-size: .9rem; }
+.experiment-empty span { display: block; margin-top: .35rem; color: #9db7c5; font-size: .75rem; }
 .shadow-experiment details { padding: .8rem 0; }
-.shadow-experiment summary { cursor: pointer; font-weight: 600; }
+.shadow-experiment summary { cursor: pointer; font-weight: 600; font-size: .85rem; color: #c7dce7; }
 .shadow-experiment details li { margin-block: .45rem; }
 .shadow-experiment code { font-size: .8em; overflow-wrap: anywhere; }
+.experiment-method { border: 1px solid #304956; border-radius: .5rem; padding: 1rem 1.3rem !important; font-size: .82rem; color: #b6ccd9; }
+.experiment-method h2 { font-size: 1rem; margin-top: 1.4rem; }
+.experiment-facts { font-size: .8rem; }
+.experiment-facts > div { display: grid; grid-template-columns: minmax(10rem, .7fr) minmax(0, 2fr); gap: .7rem; padding: .6rem 0; border-bottom: 1px solid #314752; }
+.experiment-facts dt { color: #a6bdcb; }
+.experiment-facts dd { margin: 0; }
 .experiment-alert { border-color: #a88a60 !important; }
-.experiment-table-scroll { overflow: auto; border: 1px solid #466071; border-radius: .3rem; }
-.shadow-experiment table { border-collapse: collapse; min-width: 66rem; width: 100%; font-size: .78rem; }
-.shadow-experiment caption { text-align: left; padding: .8rem; color: #bbceda; background: #203642; }
-.shadow-experiment :is(th, td) { text-align: left; vertical-align: top; border-bottom: 1px solid #344d5c; padding: .85rem .7rem; }
+.experiment-table-scroll { overflow: auto; border: 1px solid #466071; border-radius: .3rem; margin-block: .8rem; }
+.shadow-experiment table { border-collapse: collapse; min-width: 60rem; width: 100%; font-size: .75rem; }
+.shadow-experiment caption { text-align: left; padding: .7rem; color: #bbceda; background: #203642; }
+.shadow-experiment :is(th, td) { text-align: left; vertical-align: top; border-bottom: 1px solid #344d5c; padding: .75rem .6rem; }
 .shadow-experiment th { color: #c8dce7; background: #1c303e; font-weight: 600; }
 .shadow-experiment td { font-variant-numeric: tabular-nums; }
 .shadow-experiment :is(th, td) > :is(span, small, code) { display: block; margin-top: .35rem; }
@@ -44,5 +90,6 @@
 .shadow-experiment-shortcut small { margin-left: .6em; color: #c5d0b2; }
 .shadow-experiment-shortcut:focus-visible { outline: 2px solid #e1bd71; outline-offset: 3px; }
 .cabin-loading .experiment-loading-link { margin-block: 1rem; color: #efd5a0; }
-@media (max-width: 750px) { .experiment-banner { flex-direction: column; gap: .8rem; } .experiment-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .experiment-facts > div { grid-template-columns: 1fr; gap: .2rem; } .shadow-experiment > section { padding: 1rem; } }
-@media (max-width: 420px) { .experiment-counts { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .experiment-session-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .experiment-banner { flex-direction: column; align-items: flex-start; gap: .8rem; } .experiment-comparison-layout { grid-template-columns: 1fr; } .experiment-steps { grid-template-columns: 1fr; } .experiment-steps li { padding: .6rem .2rem; } .experiment-facts > div { grid-template-columns: 1fr; gap: .2rem; } .shadow-experiment > section, .experiment-comparison-layout > section { padding: 1rem; } .experiment-session-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } .experiment-result-numbers { gap: 1.5rem; } }
+@media (prefers-reduced-motion: reduce) { .shadow-experiment * { scroll-behavior: auto; } }
