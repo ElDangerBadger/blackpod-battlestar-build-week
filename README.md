@@ -301,3 +301,9 @@ provider and issuer evidence under a new shadow policy and retains a separate
 candidate overlay. Original native masks and policies remain unchanged; the
 overlay grants no execution authority. Auto-trading remains **OFF**. See its
 [validation record](docs/RECONCILED_ACTION_INTAKE_VALIDATION.md).
+
+[Reconciled overlay shadow qualification](docs/RECONCILED_SHADOW_QUALIFICATION.md)
+adds versioned window witnesses and restrictive vetoes while retaining every
+original native gate. Current effective study eligibility remains false and
+auto-trading stays **OFF**. Actual checks are recorded in its
+[validation record](docs/RECONCILED_SHADOW_QUALIFICATION_VALIDATION.md).

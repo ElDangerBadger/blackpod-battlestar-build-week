@@ -559,6 +559,12 @@ class JournalStore:
                 validate_reconciled_action_event(event, previous_events, blobs)
             except ValueError as exc:
                 raise JournalVerificationError(f"invalid reconciled action intake: {exc}") from exc
+        elif source["kind"] == "TRADING_RECONCILED_SHADOW_QUALIFICATION":
+            from .reconciled_shadow_qualification_journal import validate_reconciled_shadow_qualification_event
+            try:
+                validate_reconciled_shadow_qualification_event(event, previous_events, blobs)
+            except ValueError as exc:
+                raise JournalVerificationError(f"invalid reconciled shadow qualification: {exc}") from exc
         elif source["kind"] == "EVALUATION":
             missions = tuple(item for item in matching if item.source["kind"] == "MISSION")
             if not missions:
