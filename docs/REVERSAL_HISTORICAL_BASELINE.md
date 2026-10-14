@@ -21,7 +21,13 @@ The original detailed report remains at
 are preserved. The dashboard is a separate presentation, not another trial or
 backtest. It adds no trading controls.
 
-Export an immutable presentation copy from the already verified baseline:
+The installed [standalone research station](BLACKPOD_STANDALONE_RESEARCH.md)
+serves this dashboard and the forward experiment. Double-click
+`~/Applications/BlackPod.app`; its user LaunchAgent continues after Codex or the
+app window closes. Do not start another server on its ports.
+
+For separate manual development, with the station stopped, export an
+immutable presentation copy from the already verified baseline:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
@@ -46,13 +52,16 @@ original bundle verifier also verifies the evidence copy. The dashboard's
 **auto-trading OFF** statement describes the retained research record, not a
 live runtime poll. Runtime OFF is checked separately.
 
-Both pages are local read-only servers; keep their processes running. The
-separate collector now runs daily at 01:30 UTC: 6:30 p.m. Los Angeles before
-November's clock change and 5:30 p.m. afterward. Both times satisfy the frozen
-readiness/deadline window. The existing December 4 local schedule cap, cohort
-and criteria are unchanged. The previous 18:30 setting was being evaluated in
-UTC and ran too early. This clock correction does not add observations or
-extend the experiment. Collection requires the computer and Codex scheduler.
+The standalone supervisor owns both local read-only servers and the collector.
+Collection uses **18:30 America/Los_Angeles** daily when original evidence is
+due: 01:30 UTC before November's clock change, 02:30 UTC afterward. The Mac
+must be awake, connected and logged in; Codex and the app window may be closed.
+The earlier Codex collector is **PAUSED**. Do not enable both schedules.
+The original October 14–November 24 signal cohort, November 27 final exit,
+December 4 local collection cap and criteria are unchanged. This operating
+change does not add observations, extend the experiment or make the historical
+data current. See the [station runbook](BLACKPOD_STANDALONE_RESEARCH.md) for
+status, recovery and explicit collection controls.
 
 The [prospective experiment](PROSPECTIVE_SHADOW_EXPERIMENT.md) remains unchanged:
 30 sessions, its original universe and criteria, append-only predictions and
@@ -65,8 +74,8 @@ ModelDock, brokers, desk budgets, execution or the existing UI.
 
 Open [the experiment](http://127.0.0.1:5181/?view=research) and use **Refresh
 saved records** when returning to a hidden/paused tab. Refresh reads the saved
-journal; it does not collect prices. Daily collection uses the verified UTC
-clock described above and requires the local machine and Codex scheduler.
+journal; it does not collect prices. The standalone user LaunchAgent owns the
+Los Angeles schedule above; the Mac must remain awake and logged in.
 
 Watch the page in this order:
 

@@ -39,6 +39,12 @@ The [historical reversal baseline](docs/REVERSAL_HISTORICAL_BASELINE.md) provide
 a separate retained-data comparison and 30-session historical context. It
 does not add retrospective rows to the prospective experiment.
 
+The [standalone BlackPod research app](docs/BLACKPOD_STANDALONE_RESEARCH.md)
+keeps these dashboards and the frozen nightly collector running independently
+of Codex. Double-click `~/Applications/BlackPod.app`; keep the Mac awake and
+logged in. The user LaunchAgent owns the 6:30 p.m. Los Angeles collection;
+the old Codex collector is paused and auto-trading stays OFF.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest

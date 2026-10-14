@@ -35,8 +35,15 @@ before costs. This does not establish a profitable strategy. See
 [the historical baseline guide](REVERSAL_HISTORICAL_BASELINE.md) for the numbers,
 protected date cutoff and data-quality limitations.
 
-To include the local report link, first serve the existing verified report in a
-separate terminal, then build/start the reader with the optional URL:
+The installed [standalone research station](BLACKPOD_STANDALONE_RESEARCH.md)
+serves both pages and owns nightly collection independently of Codex.
+Double-click `~/Applications/BlackPod.app`. Its background user LaunchAgent
+continues after the app window closes; keep the Mac awake and logged in.
+Do not start a second reader or collector on the station's ports.
+
+For a separate manual development session, with the station stopped, include
+the local report link by serving the existing verified report in a separate
+terminal, then building/starting the reader with the optional URL:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python3.11 -m http.server 5182 \
@@ -180,14 +187,23 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
   --credential-format GALACTICA_YAML
 ```
 
-Run after 20:15 New York time and before the next source session's 03:55 New
-York deadline. The scheduled collection uses 01:30 UTC daily, including
-weekends, to capture completed data before the next possible source opening.
-The machine and Codex scheduler must be available; missed deadlines stay
-missed. Collection stops making provider calls once the completed cohort has
-no pending rows. Pending outcomes can still be appended later, without
-backfilling valid predictions. Future outcomes cannot be collected ahead of
-their scheduled availability.
+The collector's admission window is after 20:15 New York time and before the
+next source session's 03:55 New York deadline. The installed user LaunchAgent
+owns daily collection at **18:30 America/Los_Angeles**, including weekends
+when original evidence is due. This is 01:30 UTC before November's clock
+change and 02:30 UTC afterward. Codex's previous collector is **PAUSED**;
+do not run the manual command alongside the station's scheduled collection.
+The Mac must be awake, connected and logged in; Codex and the app window may
+be closed. Missed deadlines stay missed.
+
+The original signal cohort remains October 14–November 24, 2026, with its
+final exit window November 27. Collection stops making provider calls once
+the completed cohort has no pending rows, or after **December 4 Los Angeles**,
+and calls for manual review. Only unresolved original outcomes may be added
+after the cohort ends, without backfilling valid predictions or adding signal
+sessions. Future outcomes cannot be collected ahead of their availability.
+See the [station runbook](BLACKPOD_STANDALONE_RESEARCH.md) for health checks,
+bounded retries, recovery and collection controls.
 
 The original freeze command is:
 
@@ -260,12 +276,15 @@ hash and semantic replay. This does not claim a new full replay of its later
 260-event historical descendant. Neither that descendant nor its decisions
 was modified.
 
-The active Codex thread follow-up, **Collect BlackPod reversal pilot**, captures
-daily at 01:30 UTC, with the unchanged schedule cap after December 4 Los Angeles. It stops
-collection after completed rows are resolved and calls for manual review.
-Scheduler/application availability is required; this is a local collector,
-not a deployed always-on service. Auto-trading was checked OFF before and
-after the real captures. No orders, broker account queries or inference ran.
+The initial captures above preceded scheduled standalone operation. The
+previous Codex follow-up, **Collect BlackPod reversal pilot**, is now **PAUSED**.
+The [standalone station](BLACKPOD_STANDALONE_RESEARCH.md) owns the unchanged
+pilot at 18:30 America/Los_Angeles, with the same December 4 local cap and
+manual-review boundary. It requires the local Mac awake and logged in,
+independently of Codex or the native window. The first standalone due run is
+October 14, 2026, at 18:30; installation checks do not count as that capture.
+Auto-trading was checked OFF before and after the initial real captures.
+No orders, broker account queries or inference ran.
 
 Validation passed on the implementation revision:
 
