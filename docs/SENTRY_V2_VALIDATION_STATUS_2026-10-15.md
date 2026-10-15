@@ -31,7 +31,19 @@ arrived roughly 90 seconds later with 504, rather than the earlier v1 HTTP
 422 schema rejection. This confirms endpoint reachability and request
 admission, **not successful v2 structured completion**. No model response or
 model provenance was accepted. The challenge remains `ORACLE_NOT_ACCEPTED`.
-No causal diagnosis of the inference timeout has been established.
+
+Read-only inspection of the installed ModelDock runtime locates the timeout
+layer: `src/router/request_router.py::RequestRouter.generate_text` wraps
+`provider.execute_with_provenance` in `asyncio.wait_for` using the routed
+90-second timeout. `src/api/errors.py::classify_error` maps that `TimeoutError`
+to HTTP 504. It precedes BlackPod's 95-second delivery deadline. In
+`providers/mlx.py`, `MLXComputeHandle.result` shields native work and
+`MLXExecutionGate` retains compute ownership until its synchronous worker
+exits. Thus zero active HTTP requests with one active compute after the 504
+is consistent with ongoing native work; it does not establish token progress
+or a successful result. The underlying reason generation took too long has
+not been established. No ModelDock source, model, deadline or routing was
+changed, and no additional generation request was made.
 
 Exact bounded command:
 
@@ -69,6 +81,12 @@ The verified owned station was gracefully restarted after collectors were
 idle to load the updated source and read-only validation banner. ModelDock was
 not restarted or reconfigured. The page separates historical evidence time
 from validation completion and displays the failed processing code.
+Actual HTTP checks returned 200 with `Cache-Control: no-store` for
+`5183/sentry-synthesis`, its JSON projection, `5183/status.json`,
+`5181/?view=research` and `5182/report.html`. The live projection shows the
+exact child report above and auto-trading OFF. Journal verification can take
+more than five seconds; the initial five-second page check timed out, while
+the subsequent bounded 25-second read completed successfully.
 
 ## Evidence review gate and content test
 
