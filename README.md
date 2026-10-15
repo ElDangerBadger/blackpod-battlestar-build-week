@@ -51,6 +51,10 @@ selected ten-symbol watchlist. Its cards preserve source clocks, stale-data and
 coverage warnings; they cannot recommend or execute trades. The frozen pilot
 remains independent.
 
+Its [feed-quality audit](docs/SENTRY_FEED_LATENCY_AUDIT.md) reports observed
+headline discovery lag, bar freshness and capture gaps, with immutable offline
+exports. It leaves unknown coverage and missing attempt history explicit.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest

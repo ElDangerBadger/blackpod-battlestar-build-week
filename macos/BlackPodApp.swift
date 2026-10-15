@@ -117,7 +117,7 @@ final class StationDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         }
         let allowed = url.scheme == "http" && url.host == "127.0.0.1" && [5181, 5182, 5183].contains(url.port ?? 0) && url.user == nil && url.password == nil
         if allowed {
-            tabs.selectedSegment = url.port == 5181 ? 0 : url.port == 5182 ? 1 : url.path == "/sentry" ? 3 : 2
+            tabs.selectedSegment = url.port == 5181 ? 0 : url.port == 5182 ? 1 : url.path.hasPrefix("/sentry") ? 3 : 2
             if navigationAction.targetFrame == nil {
                 webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
                 decisionHandler(.cancel)

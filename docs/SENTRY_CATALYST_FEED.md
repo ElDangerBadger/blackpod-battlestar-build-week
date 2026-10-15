@@ -5,6 +5,11 @@ This is an independent evidence feed. It does not change the frozen reversal
 experiment, run agents or inference, recommend trades, submit orders, allocate
 capital, or enable auto-trading. Galactica trading rules are not used.
 
+The [feed latency and coverage audit](SENTRY_FEED_LATENCY_AUDIT.md) is now
+available through **Feed quality audit** on the Sentry page. It analyzes retained
+observations only; startup inventory, later discoveries and unknown coverage
+remain distinct. This adds no provider requests or collection-policy changes.
+
 ## What to watch
 
 - **Headline cards:** provider source link, publication/update time, BlackPod's

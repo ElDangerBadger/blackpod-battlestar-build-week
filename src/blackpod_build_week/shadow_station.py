@@ -188,9 +188,10 @@ def public_status(config, state, *, now):
 
 class LocalStatusServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, supplier, bind_and_activate=True, catalyst_supplier=None):
+    def __init__(self, address, supplier, bind_and_activate=True, catalyst_supplier=None, catalyst_audit_supplier=None):
         self.status_supplier = supplier
         self.catalyst_supplier = catalyst_supplier
+        self.catalyst_audit_supplier = catalyst_audit_supplier
         super().__init__(address, StatusHandler, bind_and_activate)
 
 
@@ -223,8 +224,18 @@ class StatusHandler(LocalHandler):
     def do_GET(self):
         if not self._local():
             self._send(403); return
-        if self.path not in {"/", "/status.html", "/status.json", "/sentry", "/sentry.json"}:
+        if self.path not in {"/", "/status.html", "/status.json", "/sentry", "/sentry.json", "/sentry-audit", "/sentry-audit.json"}:
             self._send(404); return
+        if self.path in {"/sentry-audit", "/sentry-audit.json"}:
+            if self.server.catalyst_audit_supplier is None:
+                self._send(503); return
+            from .sentry_catalyst_audit import render
+            value = self.server.catalyst_audit_supplier()
+            if self.path == "/sentry-audit.json":
+                self._send(200, canonical_json_bytes(value), "application/json")
+            else:
+                self._send(200, render(value).encode(), "text/html; charset=utf-8")
+            return
         if self.path in {"/sentry", "/sentry.json"}:
             if self.server.catalyst_supplier is None:
                 self._send(503); return
@@ -365,6 +376,7 @@ def run_station(config, *, stop_event=None):
     from .cabin_reader import CabinHTTPServer, CabinReader
     from .shadow_experiment_reader import ShadowExperimentReader
     from .sentry_catalyst_service import start_worker, status as catalyst_status
+    from .sentry_catalyst_audit import audit_status
     stop = stop_event if stop_event is not None else threading.Event()
     root = Path(config["station_root"])
     with service_lock(root):
@@ -385,7 +397,8 @@ def run_station(config, *, stop_event=None):
                 shadow_experiment_reader=ShadowExperimentReader(Path(config["experiment_root"]))))
             servers.append(SnapshotServer(("127.0.0.1", 5182), Path(config["historical_root"])))
             servers.append(LocalStatusServer(("127.0.0.1", 5183), lambda: public_status(config, read_state(root / "state.json"), now=utc_now()),
-                catalyst_supplier=lambda: catalyst_status(config)))
+                catalyst_supplier=lambda: catalyst_status(config),
+                catalyst_audit_supplier=lambda: audit_status(config)))
             for server in servers:
                 thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start(); threads.append(thread)
             if stop_event is None:

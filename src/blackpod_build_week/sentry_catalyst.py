@@ -246,7 +246,8 @@ class CatalystStore:
             raise ValueError('external evidence hardlink')
         return total
 
-    def verify(self):
+    def verified_records(self):
+        """Return one fully verified immutable prefix and its source-head receipt."""
         with self._directories() as (_, entries, evidence, staging):
             total = self._usage(entries, evidence, staging)
             records, head, used = self._scan(entries, evidence)
@@ -257,9 +258,12 @@ class CatalystStore:
                 raw, _ = _read_regular(evidence, name)
                 if sha256_bytes(raw) != name:
                     raise ValueError('orphan evidence hash differs')
-            return {'capture_count': len(records), 'head_sha256': head, 'size_bytes': total,
+            return records, {'capture_count': len(records), 'head_sha256': head, 'size_bytes': total,
                     'evidence_count': len(names), 'orphan_evidence_count': len(set(names) - used),
                     'staging_orphan_count': len(os.listdir(staging))}
+
+    def verify(self):
+        return self.verified_records()[1]
 
     def retain_transport(self, raw, receipt):
         """Keep successful GETs even when the paired endpoint or projection fails."""
