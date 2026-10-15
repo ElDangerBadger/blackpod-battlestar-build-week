@@ -60,6 +60,11 @@ local synthesis and a separate challenge pass, with cited evidence and original
 dissent retained. Its read-only page separates watchlist implications by desk;
 it has no authorization, allocation or execution authority.
 
+The separate [article-content entitlement probe](docs/SENTRY_CONTENT_ENTITLEMENT_PROBE.md)
+checks at most three Alpaca news items in one explicit request after review of
+an accepted brief and challenge. It reports availability metadata and leaves
+the running headline-only feed unchanged.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest
