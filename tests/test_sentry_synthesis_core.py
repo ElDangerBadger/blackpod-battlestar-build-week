@@ -315,6 +315,34 @@ class SynthesisCoreTests(unittest.TestCase):
         self.assertEqual(report['status'], 'TIMED_OUT')
         self.assertIsNone(report['draft']); self.assertIsNone(report['challenge'])
 
+    def test_explicit_validation_link_is_strict_detached_and_hash_bound(self):
+        self.store.append(*capture_packet())
+        packet = self.build(); oracle, challenge = self.model_results(packet)
+        at = catalyst.stamp(NOW+timedelta(hours=2))
+        ordinary = synthesis.compose_report(packet, oracle, challenge, at)
+        linkage = {'purpose': 'EXPLICIT_V2_VALIDATION',
+                   'parent_report_id': 'sentry-synthesis-'+'a'*64,
+                   'parent_report_sha256': 'b'*64,
+                   'transport_schema_version': 'blackpod.sentry_synthesis_transport.v2'}
+        original = deepcopy(linkage)
+        report = synthesis.compose_report(packet, oracle, challenge, at, validation=linkage)
+        self.assertEqual(report['context'], packet)
+        self.assertEqual(report['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(report['validation'], original)
+        self.assertNotEqual(report['report_id'], ordinary['report_id'])
+        self.assertNotIn('validation', ordinary)
+        payload = deepcopy(report); identity = payload.pop('report_id')
+        self.assertEqual(identity, 'sentry-synthesis-'+sha256_bytes(canonical_json_bytes(payload)))
+        linkage['parent_report_sha256'] = 'c'*64
+        self.assertEqual(report['validation'], original)
+        for key, value in [('purpose', 'RETRY'), ('parent_report_id', 'bad'),
+                           ('parent_report_sha256', 'B'*64),
+                           ('transport_schema_version', 'blackpod.sentry_synthesis_transport.v1'),
+                           ('extra', True)]:
+            invalid = {**original, key: value}
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                synthesis.compose_report(packet, oracle, challenge, at, validation=invalid)
+
     def test_mismatched_or_malformed_accepted_challenge_is_not_silently_dropped(self):
         self.store.append(*capture_packet())
         packet = self.build(); oracle, challenge = self.model_results(packet)

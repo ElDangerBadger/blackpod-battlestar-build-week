@@ -1,5 +1,10 @@
 # Sentry review and content-test follow-up · October 15, 2026
 
+This preserves the earlier 3:27 p.m. follow-up. The separately authorized
+4:13 p.m. v2 validation also failed (HTTP 504); see the
+[subsequent validation record](SENTRY_V2_VALIDATION_STATUS_2026-10-15.md).
+No accepted pair or content result is claimed by either record.
+
 Status: **PENDING — no accepted Oracle/challenge pair exists.** This is a
 status review, not a review of an accepted interpretation or an entitlement
 result. No model responses, rules, evidence or policies were rewritten.

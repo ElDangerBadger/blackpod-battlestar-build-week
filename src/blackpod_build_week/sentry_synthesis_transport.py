@@ -22,7 +22,7 @@ from .decision_journal_store import (
     _read_regular, JournalConflictError,
 )
 from .hashing import canonical_json_bytes, sha256_bytes
-from .modeldock_client import ModelDockClient, ModelDockCallResult, ModelDockClientError, _safe_token, _model_revision
+from .modeldock_client import ModelDockClient, ModelDockCallResult, ModelDockClientError, UrlLibTransport, _safe_token, _model_revision
 from .modeldock_config import ModelDockConfig
 
 LEGACY_VERSION = 'blackpod.sentry_synthesis_transport.v1'
@@ -45,6 +45,26 @@ ROLE_INSTRUCTIONS = {
     'oracle': 'Synthesize the supplied evidence into a cautious watchlist market interpretation. Separate trading and investment implications. Do not manufacture a theme if evidence is insufficient.',
     'challenge': 'Independently challenge the ORIGINAL ORACLE DRAFT against the same evidence. Preserve the original draft and dissent. Identify unsupported inferences, alternatives and absent evidence. This is a separate analytical role, not proof of independent model, provider or data consensus.',
 }
+
+
+class _NamedSentryTransport:
+    """Add one fixed telemetry label without changing the generation request.
+
+    ModelDock observes this optional header as a client name (maximum 100
+    characters). It grants no capability, routing or execution authority.
+    """
+    def __init__(self):
+        self.transport = UrlLibTransport()
+
+    def request(self, *, method, url, headers, body, timeout_seconds, max_response_bytes):
+        labeled = dict(headers)
+        labeled['X-ModelDock-Client'] = 'BlackPod-Sentry'
+        return self.transport.request(method=method, url=url, headers=labeled, body=body,
+            timeout_seconds=timeout_seconds, max_response_bytes=max_response_bytes)
+
+
+def _default_client(config):
+    return ModelDockClient(config, transport=_NamedSentryTransport())
 
 
 def _utc_now():
@@ -360,7 +380,7 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
         _publish(root, staging, 'intent.json', intent)
         status, response, provenance, failure_code = 'FAILED', None, None, None
         try:
-            factory = client_factory or ModelDockClient
+            factory = client_factory or _default_client
             result = factory(config).generate_text(wire, mission_id=packet['context_id'],
                 request_id=wire['metadata']['blackpod_correlation']['request_id'], symbol='WATCHLIST', run_mode='LIVE',
                 content_validator=lambda value: _validate_response(role, value, packet, draft, wire), content_requires_correlation=False)

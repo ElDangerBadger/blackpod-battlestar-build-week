@@ -401,5 +401,241 @@ class SentrySynthesisServiceTests(unittest.TestCase):
         self.assertEqual(len(self.http.calls), 2)
 
 
+class ExplicitV2ValidationTests(unittest.TestCase):
+    """Legacy failure capsules are authored fixtures, never new v1 deliveries."""
+    def setUp(self):
+        self.helper = SentrySynthesisServiceTests()
+        self.helper.setUp()
+        self.addCleanup(self.helper.doCleanups)
+        self.config = self.helper.config
+        self.config.update(experiment_id='frozen-fixture', protocol_sha256='a' * 64)
+        atomic_state(service.catalyst_paths(self.config)[0] / 'control.json',
+            {'schema_version': catalyst.VERSION, 'enabled': True, 'symbols': WATCH})
+        self.pins = self.enterContext(patch.object(service, '_pinned_view',
+            return_value={'journal': {'last_entry_sha256': 'b' * 64}}))
+        self.parent, self.parent_report = self.legacy_failure()
+        self.source_id = self.parent_report['report_id']
+        self.original_parent = service.capsule_hashes(self.parent)
+        self.helper.now = NOW + timedelta(hours=1)
+
+    def legacy_failure(self, status='FAILED', *, receipt=True):
+        packet = service.current_packet(self.config, as_of=NOW)
+        directory = self.helper.runs / packet['evidence_signature']
+        service.write_json_once(directory, 'packet.json', packet)
+        service.write_json_once(directory, 'run-intent.json', {'schema_version': service.VERSION,
+            'context_id': packet['context_id'], 'packet_sha256': sha256_bytes(canonical_json_bytes(packet)),
+            'evidence_signature': packet['evidence_signature'], 'reserved_at': catalyst.stamp(NOW),
+            'modeldock': self.helper.modeldock})
+        config = service.configuration(self.helper.modeldock)
+        wire, bindings, modeldock = transport._request('oracle', packet, config, None,
+            version=transport.LEGACY_VERSION)
+        original_intent = {'schema_version': transport.LEGACY_VERSION, 'bindings': bindings,
+            'configuration': modeldock, 'wire_request': wire,
+            'request_sha256': sha256_bytes(canonical_json_bytes(wire)), 'reserved_at': catalyst.stamp(NOW)}
+        service.write_json_once(directory / 'oracle', 'intent.json', original_intent)
+        if receipt:
+            original_receipt = {'schema_version': transport.LEGACY_VERSION, 'bindings': bindings,
+                'intent_sha256': sha256_bytes(canonical_json_bytes(original_intent)), 'status': status,
+                'finished_at': catalyst.stamp(NOW), 'response': None, 'provenance': None,
+                'failure_code': 'MODELDOCK_HTTP_STATUS'}
+            original_receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes(original_receipt))
+            service.write_json_once(directory / 'oracle', 'receipt.json', original_receipt)
+        return directory, service.recover_attempt(directory, self.config, NOW)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_v2(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id)
+
+    def test_exact_old_packet_separate_role_ids_parent_link_and_no_parent_modification(self):
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(result['completed_at'], catalyst.stamp(self.helper.now))
+        validation = result['validation']
+        self.assertEqual(validation['purpose'], 'EXPLICIT_V2_VALIDATION')
+        self.assertEqual(validation['parent_report_id'], self.source_id)
+        self.assertEqual(validation['parent_report_sha256'], sha256_bytes(canonical_json_bytes(self.parent_report)))
+        self.assertEqual(validation['transport_schema_version'], transport.VERSION)
+        old_id = self.parent_report['provenance']['oracle']['request_id']
+        self.assertNotEqual(result['provenance']['oracle']['request_id'], old_id)
+        self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
+        self.assertEqual(service.verify(self.config)['attempt_count'], 2)
+        self.assertEqual(service.verify(self.config)['report_dispositions'],
+                         {'FAILED': 1, 'CHALLENGED_INTERPRETATION': 1})
+        self.assertTrue(all(v is False for v in result['authority'].values()))
+        self.assertGreaterEqual(self.pins.call_count, 2)
+
+    def test_duplicate_validation_and_recovery_never_resend_even_if_collection_paused(self):
+        first = self.run_validation()
+        self.helper.control['enabled'] = False
+        atomic_state(self.helper.root / 'control.json', self.helper.control)
+        with patch.object(ModelDockClient, 'generate_text', side_effect=AssertionError('no resend')):
+            self.assertEqual(self.run_validation(), first)
+            self.assertEqual(service.recover_attempt(self.child(), self.config, self.helper.now), first)
+            self.assertEqual(service.read_report(self.child(), self.config), first)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
+
+    def test_shared_hourly_budget_is_not_bypassed_by_explicit_validation(self):
+        result = self.run_validation(now=NOW + timedelta(minutes=59))
+        self.assertEqual(result['status'], 'WAITING_FOR_NEXT_SLOT')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_shared_daily_budget_counts_original_and_other_normal_reservations(self):
+        for index in range(1, 4):
+            at = NOW + timedelta(hours=index)
+            self.helper.append_capture(at, headline='Independent later headline ' + str(index), identity=200 + index)
+            self.assertEqual(self.helper.cycle(at), 'CHALLENGED_INTERPRETATION')
+        self.helper.now = NOW + timedelta(hours=4)
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'DAILY_BUDGET_EXHAUSTED')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(len(self.helper.http.calls), 6)
+
+    def test_child_reservation_survives_mutable_state_write_interruption(self):
+        with patch.object(service, 'atomic_state', side_effect=OSError('state interruption')):
+            with self.assertRaises(OSError):
+                self.run_validation()
+        self.assertEqual(len(service.ledger(self.helper.runs)), 2)
+        self.assertEqual(self.helper.http.calls, [])
+        report = self.run_validation()
+        self.assertEqual(report['status'], 'UNCERTAIN')
+        self.assertEqual(self.helper.http.calls, [])
+        self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
+
+    def test_packet_only_child_remains_uncertain_without_reservation_or_resend(self):
+        publish = service.write_json_once
+        def fail_intent(directory, name, value):
+            if name == 'run-intent.json':
+                raise OSError('fixture pre-reservation interruption')
+            return publish(directory, name, value)
+        with patch.object(service, 'write_json_once', side_effect=fail_intent):
+            with self.assertRaises(OSError):
+                self.run_validation()
+        self.assertEqual(service.verify(self.config)['abandoned_pre_reservation_count'], 1)
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(self.helper.http.calls, [])
+        self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
+
+    def test_interrupted_oracle_is_not_resent_and_recovers_uncertain(self):
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
+
+    def test_interrupted_challenge_preserves_draft_without_resend(self):
+        original = self.helper.http.request
+        def interrupt_second(**kwargs):
+            if len(self.helper.http.calls) == 1:
+                self.helper.http.exception = KeyboardInterrupt()
+            return original(**kwargs)
+        self.helper.http.request = interrupt_second
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'DRAFT_ONLY')
+        self.assertIsNotNone(result['draft'])
+        self.assertIsNone(result['challenge'])
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_terminal_child_failure_is_not_another_validation_parent(self):
+        self.helper.http.exception = TimeoutError('fixture terminal failure')
+        failed = self.run_validation()
+        self.assertEqual(failed['status'], 'FAILED')
+        self.assertEqual(self.run_validation(), failed)
+        with self.assertRaises(ValueError):
+            service.validate_v2(self.config, failed['report_id'], now=self.helper.now,
+                                client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 1)
+
+    def test_v2_normal_accepted_or_failed_delivery_is_not_a_legacy_validation_parent(self):
+        at = NOW + timedelta(hours=1)
+        self.helper.append_capture(at, headline='New normal v2 source', identity=456)
+        self.helper.cycle(at)
+        report = service.read_report(self.helper.directory(), self.config)
+        with self.assertRaises(ValueError):
+            service.validate_v2(self.config, report['report_id'], now=at + timedelta(hours=1),
+                                client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_off_pin_watchlist_and_capacity_gates_prevent_new_calls(self):
+        for gate in ('off', 'pins'):
+            selected = self.helper.off if gate == 'off' else self.pins
+            selected.side_effect = ValueError('fixture blocked')
+            with self.subTest(gate=gate), self.assertRaises(ValueError):
+                self.run_validation()
+            selected.side_effect = None
+        with patch.object(service, 'MAX_RUNS', 1):
+            self.assertEqual(self.run_validation()['status'], 'ARCHIVE_REVIEW_REQUIRED')
+        atomic_state(service.catalyst_paths(self.config)[0] / 'control.json',
+            {'schema_version': catalyst.VERSION, 'enabled': True, 'symbols': ['SPY']})
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_parent_tampering_during_model_delivery_fails_closed(self):
+        def tamper(envelope):
+            path = self.parent / 'completion-clock.json'
+            path.chmod(0o600)
+            path.write_bytes(canonical_json_bytes({'completed_at': catalyst.stamp(NOW + timedelta(seconds=1))}))
+        self.helper.http.mutate = tamper
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertFalse((self.child() / 'report.json').exists())
+
+    def test_child_packet_parent_hash_and_validation_identity_are_replayed_not_trusted(self):
+        self.run_validation()
+        path = self.child() / 'run-intent.json'
+        value = json.loads(path.read_bytes())
+        value['validation']['parent_report_sha256'] = '0' * 64
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(value))
+        with self.assertRaises(ValueError):
+            service.read_report(self.child(), self.config)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_incomplete_validation_attempt_must_replay_parent_link_during_verify(self):
+        with patch.object(service, 'atomic_state', side_effect=OSError('before role delivery')):
+            with self.assertRaises(OSError):
+                self.run_validation()
+        path = self.child() / 'run-intent.json'
+        value = json.loads(path.read_bytes())
+        value['validation']['parent_report_sha256'] = '0' * 64
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(value))
+        with self.assertRaises(ValueError):
+            service.verify(self.config)
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_worker_does_not_automatically_revalidate_same_legacy_failure(self):
+        self.helper.append_capture(self.helper.now, same_news=True)
+        self.assertEqual(self.helper.cycle(self.helper.now), 'NO_NEW_HEADLINE_EVIDENCE')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_cli_explicit_source_parameter_has_no_force_or_reset_flags(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_v2', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-v2', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
+        for extra in ('--force', '--reset'):
+            with self.subTest(extra=extra), patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
+                service.main(['validate-v2', '--config', '/private/tmp/config.json',
+                              '--source-report-id', self.source_id, extra])
+
+
 if __name__ == '__main__':
     unittest.main()

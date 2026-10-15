@@ -12,6 +12,14 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
+**Latest, October 15 at 4:13 p.m. Los Angeles:** the separately authorized
+v2 validation reached ModelDock but returned `MODELDOCK_HTTP_504` after about
+90 seconds. Both failures are preserved. No accepted pair exists and no
+article-content GET ran. The native endpoint and named client activity are
+verified. See [actual validation evidence and commands](SENTRY_V2_VALIDATION_STATUS_2026-10-15.md).
+The preparation and earlier continuation records below describe their
+original observation times.
+
 **Pending:** the first accepted Oracle/challenge pair has not yet been recorded
 in this runbook. No article-content probe result is claimed here. The report
 ID, review findings, actual command, response summary and integrity checks must
@@ -95,9 +103,14 @@ Read each theme alongside its challenge:
   and business economics must remain unknown.
 
 This review never edits the original draft or challenge, changes the frozen
-experiment, or grants authorization to trade. If no accepted pair exists, wait
-for the existing bounded worker; do not reset its ledger, force inference or
-retry uncertain delivery to manufacture a qualifying report.
+experiment, or grants authorization to trade. If no accepted pair exists, the
+content request remains blocked. Do not reset the ledger, force inference or
+retry uncertain delivery to manufacture a qualifying report. The separately
+authorized `validate-v2` path described in the synthesis guide can retain one
+linked compatibility validation of a terminal failed v1 attempt. A resulting
+accepted pair is still historical interpretation of its original packet and
+needs the same manual review before this content probe; it is not a new market
+forecast. Verification replays its parent linkage as well as both responses.
 
 ## Exact probe bounds
 

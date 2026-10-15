@@ -140,6 +140,37 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
+### Explicit compatibility validation of a failed v1 attempt
+
+The separately authorized `validate-v2` command can record one v2 child of an
+original, terminal FAILED/REJECTED v1 Oracle attempt. It is not an automatic
+retry: the background worker never invokes it. Accepted or uncertain source
+attempts are ineligible. It retains the exact original packet bytes, source
+clock and failed capsule, and hashes the parent report linkage into the child.
+The shared hourly/four-per-day budget, monitoring window, storage bounds,
+auto-trading OFF, frozen source pins and unchanged watchlist still apply.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-v2 \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id 'sentry-synthesis-<original terminal v1 failure SHA-256>'
+```
+
+Its deterministic child identity permits no second delivery. Repeating the
+command reads or recovers retained work without sending; interrupted/uncertain
+work stays visible. The UI explicitly labels historical compatibility
+validation and shows original evidence time separately from completion time.
+It must not be described as a fresh market assessment or new forecast.
+
+The installed app calls dashboard ports 5181–5183; its Python station worker
+calls ModelDock at the configured `http://127.0.0.1:8000/text/generate` endpoint.
+The default Sentry transport adds `X-ModelDock-Client: BlackPod-Sentry` for
+ModelDock's activity display. This label does not change request bodies,
+model routing, profiles or authority. “Connected clients” records named
+generation activity, not a persistent native-app connection. No additional
+ModelDock endpoint is required in the native webview.
+
 Requests, sanitized response projections, response hashes, processing receipts and immutable reports
 remain local under the separate synthesis operational root. They are not part
 of the pilot journal or source Sentry captures. No credentials are included in

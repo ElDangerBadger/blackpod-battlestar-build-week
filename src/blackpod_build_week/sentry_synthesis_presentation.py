@@ -70,6 +70,9 @@ def render(value):
         body += '<article class="card"><h2>No verified synthesis to display</h2><p>The source records remain available in Sentry. No sample interpretation or substitute report is shown. Check worker status, source verification and the auto-trading OFF gate.</p></article>'
     else:
         packet = report.get('context') or {}
+        validation = report.get('validation')
+        if validation:
+            body += '<article class="warning validation"><h2>Explicit v2 compatibility validation</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}
         selected = packet.get('selection') or {}
@@ -110,7 +113,7 @@ def render(value):
                     items.append(_text(identity) + ' (unavailable)')
             return '<p class="citations">Evidence: ' + (', '.join(items) or 'Unavailable') + '</p>'
 
-        completion_label = 'Synthesis completed' if report.get('draft') else 'Attempt recorded'
+        completion_label = 'Validation completed' if validation else 'Synthesis completed' if report.get('draft') else 'Attempt recorded'
         completion_note = 'Los Angeles time · original draft preserved' if report.get('draft') else 'No accepted draft; processing outcome retained'
         body += '<div class="grid"><article class="tile"><span>Source snapshot</span><strong>' + _text(_when(packet.get('as_of'))) + '</strong><small>Los Angeles time · retained inputs, not a live view</small></article><article class="tile"><span>' + completion_label + '</span><strong>' + _text(_when(report.get('completed_at'))) + '</strong><small>' + completion_note + '</small></article><article class="tile"><span>Headlines selected / omitted</span><strong>' + _text(selected.get('selected_headline_count')) + ' / ' + _text(selected.get('omitted_headline_count')) + '</strong><small>Omitted items were not supplied to the model</small></article></div>'
         body += '<p class="watchlist">Watchlist: ' + ' · '.join(_text(s) for s in packet.get('watchlist', [])) + '</p>'
@@ -131,6 +134,8 @@ def render(value):
         coverage_label = 'coverage incomplete' if quality.get('news_truncated') is True else 'coverage unknown'
         body += '<details class="warning evidence-limits"><summary>Headlines only · ' + coverage_label + ' · no verified holdings</summary>' + _list(warnings) + '</details>'
         body += '<details class="card"><summary>Snapshot identity and retained limitations</summary><p>Context: ' + _text(packet.get('context_id')) + '</p><p>Source head: <code>' + _text(source.get('head_sha256')) + '</code> · Verified captures: ' + _text(source.get('capture_count')) + '</p>' + _list(packet.get('limitations') or [], 'No additional packet limitations recorded.') + '</details>'
+        if validation:
+            body += '<details class="card"><summary>Preserved parent attempt</summary><p>Parent report: <code>' + _text(validation.get('parent_report_id')) + '</code></p><p>Parent SHA-256: <code>' + _text(validation.get('parent_report_sha256')) + '</code></p><p>Purpose: ' + _text(validation.get('purpose')) + ' · Transport: ' + _text(validation.get('transport_schema_version')) + '</p></details>'
         draft = report.get('draft')
         challenge = report.get('challenge')
         body += '<h2>Oracle · original interpretation</h2><p class="muted">Model-generated reasoning from the retained packet. Each implication remains an unverified interpretation.</p>'

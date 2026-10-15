@@ -121,7 +121,7 @@ def verify_packet(packet,config):
     return packet
 
 
-def compose_report(packet,oracle,challenge,completed_at):
+def compose_report(packet,oracle,challenge,completed_at,*,validation=None):
     from .contracts.sentry_synthesis import validate_response
     draft=validate_response('oracle',oracle['response'],packet) if oracle['status']=='ACCEPTED' else None
     review=validate_response('challenge',challenge['response'],packet,draft) if draft and challenge['status']=='ACCEPTED' else None
@@ -130,5 +130,16 @@ def compose_report(packet,oracle,challenge,completed_at):
         'provenance':{'oracle':oracle,'challenge':challenge},'completed_at':completed_at,
         'review_independence':{'separate_review_pass':review is not None,'independent_model_verified':False,'independent_sources_verified':False},
         'portfolio':dict(packet['portfolio']),'authority':dict(AUTHORITY)}
+    if validation is not None:
+        if (not isinstance(validation,dict)
+                or set(validation)!={'purpose','parent_report_id','parent_report_sha256','transport_schema_version'}
+                or validation['purpose']!='EXPLICIT_V2_VALIDATION'
+                or validation['transport_schema_version']!='blackpod.sentry_synthesis_transport.v2'
+                or not isinstance(validation['parent_report_id'],str)
+                or re.fullmatch(r'sentry-synthesis-[0-9a-f]{64}',validation['parent_report_id']) is None
+                or not isinstance(validation['parent_report_sha256'],str)
+                or re.fullmatch('[0-9a-f]{64}',validation['parent_report_sha256']) is None):
+            raise ValueError('invalid explicit validation linkage')
+        result['validation']=dict(validation)
     result['report_id']='sentry-synthesis-'+sha256_bytes(canonical_json_bytes(result))
     return result

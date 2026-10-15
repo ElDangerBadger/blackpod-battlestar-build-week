@@ -81,6 +81,22 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_v2_validation_keeps_evidence_and_completion_clocks_distinct(self):
+        value = fixture()
+        value['report']['validation'] = {'purpose': 'EXPLICIT_V2_VALIDATION',
+            'parent_report_id': 'sentry-synthesis-'+'a'*64, 'parent_report_sha256': 'b'*64,
+            'transport_schema_version': 'blackpod.sentry_synthesis_transport.v2'}
+        before = deepcopy(value)
+        html = render(value)
+        for expected in ('Explicit v2 compatibility validation', 'Retained inputs from Oct 15 · 11:00:00 AM PDT',
+                         'not a fresh market assessment or a new forecast', 'failed parent attempt is preserved',
+                         'Validation completed', '11:05:00 AM PDT', 'Preserved parent attempt',
+                         'sentry-synthesis-'+'a'*64, 'b'*64, 'CONTESTED', 'stale', 'Auto-trading OFF'):
+            self.assertIn(expected, html)
+        self.assertEqual(value, before)
+        ordinary = fixture()
+        self.assertNotIn('Explicit v2 compatibility validation', render(ordinary))
+
     def test_original_and_contested_challenge_both_visible_without_approval(self):
         value = fixture()
         original = deepcopy(value)

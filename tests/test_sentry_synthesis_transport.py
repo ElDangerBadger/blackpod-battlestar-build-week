@@ -455,6 +455,45 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual((self.root / 'intent.json').read_bytes(), before)
         self.assertEqual(self.fixture.calls, [])
 
+    def test_default_sentry_transport_adds_named_header_without_changing_wire(self):
+        expected, _, _ = transport._request('oracle', packet(), self.config, None)
+        expected_bytes = canonical_json_bytes(expected)
+        original_client = transport.ModelDockClient
+        def fixed_clock_client(config, **kwargs):
+            return original_client(config, now=lambda: NOW, **kwargs)
+        with patch.object(transport, 'UrlLibTransport', return_value=self.fixture), \
+             patch.object(transport, 'ModelDockClient', side_effect=fixed_clock_client):
+            result = transport.generate_role('oracle', packet(), self.root, self.config,
+                off_check=lambda: None, verify_source=lambda: None, now=lambda: NOW)
+        self.assertEqual(result['status'], 'ACCEPTED')
+        self.assertEqual(len(self.fixture.calls), 1)
+        request = self.fixture.calls[0]
+        self.assertEqual(request['headers']['X-ModelDock-Client'], 'BlackPod-Sentry')
+        self.assertEqual(request['headers']['X-Request-ID'], result['request_id'])
+        self.assertEqual(request['method'], 'POST')
+        self.assertEqual(request['url'], 'http://127.0.0.1:8000/text/generate')
+        self.assertEqual(request['body'], expected_bytes)
+        self.assertEqual(json.loads((self.root / 'intent.json').read_bytes())['request_sha256'], sha256_bytes(expected_bytes))
+        self.assertEqual(json.loads(request['body'])['messages'], expected['messages'])
+        self.assertEqual(request['max_response_bytes'], self.config.max_response_bytes)
+        self.assertGreater(request['timeout_seconds'], 0)
+        self.assertLessEqual(request['timeout_seconds'], self.config.delivery_timeout_seconds)
+        self.assertNotIn('model', json.loads(request['body']))
+
+    def test_injected_factory_still_owns_its_transport_without_header_mutation(self):
+        self.generate()
+        request = self.fixture.calls[0]
+        self.assertNotIn('X-ModelDock-Client', request['headers'])
+        self.assertEqual(request['url'], 'http://127.0.0.1:8000/text/generate')
+
+    def test_legacy_replay_never_constructs_the_named_network_transport(self):
+        self.save_legacy_attempt()
+        with patch.object(transport, 'UrlLibTransport', side_effect=AssertionError('no transport on replay')):
+            result = transport.generate_role('oracle', packet(), self.root, self.config,
+                off_check=lambda: None, verify_source=lambda: None, now=lambda: NOW)
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertEqual(self.fixture.calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()
