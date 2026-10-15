@@ -14,7 +14,8 @@ final class StationDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
     private let addresses = [
         "http://127.0.0.1:5181/?view=research",
         "http://127.0.0.1:5182/dashboard.html",
-        "http://127.0.0.1:5183/"
+        "http://127.0.0.1:5183/",
+        "http://127.0.0.1:5183/sentry"
     ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,7 +33,7 @@ final class StationDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         window.center()
         let content = NSView()
         window.contentView = content
-        tabs = NSSegmentedControl(labels: ["Experiment", "Historical baseline", "Station status"], trackingMode: .selectOne, target: self, action: #selector(selectTab))
+        tabs = NSSegmentedControl(labels: ["Experiment", "Historical baseline", "Station status", "Sentry"], trackingMode: .selectOne, target: self, action: #selector(selectTab))
         tabs.selectedSegment = 0
         tabs.translatesAutoresizingMaskIntoConstraints = false
         let configuration = WKWebViewConfiguration()
@@ -109,9 +110,14 @@ final class StationDelegate: NSObject, NSApplicationDelegate, WKNavigationDelega
         // Internal start/error HTML is allowed. External links, custom schemes,
         // remote hosts, and unrecognized local services never open in the app.
         if url.absoluteString == "about:blank" { decisionHandler(.allow); return }
+        if url.scheme == "https" && url.host != nil && url.user == nil && url.password == nil && navigationAction.navigationType == .linkActivated {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
         let allowed = url.scheme == "http" && url.host == "127.0.0.1" && [5181, 5182, 5183].contains(url.port ?? 0) && url.user == nil && url.password == nil
         if allowed {
-            tabs.selectedSegment = url.port == 5181 ? 0 : url.port == 5182 ? 1 : 2
+            tabs.selectedSegment = url.port == 5181 ? 0 : url.port == 5182 ? 1 : url.path == "/sentry" ? 3 : 2
             if navigationAction.targetFrame == nil {
                 webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
                 decisionHandler(.cancel)

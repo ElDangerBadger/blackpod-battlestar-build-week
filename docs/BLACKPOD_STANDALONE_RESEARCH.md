@@ -6,12 +6,13 @@ Double-click **BlackPod.app** in `~/Applications`, or run:
 open "$HOME/Applications/BlackPod.app"
 ```
 
-The native window has three tabs:
+The native window has four tabs:
 
 | Tab | Local address | What it shows |
 | --- | --- | --- |
 | Experiment | <http://127.0.0.1:5181/?view=research> | Saved prospective predictions and outcomes |
 | Historical baseline | <http://127.0.0.1:5182/dashboard.html> | The retained rule-versus-control backtest |
+| Sentry | <http://127.0.0.1:5183/sentry> | Bounded headlines, IEX price/volume context and evidence clocks |
 | Station status | <http://127.0.0.1:5183/> | Background service, collection schedule, latest capture and OFF verification |
 
 The user LaunchAgent `com.blackpod.shadow-station` runs the research module
@@ -19,6 +20,10 @@ independently of Codex and the app window. Closing either window does not stop
 collection. The service starts after login and launchd restarts it after a
 process failure. The earlier Codex collector is **PAUSED**; do not enable it
 alongside this station.
+
+The [Sentry catalyst feed](SENTRY_CATALYST_FEED.md) has its own worker, bounds,
+watchlist, evidence store and controls. Pausing the pilot collector does not pause
+Sentry, and pausing Sentry does not change the pilot. To stop both, stop the station.
 
 This is a local research launcher using the existing checkout and `.venv`,
 not a self-contained distribution of every BlackPod service. Keep

@@ -45,6 +45,12 @@ of Codex. Double-click `~/Applications/BlackPod.app`; keep the Mac awake and
 logged in. The user LaunchAgent owns the 6:30 p.m. Los Angeles collection;
 the old Codex collector is paused and auto-trading stays OFF.
 
+The standalone app also has an independent [Sentry catalyst feed](docs/SENTRY_CATALYST_FEED.md):
+bounded headline polling and IEX price/volume observations for the explicitly
+selected ten-symbol watchlist. Its cards preserve source clocks, stale-data and
+coverage warnings; they cannot recommend or execute trades. The frozen pilot
+remains independent.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest

@@ -188,8 +188,9 @@ def public_status(config, state, *, now):
 
 class LocalStatusServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, supplier, bind_and_activate=True):
+    def __init__(self, address, supplier, bind_and_activate=True, catalyst_supplier=None):
         self.status_supplier = supplier
+        self.catalyst_supplier = catalyst_supplier
         super().__init__(address, StatusHandler, bind_and_activate)
 
 
@@ -222,8 +223,18 @@ class StatusHandler(LocalHandler):
     def do_GET(self):
         if not self._local():
             self._send(403); return
-        if self.path not in {"/", "/status.html", "/status.json"}:
+        if self.path not in {"/", "/status.html", "/status.json", "/sentry", "/sentry.json"}:
             self._send(404); return
+        if self.path in {"/sentry", "/sentry.json"}:
+            if self.server.catalyst_supplier is None:
+                self._send(503); return
+            from .sentry_catalyst_presentation import render
+            value = self.server.catalyst_supplier()
+            if self.path == "/sentry.json":
+                self._send(200, canonical_json_bytes(value), "application/json")
+            else:
+                self._send(200, render(value).encode(), "text/html; charset=utf-8")
+            return
         status = self.server.status_supplier()
         if self.path == "/status.json":
             self._send(200, canonical_json_bytes(status), "application/json"); return
@@ -236,7 +247,7 @@ class StatusHandler(LocalHandler):
             ("Latest market evidence", local_stamp(experiment["latest_captured_at"])), ("Predictions recorded", experiment["recorded_prediction_count"]),
             ("Outcomes measured", experiment["observed_outcome_count"]), ("Collector state", collector["reason"])]
         rows = "".join("<div><dt>" + escape(key) + "</dt><dd>" + escape(str(value) if value is not None else "Not recorded") + "</dd></div>" for key, value in pairs)
-        html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>BlackPod status</title><style>body{margin:0;padding:28px;background:#0d1922;color:#e5edf2;font:16px/1.6 system-ui}main{max-width:850px;margin:auto}a{color:#b3dce9}h1{letter-spacing:-.04em}dl>div{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;border-bottom:1px solid #304b59;padding:12px 0}dt{color:#a9c0ce}dd{margin:0;overflow-wrap:anywhere}@media(max-width:600px){dl>div{grid-template-columns:1fr;gap:2px}}</style><main><p>BLACKPOD · RESEARCH MODULE</p><h1>Background service</h1><p>Dashboards and the frozen observational collector run independently of Codex.</p><dl>' + rows + '</dl><p>No trading authority. No orders or policy changes. Keep this Mac logged in; missed prediction deadlines remain missed.</p><p><a href="http://127.0.0.1:5181/?view=research">Experiment</a> · <a href="http://127.0.0.1:5182/dashboard.html">Historical baseline</a></p></main></html>'
+        html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>BlackPod status</title><style>body{margin:0;padding:28px;background:#0d1922;color:#e5edf2;font:16px/1.6 system-ui}main{max-width:850px;margin:auto}a{color:#b3dce9}h1{letter-spacing:-.04em}dl>div{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;border-bottom:1px solid #304b59;padding:12px 0}dt{color:#a9c0ce}dd{margin:0;overflow-wrap:anywhere}@media(max-width:600px){dl>div{grid-template-columns:1fr;gap:2px}}</style><main><p>BLACKPOD · RESEARCH MODULE</p><h1>Background service</h1><p>Dashboards and the frozen observational collector run independently of Codex.</p><dl>' + rows + '</dl><p>No trading authority. No orders or policy changes. Keep this Mac logged in; missed prediction deadlines remain missed.</p><p><a href="http://127.0.0.1:5183/sentry">Sentry</a> · <a href="http://127.0.0.1:5181/?view=research">Experiment</a> · <a href="http://127.0.0.1:5182/dashboard.html">Historical baseline</a></p></main></html>'
         self._send(200, html.encode(), "text/html; charset=utf-8")
     do_HEAD = do_GET
 
@@ -353,6 +364,7 @@ def run_station(config, *, stop_event=None):
     from .auto_trading_runtime import runtime_status
     from .cabin_reader import CabinHTTPServer, CabinReader
     from .shadow_experiment_reader import ShadowExperimentReader
+    from .sentry_catalyst_service import start_worker, status as catalyst_status
     stop = stop_event if stop_event is not None else threading.Event()
     root = Path(config["station_root"])
     with service_lock(root):
@@ -372,13 +384,17 @@ def run_station(config, *, stop_event=None):
             servers.append(CabinHTTPServer(CabinReader(), Path(config["ui_root"]), 5181,
                 shadow_experiment_reader=ShadowExperimentReader(Path(config["experiment_root"]))))
             servers.append(SnapshotServer(("127.0.0.1", 5182), Path(config["historical_root"])))
-            servers.append(LocalStatusServer(("127.0.0.1", 5183), lambda: public_status(config, read_state(root / "state.json"), now=utc_now())))
+            servers.append(LocalStatusServer(("127.0.0.1", 5183), lambda: public_status(config, read_state(root / "state.json"), now=utc_now()),
+                catalyst_supplier=lambda: catalyst_status(config)))
             for server in servers:
                 thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start(); threads.append(thread)
             if stop_event is None:
                 signal.signal(signal.SIGTERM, lambda *_: stop.set())
                 signal.signal(signal.SIGINT, lambda *_: stop.set())
+            catalyst_thread = start_worker(config, stop)
             while not stop.is_set():
+                if not catalyst_thread.is_alive():
+                    catalyst_thread = start_worker(config, stop)
                 if not all(thread.is_alive() for thread in threads):
                     raise ValueError("dashboard thread stopped")
                 now, enabled = utc_now(), _control(config)
@@ -411,6 +427,7 @@ def run_station(config, *, stop_event=None):
                 atomic_state(root / "state.json", state)
                 stop.wait(30)
         finally:
+            stop.set()
             for server, thread in zip(servers, threads):
                 server.shutdown(); thread.join(timeout=5)
             for server in servers:
