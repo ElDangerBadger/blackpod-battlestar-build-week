@@ -46,13 +46,14 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
   test_shadow_historical_baseline -q
 ```
 
-A one-time continuation is scheduled in the existing Codex chat for
-**October 15 at 3:27 p.m. Los Angeles** to review the first accepted pair,
-perform the single authorized content GET, record actual results, then merge
-and push once complete. The unfinished branch remains unmerged until those
-real steps finish. If no accepted pair exists, the continuation must report
-that state, make no content request, and stop rather than force inference or
-reset admission limits. This follow-up does not change BlackPod's own schedule.
+The one-time continuation ran on **October 15 at 3:27 p.m. Los Angeles**.
+No accepted pair existed: the current headline signature matched the previous
+failed attempt, so the unchanged-evidence gate prevented another request.
+Sentry captures and both workers were healthy. No content GET, main merge or
+push occurred. The follow-up was paused without another schedule; the
+unfinished branch remains unmerged. See the
+[dated status and supporting evidence](SENTRY_CONTENT_CHECK_STATUS_2026-10-15.md).
+BlackPod's own bounded schedules remain unchanged.
 
 ## Review the first accepted pair
 
