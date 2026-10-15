@@ -55,6 +55,11 @@ Its [feed-quality audit](docs/SENTRY_FEED_LATENCY_AUDIT.md) reports observed
 headline discovery lag, bar freshness and capture gaps, with immutable offline
 exports. It leaves unknown coverage and missing attempt history explicit.
 
+The [Sentry → Oracle market brief](docs/SENTRY_ORACLE_SYNTHESIS.md) adds bounded
+local synthesis and a separate challenge pass, with cited evidence and original
+dissent retained. Its read-only page separates watchlist implications by desk;
+it has no authorization, allocation or execution authority.
+
 `make cabin-live` builds the UI and starts a loopback-only artifact reader. It
 does **not** start a mission, record approval, acquire market data, call
 ModelDock, or prepare a demo. With no source configured, it opens an honest

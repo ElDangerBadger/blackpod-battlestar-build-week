@@ -1,0 +1,270 @@
+# Sentry → Oracle market synthesis
+
+Open **BlackPod → Sentry → Market synthesis**, or the local
+[market synthesis page](http://127.0.0.1:5183/sentry-synthesis).
+The [JSON projection](http://127.0.0.1:5183/sentry-synthesis.json) contains the
+same retained report. Reading or refreshing either page never starts inference.
+
+This module turns a bounded selection of saved Sentry observations into an
+Oracle interpretation, then asks a separate review pass to challenge it.
+Both remain **unverified interpretations**, with their original evidence and
+dissent preserved. They do not authorize trades, select positions, size orders,
+allocate capital, change policy, or alter the frozen reversal experiment.
+Auto-trading must remain **OFF**. Galactica trading rules and its native
+candidate-generation workflow are not used.
+
+Canonical Oracle enrichment remains mission-scoped. This supplemental news
+role reuses the existing validated local `ModelDockClient` without fabricating
+a canonical mission or invoking the old market-brief candidate generator.
+Its transport `LIVE` metadata means local inference only; it grants no live
+trading authority. The two requests are analytical roles in this worker, not
+new autonomous decision agents.
+
+## Reading the brief
+
+- **Overview:** a tentative picture of the selected news, with evidence links.
+- **Themes:** at most three interpretations, each linked to retained evidence.
+- **Symbol implications:** separate trading and investment questions. A direct
+  mention requires a cited headline tagged with that symbol. A possible wider
+  connection is explicitly labeled hypothetical read-through.
+- **Challenge:** one review per theme, preserving disagreement, alternatives,
+  missing evidence and unresolved assumptions. It cannot approve an action.
+- **Review horizon and invalidation:** proposed research questions, not a new
+  registered experiment. Unknown horizons remain unspecified; absent
+  invalidation conditions remain absent.
+- **Quality and age:** headline selection limits, incomplete news coverage,
+  stale or unavailable prices, and whether newer Sentry observations exist.
+
+There are no verified portfolio holdings, ownership or position sizes in this
+input. The page therefore shows **watchlist implications**, with portfolio
+assessment unavailable. A well-written brief does not establish that its
+interpretation is correct or that a tradable opportunity remains.
+
+## Evidence and processing bounds
+
+The source is the existing immutable Sentry capture store, fully verified and
+replayed before use. This path makes **no Alpaca or broker requests** and reads
+no trading credentials. It calls only the explicitly configured local ModelDock
+endpoint. Model selection stays in ModelDock; this module does not edit its
+configuration or reuse the old mission candidate workflow.
+
+| Bound | Behavior |
+| --- | --- |
+| Watchlist | Existing explicit Sentry watchlist; maximum ten symbols |
+| News input | At most twenty retained headlines, latest observed revision per article, updated within the preceding 24 hours |
+| Selection | Exact URL or normalized-headline attention duplicates removed; symbol coverage considered before filling with recent headlines |
+| Market context | Latest retained price/volume context for up to ten symbols, with actual source timestamps |
+| Feed quality | Retained-prefix audit and explicit unknown coverage; no fabricated missing-news count |
+| Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
+| Schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between attempts; maximum four attempts per LA day |
+| Timeout | Configured per-call bound, at most 120 seconds |
+| Activation | Separate synthesis control; disabled until explicitly enabled after validation |
+| Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
+
+This is a bounded sample, not the entire news universe. Selection and omitted
+counts are retained. Repeated observations, revisions and similar coverage
+cannot establish independent corroboration. Different URLs or publisher names
+also do not prove source independence.
+
+Only headlines are read. Article bodies, primary filings, earnings estimates,
+analyst research and verified company fundamentals are absent. Price change
+means a retained minute close versus the provider's previous daily close. It is
+not a measured post-headline response, a matched SPY/QQQ excess return, a causal
+effect, an executable quote or realized trade P&L. Day volume is not
+time-matched relative volume.
+
+The challenge is a separate role prompt and request bound to the original
+draft and evidence packet. That provides a separate review pass; it does not
+establish a different underlying model, independent sources or economic truth.
+
+## Administration
+
+Run from `/Users/nikolai/Projects/blackpod_battlestar_build_week`. The existing
+station configuration remains unchanged; synthesis has its own control under
+`output/blackpod-shadow-station/synthesis/`.
+
+```bash
+# Offline status and retained report availability; no inference.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service status \
+  --config output/blackpod-shadow-station/config.json
+
+# Verify retained synthesis and source bindings; no inference.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service verify \
+  --config output/blackpod-shadow-station/config.json
+
+# Configure disabled. ModelDock must already be available at the local address.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service configure \
+  --config output/blackpod-shadow-station/config.json \
+  --modeldock-base-url http://127.0.0.1:8000 \
+  --modeldock-timeout-seconds 90 --modeldock-profile default
+```
+
+To enable after validation, repeat `configure` with the same arguments and add
+`--enabled`. To pause synthesis, repeat it without `--enabled`. This control
+does not enable auto-trading or change the Sentry/pilot collectors.
+
+```bash
+# Explicit bounded generation; not triggered by UI reads.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service generate \
+  --config output/blackpod-shadow-station/config.json
+
+# Recover from retained processing artifacts; do not force a new model call.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service recover \
+  --config output/blackpod-shadow-station/config.json
+```
+
+Generation retains the same schedule, budget and verification gates used by
+the background worker. Never delete operational state, reset its budget or
+resubmit an uncertain model request to force a result. A stopped or unhealthy
+ModelDock is a visible unavailable/failed synthesis, not permission to change
+providers or substitute invented content.
+
+## Validation, retention and recovery
+
+Source text is untrusted data, not instructions. Model requests have fixed
+roles and no tools, browsing or order capabilities. Strict JSON contracts reject
+unknown fields, unknown/duplicate citations, unsupported symbols, invalid direct
+mentions, mismatched draft hashes and missing or duplicate theme reviews.
+Strings and arrays are bounded. Strict validation establishes structure and
+provenance bindings; it cannot verify semantic truth or factual entailment.
+
+Current model response contracts are **v2**. An unspecified invalidation is an
+explicit `{"status":"UNSPECIFIED","text":""}`; a proposed condition requires
+`PROPOSED` and nonblank text. This avoids nullable unions unsupported by the
+local ModelDock schema dialect. Historical v1 attempts replay with their
+original wire schema, response shape and identities. No retained record is
+converted to v2 or resent during migration.
+
+Requests, sanitized response projections, response hashes, processing receipts and immutable reports
+remain local under the separate synthesis operational root. They are not part
+of the pilot journal or source Sentry captures. No credentials are included in
+model inputs or reports. Treat model output as untrusted research material.
+Original response hashes identify delivery bytes; sanitized projections do not
+recreate stripped private envelope fields. Private request and intent files
+are not served by the read-only HTTP projection.
+
+Reports retain the exact evidence packet and original capture-prefix identity.
+Verification replays that original prefix even after later captures append.
+Later reports append; they do not rewrite an earlier draft or its challenge.
+Hash checks establish internal integrity, not an authenticated external proof
+of news publication, source independence or economic accuracy.
+
+Attempt accounting is persisted before model work. Uncertain delivery,
+timeouts and invalid JSON do not trigger automatic retries or JSON repair.
+The immutable run ledger enforces budgets even if mutable display state is
+lost. A packet left before its run reservation is retained as abandoned, with
+no invented request time; that exact headline set is not automatically sent.
+Interrupted processing is recovered only from retained evidence of what
+completed. Missing work remains incomplete. A valid draft with no valid
+challenge must be visibly draft-only; it cannot masquerade as challenged.
+
+OFF and source verification gates are enforced around processing and reading.
+Corrupt source evidence or an unverifiable OFF state blocks the projection;
+there is no substitute cached report presented as current verified research.
+When an older retained report is readable, its age and any newer source
+observations remain visible. The existing experiment, capital policies and
+Navigator behavior are outside this module.
+
+## Benzinga Pro and richer article content
+
+All-Benzinga coverage is expected from the current provider: Alpaca says its
+news data is supplied directly by Benzinga.
+[Alpaca historical news documentation](https://docs.alpaca.markets/us/docs/historical-news-data)
+
+BlackPod currently asks Alpaca for `include_content=false`; headline-only input
+is an explicit collector choice. Alpaca documents an `include_content` option
+for article content **when available**. That does not establish that our
+credentials provide every linked article, or that existing retention and
+processing bounds are suitable for bodies.
+[Alpaca news API reference](https://docs.alpaca.markets/us/reference/news-3)
+
+Benzinga Pro could be useful as a human research workspace: its published
+plans include newsfeed and watchlist features, with additional capabilities
+depending on the plan. The cited Pro subscription page does not establish a
+developer API entitlement, so a Pro login should not be treated as an API key.
+[Benzinga Pro subscription features](https://help.benzinga.com/en/articles/2067149-what-is-the-difference-between-subscription-levels)
+
+Benzinga separately offers licensed news APIs with full-story integration.
+Those could become an input to BlackPod through an explicitly governed adapter
+if access and the intended uses are confirmed.
+[Benzinga Stock Market Newswire API](https://www.benzinga.com/apis/cloud-product/stock-news-api/)
+
+Before buying specifically for BlackPod, confirm API access and the terms for
+automated retrieval, AI processing, local retention and display. First assess
+what the current Alpaca entitlement can lawfully supply. This burst adds no
+subscription, direct Benzinga connector, article-body requests or paywall
+scraping; richer content would require separate bounded intake validation.
+
+See also [Sentry collection](SENTRY_CATALYST_FEED.md),
+[feed latency and coverage](SENTRY_FEED_LATENCY_AUDIT.md), and the
+[standalone operating guide](BLACKPOD_STANDALONE_RESEARCH.md).
+
+## Build validation · October 15, 2026
+
+The implementation is additive: new `contracts/sentry_synthesis.py`,
+`sentry_synthesis.py`, `sentry_synthesis_transport.py`,
+`sentry_synthesis_service.py` and `sentry_synthesis_presentation.py` under
+`src/blackpod_build_week/`; read-only routing/worker integration in
+`shadow_station.py`; a link in `sentry_catalyst_presentation.py`; this guide and
+the README. No native app rebuild or React bundle change is required. The
+existing Sentry tab accepts the new local page.
+
+Six new offline suites cover contracts, core evidence/reports, transport,
+service lifecycle/recovery, presentation and HTTP:
+`tests/test_sentry_synthesis_{contracts,core,transport,service,presentation,http}.py`.
+
+```bash
+# Entire Sentry regression suite, including the new module.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest discover -s tests -p 'test_sentry*.py' -q
+
+# Station, frozen experiment, historical baseline and ModelDock regression.
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest test_shadow_station test_shadow_station_collection \
+  test_shadow_station_macos test_shadow_experiment test_shadow_experiment_capture \
+  test_shadow_experiment_cli test_shadow_experiment_reader \
+  test_shadow_historical_baseline test_modeldock_client -q
+```
+
+Results: **322 tests run, 320 passed, two skipped** in the first command;
+**214 passed** in the second. The skipped checks require an explicitly supplied
+canonical `BATTLESTAR_PATH`; none was invented. Local fixture HTTP servers need
+loopback socket permission. Initial sandbox-only socket-bind failures passed
+when rerun with that permission. The final focused synthesis suites passed
+136 tests; a subsequent service/presentation rerun passed 48 after the next-check
+display was added. All model outputs in these suites are authored fixtures.
+
+Real-data validation used the existing verified Sentry capture prefix. At
+`2026-10-15T21:20:44.916557Z` the first local Oracle request received HTTP 422:
+the v1 nullable union was unsupported by the appliance. Its original failed
+receipt/report remain verified; no challenge ran and no retry was forced.
+The corrected v2 Oracle/challenge schemas and one/zero-theme fixture outputs
+passed the existing ModelDock pure validator offline using its installed
+runtime, without new dependencies or model loading. This does **not** establish
+successful real inference or semantic quality. The first accepted real v2 brief
+and challenge are still pending at deployment.
+
+The standalone LaunchAgent was gracefully restarted. The new page and JSON
+projection, existing Sentry/audit pages, prospective view and both historical
+pages returned HTTP 200 with `Cache-Control: no-store`. The worker was enabled
+and healthy, its attempt count stayed at one, and its next eligible check was
+`2026-10-15T22:20:44.916557Z` (3:20 p.m. Los Angeles), requiring new headline
+evidence. Future checks retain the same bounded schedule. ModelDock must remain
+available; this module never starts it or switches providers.
+
+The frozen pilot still verified as four events, 25 evidence blobs, zero
+orphans, with head
+`36a0aa46658e95e049098fb1748e982932aafe45920210a47808f572ec873f4d`.
+All nine pinned source files matched pre-burst commit `377f194`. Auto-trading
+remained OFF, with entries, worker activation, automatic restart and capital
+transfers disabled. No broker/account/order requests were made by this module.
+
+Next: inspect the first accepted scheduled brief and its preserved challenge.
+Before richer-content work, separately test the current Alpaca content
+entitlement with explicit bounds and confirmed use rights. No subsequent
+adapter, subscription or experiment is implemented here.
