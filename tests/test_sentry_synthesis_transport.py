@@ -142,12 +142,67 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual(len(self.fixture.calls), 0)
 
     def test_timeout_and_grace_fail_before_io(self):
-        for timeout, grace in [(121, 10), (60, 11)]:
+        for timeout, grace in [(901, 30), (900, 31)]:
             self.config = ModelDockConfig('http://localhost:8000', timeout, delivery_grace_seconds=grace)
             with self.subTest(timeout=timeout), self.assertRaises(ValueError):
                 self.generate()
         self.assertFalse(self.root.exists())
         self.assertEqual(len(self.fixture.calls), 0)
+
+    def test_v3_long_budget_reaches_service_and_delivery_without_prompt_changes(self):
+        old, old_bindings, _ = transport._request('oracle', packet(), self.config, None, version=transport.V2_VERSION)
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
+        wire, bindings, configuration = transport._request('oracle', packet(), self.config, None)
+        self.assertEqual(wire['timeout'], 900)
+        self.assertEqual(self.config.delivery_timeout_seconds, 930)
+        for field in ('messages', 'response_format', 'max_tokens', 'profile', 'capabilities'):
+            self.assertEqual(wire[field], old[field])
+        self.assertNotEqual(wire['metadata'], old['metadata'])
+        self.assertEqual(bindings['configuration_sha256'], sha256_bytes(canonical_json_bytes(configuration)))
+        self.assertNotIn('configuration_sha256', old_bindings)
+        result = self.generate()
+        self.assertEqual(result['status'], 'ACCEPTED')
+        request = self.fixture.calls[0]
+        self.assertEqual(json.loads(request['body'])['timeout'], 900)
+        self.assertGreater(request['timeout_seconds'], 900)
+        self.assertLessEqual(request['timeout_seconds'], 930)
+        self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), result)
+
+    def test_historical_versions_keep_their_old_deadline_bounds(self):
+        for version in (transport.LEGACY_VERSION, transport.V2_VERSION):
+            for timeout, grace in ((121, 10), (120, 11)):
+                config = ModelDockConfig('http://localhost:8000', timeout, delivery_grace_seconds=grace)
+                with self.subTest(version=version, timeout=timeout, grace=grace), self.assertRaises(ValueError):
+                    transport._request('oracle', packet(), config, None, version=version)
+        self.assertFalse(self.root.exists())
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_v2_receipt_replays_exactly_under_v3_default_without_resend(self):
+        first = self.generate(version=transport.V2_VERSION)
+        self.assertEqual(first['status'], 'ACCEPTED')
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        old_wire = json.loads(before['intent.json'])['wire_request']
+        self.assertEqual(json.loads(before['intent.json'])['schema_version'], transport.V2_VERSION)
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.generate(), first)
+        self.assertEqual(first['request_id'], old_wire['metadata']['blackpod_correlation']['request_id'])
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_configuration_changes_get_distinct_v3_request_id(self):
+        one, _, _ = transport._request('oracle', packet(), self.config, None)
+        two, _, _ = transport._request('oracle', packet(),
+            ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30), None)
+        self.assertNotEqual(one['metadata']['blackpod_correlation']['request_id'],
+                            two['metadata']['blackpod_correlation']['request_id'])
+
+    def test_unreserved_v2_role_uses_explicit_version_hint(self):
+        old, _, _ = transport._request('oracle', packet(), self.config, None, version=transport.V2_VERSION)
+        result = transport.read_role('oracle', packet(), self.root, self.config, version=transport.V2_VERSION)
+        self.assertEqual(result['request_id'], old['metadata']['blackpod_correlation']['request_id'])
+        self.assertEqual(result['failure_code'], 'NOT_RESERVED')
+        self.assertFalse(self.root.exists())
 
     def test_pre_gate_rejection_never_reserves_or_calls(self):
         for gate in ('off_check', 'verify_source'):

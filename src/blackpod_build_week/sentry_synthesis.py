@@ -131,10 +131,14 @@ def compose_report(packet,oracle,challenge,completed_at,*,validation=None):
         'review_independence':{'separate_review_pass':review is not None,'independent_model_verified':False,'independent_sources_verified':False},
         'portfolio':dict(packet['portfolio']),'authority':dict(AUTHORITY)}
     if validation is not None:
+        deadline=isinstance(validation,dict) and validation.get('purpose')=='EXPLICIT_DEADLINE_VALIDATION'
+        fields={'purpose','parent_report_id','parent_report_sha256','transport_schema_version'}
+        if deadline:fields.add('scope')
         if (not isinstance(validation,dict)
-                or set(validation)!={'purpose','parent_report_id','parent_report_sha256','transport_schema_version'}
-                or validation['purpose']!='EXPLICIT_V2_VALIDATION'
-                or validation['transport_schema_version']!='blackpod.sentry_synthesis_transport.v2'
+                or set(validation)!=fields
+                or validation['purpose']!=('EXPLICIT_DEADLINE_VALIDATION' if deadline else 'EXPLICIT_V2_VALIDATION')
+                or validation['transport_schema_version']!=('blackpod.sentry_synthesis_transport.v3' if deadline else 'blackpod.sentry_synthesis_transport.v2')
+                or (deadline and validation['scope']!='MANUAL_RETAINED_EVIDENCE')
                 or not isinstance(validation['parent_report_id'],str)
                 or re.fullmatch(r'sentry-synthesis-[0-9a-f]{64}',validation['parent_report_id']) is None
                 or not isinstance(validation['parent_report_sha256'],str)

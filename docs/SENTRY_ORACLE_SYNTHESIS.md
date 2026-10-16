@@ -57,7 +57,7 @@ configuration or reuse the old mission candidate workflow.
 | Feed quality | Retained-prefix audit and explicit unknown coverage; no fabricated missing-news count |
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
 | Schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between attempts; maximum four attempts per LA day |
-| Timeout | Configured per-call bound, at most 120 seconds |
+| Timeout | Current v3 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -99,7 +99,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
   -m blackpod_build_week.sentry_synthesis_service configure \
   --config output/blackpod-shadow-station/config.json \
   --modeldock-base-url http://127.0.0.1:8000 \
-  --modeldock-timeout-seconds 90 --modeldock-profile default
+  --modeldock-timeout-seconds 900 --modeldock-delivery-grace-seconds 30 \
+  --modeldock-profile default
 ```
 
 To enable after validation, repeat `configure` with the same arguments and add
@@ -140,6 +141,14 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
+The current transport is **v3**, using the same v2 output contracts, prompts,
+2,500-token limit, model routing and evidence selection. It binds configuration
+into its correlation identity and permits a 900-second request budget with
+30 seconds of delivery grace for slower local hardware. ModelDock already
+honors this per-request timeout; its server default is a fallback, not a hard
+90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
+request bytes, identities and version-specific deadline limits still replay.
+
 ### Explicit compatibility validation of a failed v1 attempt
 
 The separately authorized `validate-v2` command can record one v2 child of an
@@ -170,6 +179,35 @@ ModelDock's activity display. This label does not change request bodies,
 model routing, profiles or authority. “Connected clients” records named
 generation activity, not a persistent native-app connection. No additional
 ModelDock endpoint is required in the native webview.
+
+### Explicit retained-evidence deadline validation
+
+After a separately authorized timeout diagnosis, `validate-deadline` can record
+one v3 child of the terminal **v2 validation with `MODELDOCK_HTTP_504`**. It
+requires exactly 900 seconds plus 30 seconds grace. The original v1 failure,
+v2 failure and exact historical packet remain unchanged. A v3 child cannot
+become another deadline-validation parent.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-deadline \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id 'sentry-synthesis-<terminal v2 timeout report SHA-256>'
+```
+
+This explicit manual scope permits a historical diagnostic outside monitoring
+hours. It does not change the background schedule or admit new market evidence.
+The same real clock, enabled control, one-hour spacing, four-attempt daily
+budget, archive bounds, watchlist, OFF and frozen-source gates still apply.
+Its deterministic identity excludes deadline changes as a way to create another
+try. Duplicate and interrupted calls inspect retained work; they never resend.
+
+The read-only UI labels deadline validation and original source time, retains
+both the original interpretation and dissent when accepted, and distinguishes
+a reserved attempt from the previous completed report. A bounded processing
+health allowance reflects the configured delivery window; it does not claim
+native token progress or successful completion. Idle health retains its
+ordinary five-minute threshold.
 
 Requests, sanitized response projections, response hashes, processing receipts and immutable reports
 remain local under the separate synthesis operational root. They are not part

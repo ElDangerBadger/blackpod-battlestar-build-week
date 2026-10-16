@@ -26,7 +26,8 @@ from .modeldock_client import ModelDockClient, ModelDockCallResult, ModelDockCli
 from .modeldock_config import ModelDockConfig
 
 LEGACY_VERSION = 'blackpod.sentry_synthesis_transport.v1'
-VERSION = 'blackpod.sentry_synthesis_transport.v2'
+V2_VERSION = 'blackpod.sentry_synthesis_transport.v2'
+VERSION = 'blackpod.sentry_synthesis_transport.v3'
 MAX_TOKENS = 2500
 MAX_FILE_BYTES = 1024 * 1024
 SYSTEM = (
@@ -82,16 +83,17 @@ def _contracts():
     return response_schema, validate_response
 
 
-def _configuration(config):
-    if not isinstance(config, ModelDockConfig) or config.timeout_seconds > 120 or config.delivery_grace_seconds > 10:
-        raise ValueError('synthesis requires a local MLX deadline no greater than 120 seconds plus 10 seconds delivery grace')
+def _configuration(config, *, version=VERSION):
+    timeout, grace = (900, 30) if version == VERSION else (120, 10)
+    if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
+        raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, VERSION}:
         raise ValueError('unsupported synthesis transport version')
-    configuration = _configuration(config)
+    configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
         raise ValueError('unsupported synthesis role or packet')
     if (role == 'oracle' and draft is not None) or (role == 'challenge' and not isinstance(draft, dict)):
@@ -108,17 +110,19 @@ def _request(role, packet, config, draft, *, version=VERSION):
         raise ValueError('synthesis packet exceeds bound')
     draft_sha256 = sha256_bytes(canonical_json_bytes(draft)) if draft is not None else None
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
+    if version != LEGACY_VERSION:
+        bindings['transport_schema_version'] = version
     if version == VERSION:
-        bindings['transport_schema_version'] = VERSION
+        bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()
     evidence = {'evidence_packet': packet}
     if draft is not None:
         evidence['original_oracle_draft'] = draft
     system = SYSTEM + ROLE_INSTRUCTIONS[role]
-    if version == VERSION:
+    if version != LEGACY_VERSION:
         system += ' Keep every text field on one line. Use concise themes and only the citations needed for each claim.'
-    if version == VERSION and role == 'oracle':
+    if version != LEGACY_VERSION and role == 'oracle':
         system += (' For proposed_invalidation, explicitly use {"status":"UNSPECIFIED","text":""} '
                    'when no condition is proposed, or {"status":"PROPOSED","text":"a nonblank condition"}. '
                    'UNSPECIFIED must have empty text; PROPOSED must have nonblank text. Never invent a missing historical condition.')
@@ -349,13 +353,17 @@ def _read_role(role, packet, root, config, draft, wire, bindings, configuration)
                    failure_code=receipt['failure_code'], receipt_sha256=sha256_bytes(receipt_bytes))
 
 
-def read_role(role, packet, role_root, config, *, draft=None):
+def read_role(role, packet, role_root, config, *, draft=None, version=VERSION):
     """Verify a retained attempt with no transport, runtime keys or inference."""
-    wire, bindings, configuration = _request(role, packet, config, draft)
     path = _absolute_path(Path(role_root))
     if not os.path.lexists(path):
+        wire, bindings, configuration = _request(role, packet, config, draft, version=version)
         return _result('UNCERTAIN', wire, failure_code='NOT_RESERVED')
     with _directory(path, create=False, locked=False) as (root, _):
+        if 'intent.json' in os.listdir(root):
+            retained, _ = _read(root, 'intent.json')
+            version = retained.get('schema_version')
+        wire, bindings, configuration = _request(role, packet, config, draft, version=version)
         return _read_role(role, packet, root, config, draft, wire, bindings, configuration)
 
 
@@ -365,9 +373,9 @@ def _gates(off_check, verify_source):
 
 
 def generate_role(role, packet, role_root, config, *, draft=None, off_check, verify_source,
-                  client_factory=None, now=_utc_now):
+                  client_factory=None, now=_utc_now, version=VERSION):
     """Reserve and deliver one role once; all retries inspect retained evidence."""
-    wire, bindings, configuration = _request(role, packet, config, draft)
+    wire, bindings, configuration = _request(role, packet, config, draft, version=version)
     _gates(off_check, verify_source)
     with _directory(role_root, create=True, locked=True) as (root, staging):
         if 'intent.json' in os.listdir(root) or 'receipt.json' in os.listdir(root):
@@ -375,7 +383,7 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
         reserved_at = _stamp(now())
         if parse_rfc3339(reserved_at, 'reserved_at') < parse_rfc3339(packet['as_of'], 'packet as_of'):
             raise ValueError('synthesis attempt precedes evidence packet')
-        intent = {'schema_version': VERSION, 'bindings': bindings, 'configuration': configuration,
+        intent = {'schema_version': version, 'bindings': bindings, 'configuration': configuration,
                   'wire_request': wire, 'request_sha256': sha256_bytes(canonical_json_bytes(wire)), 'reserved_at': reserved_at}
         _publish(root, staging, 'intent.json', intent)
         status, response, provenance, failure_code = 'FAILED', None, None, None
@@ -415,7 +423,7 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
             except (ValueError, TypeError, KeyError, OSError, RuntimeError):
                 status, response, provenance, failure_code = 'REJECTED', None, None, 'VALIDATION_OR_GATE_FAILED'
         finished = _stamp(now())
-        receipt = {'schema_version': VERSION, 'bindings': bindings, 'intent_sha256': sha256_bytes(canonical_json_bytes(intent)),
+        receipt = {'schema_version': version, 'bindings': bindings, 'intent_sha256': sha256_bytes(canonical_json_bytes(intent)),
                    'status': status, 'finished_at': finished, 'response': response, 'provenance': provenance, 'failure_code': failure_code}
         receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes(receipt))
         _publish(root, staging, 'receipt.json', receipt)

@@ -349,6 +349,24 @@ class SynthesisCoreTests(unittest.TestCase):
         challenge['response']['draft_sha256'] = '0'*64
         with self.assertRaises(ValueError): synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW))
 
+    def test_deadline_validation_requires_manual_scope_and_v3_link(self):
+        self.store.append(*capture_packet())
+        packet = self.build(); oracle, challenge = self.model_results(packet)
+        metadata = {'purpose': 'EXPLICIT_DEADLINE_VALIDATION',
+            'parent_report_id': 'sentry-synthesis-'+'a'*64, 'parent_report_sha256': 'b'*64,
+            'transport_schema_version': 'blackpod.sentry_synthesis_transport.v3',
+            'scope': 'MANUAL_RETAINED_EVIDENCE'}
+        report = synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW+timedelta(hours=3)), validation=metadata)
+        self.assertEqual(report['validation'], metadata)
+        self.assertEqual(report['context']['as_of'], catalyst.stamp(NOW))
+        self.assertTrue(all(value is False for value in report['authority'].values()))
+        for key, value in [('scope','AUTOMATIC'), ('transport_schema_version','blackpod.sentry_synthesis_transport.v2')]:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW), validation={**metadata,key:value})
+        with self.assertRaises(ValueError):
+            synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW),
+                validation={key:value for key,value in metadata.items() if key!='scope'})
+
 
 if __name__ == '__main__':
     unittest.main()

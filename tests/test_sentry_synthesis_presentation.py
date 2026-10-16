@@ -81,6 +81,27 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_deadline_validation_is_manual_historical_and_preserves_dissent(self):
+        value = fixture()
+        value['report']['validation'] = {'purpose':'EXPLICIT_DEADLINE_VALIDATION',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v3','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html = render(value)
+        for expected in ('Explicit deadline validation', 'MANUAL_RETAINED_EVIDENCE',
+                         'explicit manual check; normal monitoring hours and frequency are unchanged',
+                         'not a fresh market assessment or a new forecast', 'CONTESTED', 'Auto-trading OFF'):
+            self.assertIn(expected, html)
+        self.assertNotIn('Explicit v2 compatibility validation', html)
+
+    def test_reserved_attempt_does_not_masquerade_as_the_old_completed_report(self):
+        value = fixture()
+        value['operational']['last_result'] = 'ATTEMPT_STARTED'
+        html = render(value)
+        self.assertIn('awaiting a retained completion', html)
+        self.assertIn('Any report below is from an earlier completed attempt', html)
+        self.assertIn('does not establish model progress', html)
+        self.assertIn('Original interpretation of the agreement.', html)
+
     def test_v2_validation_keeps_evidence_and_completion_clocks_distinct(self):
         value = fixture()
         value['report']['validation'] = {'purpose': 'EXPLICIT_V2_VALIDATION',

@@ -15,7 +15,7 @@ from blackpod_build_week import sentry_catalyst as catalyst
 from blackpod_build_week import sentry_synthesis_service as service
 from blackpod_build_week import sentry_synthesis_transport as transport
 from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes
-from blackpod_build_week.modeldock_client import ModelDockClient
+from blackpod_build_week.modeldock_client import ModelDockClient, HttpResponse
 from blackpod_build_week.shadow_station import atomic_state
 from test_sentry_catalyst import NOW, WATCH, packet
 from test_sentry_synthesis_transport import FixtureTransport, draft, challenge
@@ -461,7 +461,7 @@ class ExplicitV2ValidationTests(unittest.TestCase):
         self.assertEqual(validation['purpose'], 'EXPLICIT_V2_VALIDATION')
         self.assertEqual(validation['parent_report_id'], self.source_id)
         self.assertEqual(validation['parent_report_sha256'], sha256_bytes(canonical_json_bytes(self.parent_report)))
-        self.assertEqual(validation['transport_schema_version'], transport.VERSION)
+        self.assertEqual(validation['transport_schema_version'], service.VALIDATION_TRANSPORT_VERSION)
         old_id = self.parent_report['provenance']['oracle']['request_id']
         self.assertNotEqual(result['provenance']['oracle']['request_id'], old_id)
         self.assertEqual(self.original_parent, service.capsule_hashes(self.parent))
@@ -635,6 +635,260 @@ class ExplicitV2ValidationTests(unittest.TestCase):
             with self.subTest(extra=extra), patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
                 service.main(['validate-v2', '--config', '/private/tmp/config.json',
                               '--source-report-id', self.source_id, extra])
+
+
+class ExplicitDeadlineValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ExplicitV2ValidationTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.helper, self.config = self.fixture.helper, self.fixture.config
+        old_http = self.helper.http
+        def timeout_504(**kwargs):
+            old_http.calls.append(kwargs)
+            return HttpResponse(504, {'Content-Length': '2'}, b'{}')
+        old_http.request = timeout_504
+        self.parent_report = self.fixture.run_validation()
+        self.assertEqual(self.parent_report['provenance']['oracle']['failure_code'], 'MODELDOCK_HTTP_504')
+        self.parent = self.fixture.child()
+        self.source_id = self.parent_report['report_id']
+        self.originals = service.validation_chain_hashes(self.parent, self.config)
+        self.helper.http = BoundFixtureTransport()
+        self.helper.control['modeldock'] = {**self.helper.modeldock, 'timeout_seconds': 900,
+                                           'delivery_grace_seconds': 30}
+        atomic_state(self.helper.root / 'control.json', self.helper.control)
+        # 7 p.m. LA is deliberately outside ordinary monitoring. The named
+        # manual retained-evidence scope changes neither clock nor schedule.
+        self.helper.now = NOW + timedelta(hours=8)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_deadline(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id, deadline=True)
+
+    def test_named_manual_scope_outside_hours_uses_fixed_deadline_exact_packet_and_preserves_both_parents(self):
+        self.assertEqual(service.due(self.helper.now, service.ledger(self.helper.runs), True)[1],
+                         'OUTSIDE_MONITORING_HOURS')
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(result['validation']['purpose'], 'EXPLICIT_DEADLINE_VALIDATION')
+        self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
+        self.assertEqual(result['validation']['transport_schema_version'], transport.VERSION)
+        self.assertEqual(result['validation']['parent_report_id'], self.source_id)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual([json.loads(call['body'])['timeout'] for call in self.helper.http.calls], [900, 900])
+        intent = service.immutable_read(self.child(), 'run-intent.json')
+        self.assertEqual(intent['schema_version'], 'blackpod.sentry_synthesis_validation.v3')
+        self.assertEqual(intent['modeldock']['delivery_grace_seconds'], 30)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+        self.assertEqual(service.verify(self.config)['attempt_count'], 3)
+        self.assertTrue(all(v is False for v in result['authority'].values()))
+
+    def test_idempotent_inspection_keeps_old_v2_deadline_and_never_resends_any_generation(self):
+        first = self.run_validation()
+        with patch.object(ModelDockClient, 'generate_text', side_effect=AssertionError('no resend')):
+            self.assertEqual(self.run_validation(), first)
+            self.assertEqual(service.recover_attempt(self.child(), self.config, self.helper.now), first)
+            # Old v2 inspection replays stored 60/5 config, despite new 900/30 control.
+            self.assertEqual(self.fixture.run_validation(), self.parent_report)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_manual_scope_does_not_bypass_hourly_budget_or_disabled_control(self):
+        self.assertEqual(self.run_validation(now=NOW + timedelta(hours=1, minutes=59))['status'],
+                         'WAITING_FOR_NEXT_SLOT')
+        self.helper.control['enabled'] = False
+        atomic_state(self.helper.root / 'control.json', self.helper.control)
+        self.assertEqual(self.run_validation()['status'], 'PAUSED')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_manual_scope_still_shares_four_reservations_per_day(self):
+        for index in (2, 3):
+            at = NOW + timedelta(hours=index)
+            self.helper.append_capture(at, headline='Later independently admitted evidence ' + str(index), identity=500 + index)
+            self.assertEqual(self.helper.cycle(at), 'CHALLENGED_INTERPRETATION')
+        self.helper.now = NOW + timedelta(hours=8)
+        self.assertEqual(self.run_validation()['status'], 'DAILY_BUDGET_EXHAUSTED')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(len(self.helper.http.calls), 4)
+
+    def test_other_deadlines_do_not_enter_fixed_manual_validation(self):
+        for timeout, grace in ((899, 30), (900, 29), (901, 30), (900, 31)):
+            self.helper.control['modeldock'].update(timeout_seconds=timeout, delivery_grace_seconds=grace)
+            atomic_state(self.helper.root / 'control.json', self.helper.control)
+            with self.subTest(timeout=timeout, grace=grace), self.assertRaises(ValueError):
+                self.run_validation()
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_unknown_http_status_is_not_assumed_to_be_504(self):
+        receipt_path = self.parent / 'oracle/receipt.json'
+        saved = json.loads(receipt_path.read_bytes())
+        saved['failure_code'] = 'MODELDOCK_HTTP_STATUS'
+        saved['receipt_sha256'] = sha256_bytes(canonical_json_bytes({k: v for k, v in saved.items() if k != 'receipt_sha256'}))
+        receipt_path.chmod(0o600)
+        receipt_path.write_bytes(canonical_json_bytes(saved))
+        packet, intent, dock = service.load_attempt(self.parent)
+        oracle, challenge = service.retained_roles(self.parent, packet, dock)
+        changed = service.compose_report(packet, oracle, challenge, self.parent_report['completed_at'],
+                                         validation=intent['validation'])
+        path = self.parent / 'report.json'
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(changed))
+        self.source_id = changed['report_id']
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_v1_or_v3_parent_cannot_create_an_unbounded_validation_chain(self):
+        with self.assertRaises(ValueError):
+            service.validate_deadline(self.config, self.fixture.source_id, now=self.helper.now,
+                                       client_factory=self.helper.factory)
+        report = self.run_validation()
+        with self.assertRaises(ValueError):
+            service.validate_deadline(self.config, report['report_id'], now=self.helper.now,
+                                       client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_interrupted_oracle_recovery_is_provider_free_and_never_resends(self):
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_interrupted_challenge_remains_draft_only_without_resend(self):
+        original = self.helper.http.request
+        def interrupt_second(**kwargs):
+            if len(self.helper.http.calls) == 1:
+                self.helper.http.exception = KeyboardInterrupt()
+            return original(**kwargs)
+        self.helper.http.request = interrupt_second
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'DRAFT_ONLY')
+        self.assertIsNone(result['challenge'])
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_oldest_ancestor_tamper_during_generation_blocks_success(self):
+        def mutate(envelope):
+            original = self.fixture.parent / 'completion-clock.json'
+            original.chmod(0o600)
+            original.write_bytes(canonical_json_bytes({'completed_at': catalyst.stamp(NOW + timedelta(seconds=1))}))
+        self.helper.http.mutate = mutate
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertFalse((self.child() / 'report.json').exists())
+
+    def test_private_scope_missing_from_intent_cannot_replay(self):
+        self.run_validation()
+        path = self.child() / 'run-intent.json'
+        intent = json.loads(path.read_bytes())
+        del intent['validation']['scope']
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(intent))
+        with self.assertRaises(ValueError):
+            service.verify(self.config)
+
+    def test_idle_health_stays_five_minutes_but_pending_delivery_has_bounded_lease(self):
+        self.run_validation()
+        heartbeat = self.helper.now
+        atomic_state(self.helper.root / 'health.json', {'heartbeat_at': catalyst.stamp(heartbeat)})
+        idle = service.status(self.config, heartbeat + timedelta(seconds=400))
+        self.assertFalse(idle['operational']['worker_healthy'])
+        self.assertEqual(idle['operational']['worker_health_bound_seconds'], 300)
+
+    def test_pending_long_delivery_health_does_not_imply_token_progress_or_extend_forever(self):
+        with patch.object(service, 'atomic_state', side_effect=OSError('before display state')):
+            with self.assertRaises(OSError):
+                self.run_validation()
+        reserved = self.helper.now
+        atomic_state(self.helper.root / 'state.json', {'schema_version': service.VERSION,
+            'last_run': self.child().name, 'last_result': 'ATTEMPT_STARTED'})
+        atomic_state(self.helper.root / 'health.json', {'heartbeat_at': catalyst.stamp(reserved)})
+        during = service.status(self.config, reserved + timedelta(seconds=600))
+        self.assertTrue(during['operational']['awaiting_retained_completion'])
+        self.assertTrue(during['operational']['worker_healthy'])
+        self.assertEqual(during['operational']['worker_health_bound_seconds'], 1890)
+        after = service.status(self.config, reserved + timedelta(seconds=1891))
+        self.assertFalse(after['operational']['awaiting_retained_completion'])
+        self.assertFalse(after['operational']['worker_healthy'])
+        self.assertEqual(after['operational']['worker_health_bound_seconds'], 300)
+
+    def test_configure_cli_records_explicit_grace_and_manual_command_has_no_force_flags(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['configure', '--config', '/private/tmp/config.json', '--enabled',
+                '--modeldock-base-url', 'http://127.0.0.1:8000', '--modeldock-timeout-seconds', '900',
+                '--modeldock-delivery-grace-seconds', '30']), 0)
+        selected = service.control(service.read_state(self.helper.root / 'control.json'))
+        self.assertEqual(selected['modeldock']['timeout_seconds'], 900)
+        self.assertEqual(selected['modeldock']['delivery_grace_seconds'], 30)
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_deadline', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-deadline', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
+
+
+class HistoricalMissingRoleReplayTests(unittest.TestCase):
+    def ordinary_capsule(self):
+        helper = SentrySynthesisServiceTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        packet = service.current_packet(helper.config, as_of=NOW)
+        directory = helper.runs / packet['evidence_signature']
+        service.write_json_once(directory, 'packet.json', packet)
+        service.write_json_once(directory, 'run-intent.json', {'schema_version': service.VERSION,
+            'context_id': packet['context_id'], 'packet_sha256': sha256_bytes(canonical_json_bytes(packet)),
+            'evidence_signature': packet['evidence_signature'], 'reserved_at': catalyst.stamp(NOW),
+            'modeldock': helper.modeldock})
+        return helper, directory, packet, service.configuration(helper.modeldock)
+
+    def publish(self, directory, packet, oracle, challenge):
+        report = service.compose_report(packet, oracle, challenge, catalyst.stamp(NOW))
+        service.write_json_once(directory, 'completion-clock.json', {'completed_at': catalyst.stamp(NOW)})
+        service.write_json_once(directory, 'report.json', report)
+        return report
+
+    def test_v1_v2_uncertain_report_without_role_intents_retains_original_not_reserved_identity(self):
+        for version in (transport.LEGACY_VERSION, service.VALIDATION_TRANSPORT_VERSION):
+            with self.subTest(version=version):
+                helper, directory, packet, dock = self.ordinary_capsule()
+                oracle = transport.read_role('oracle', packet, directory / 'oracle', dock, version=version)
+                challenge = {'status': 'UNCERTAIN', 'response': None, 'failure_code': 'ORACLE_NOT_ACCEPTED'}
+                expected = self.publish(directory, packet, oracle, challenge)
+                before = service.capsule_hashes(directory)
+                with patch.object(ModelDockClient, 'generate_text', side_effect=AssertionError('read cannot infer')):
+                    self.assertEqual(service.read_report(directory, helper.config), expected)
+                    self.assertEqual(service.verify(helper.config)['incomplete_attempt_count'], 0)
+                self.assertEqual(service.capsule_hashes(directory), before)
+                self.assertEqual(helper.http.calls, [])
+
+    def test_v2_draft_only_normal_report_keeps_missing_challenge_request_identity(self):
+        helper, directory, packet, dock = self.ordinary_capsule()
+        oracle = transport.generate_role('oracle', packet, directory / 'oracle', dock,
+            off_check=lambda: None, verify_source=lambda: service.verify_packet(packet, helper.config),
+            client_factory=helper.factory, now=lambda: NOW, version=service.VALIDATION_TRANSPORT_VERSION)
+        self.assertEqual(oracle['status'], 'ACCEPTED')
+        missing = transport.read_role('challenge', packet, directory / 'challenge', dock, draft=oracle['response'],
+            version=service.VALIDATION_TRANSPORT_VERSION)
+        expected = self.publish(directory, packet, oracle, missing)
+        before = service.capsule_hashes(directory)
+        self.assertEqual(service.read_report(directory, helper.config), expected)
+        self.assertEqual(expected['status'], 'DRAFT_ONLY')
+        self.assertEqual(service.capsule_hashes(directory), before)
+        self.assertEqual(len(helper.http.calls), 1)
 
 
 if __name__ == '__main__':

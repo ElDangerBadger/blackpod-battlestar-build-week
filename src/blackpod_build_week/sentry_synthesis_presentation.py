@@ -64,6 +64,8 @@ def render(value):
         body += '<p class="muted">Synthesis worker: ' + ('enabled' if operational.get('enabled') is True else 'paused or unavailable') + ' · Last attempt: ' + _text(operational.get('last_result', 'NOT_RUN')) + '</p>'
         if operational.get('last_attempt_at'):
             body += '<p class="muted">Last attempt time: ' + _text(_when(operational['last_attempt_at'])) + ' · Attempts today: ' + _text(operational.get('attempt_count_today')) + '</p>'
+        if operational.get('last_result') == 'ATTEMPT_STARTED':
+            body += '<p class="warning">An attempt is reserved and awaiting a retained completion. Any report below is from an earlier completed attempt. This status does not establish model progress.</p>'
         if operational.get('next_eligible_at'):
             body += '<p class="muted">Next eligible check: ' + _text(_when(operational['next_eligible_at'])) + ' · new headline evidence required.</p>'
     if not report:
@@ -72,7 +74,8 @@ def render(value):
         packet = report.get('context') or {}
         validation = report.get('validation')
         if validation:
-            body += '<article class="warning validation"><h2>Explicit v2 compatibility validation</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
+            label = 'Explicit deadline validation' if validation.get('purpose') == 'EXPLICIT_DEADLINE_VALIDATION' else 'Explicit v2 compatibility validation'
+            body += '<article class="warning validation"><h2>' + label + '</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}
         selected = packet.get('selection') or {}
@@ -136,6 +139,8 @@ def render(value):
         body += '<details class="card"><summary>Snapshot identity and retained limitations</summary><p>Context: ' + _text(packet.get('context_id')) + '</p><p>Source head: <code>' + _text(source.get('head_sha256')) + '</code> · Verified captures: ' + _text(source.get('capture_count')) + '</p>' + _list(packet.get('limitations') or [], 'No additional packet limitations recorded.') + '</details>'
         if validation:
             body += '<details class="card"><summary>Preserved parent attempt</summary><p>Parent report: <code>' + _text(validation.get('parent_report_id')) + '</code></p><p>Parent SHA-256: <code>' + _text(validation.get('parent_report_sha256')) + '</code></p><p>Purpose: ' + _text(validation.get('purpose')) + ' · Transport: ' + _text(validation.get('transport_schema_version')) + '</p></details>'
+            if validation.get('scope'):
+                body += '<p class="muted">Validation scope: ' + _text(validation['scope']) + ' · explicit manual check; normal monitoring hours and frequency are unchanged.</p>'
         draft = report.get('draft')
         challenge = report.get('challenge')
         body += '<h2>Oracle · original interpretation</h2><p class="muted">Model-generated reasoning from the retained packet. Each implication remains an unverified interpretation.</p>'
