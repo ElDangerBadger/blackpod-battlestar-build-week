@@ -64,6 +64,8 @@ def render(value):
         body += '<p class="muted">Synthesis worker: ' + ('enabled' if operational.get('enabled') is True else 'paused or unavailable') + ' · Last attempt: ' + _text(operational.get('last_result', 'NOT_RUN')) + '</p>'
         if operational.get('last_attempt_at'):
             body += '<p class="muted">Last attempt time: ' + _text(_when(operational['last_attempt_at'])) + ' · Attempts today: ' + _text(operational.get('attempt_count_today')) + '</p>'
+        if 'background_attempt_count_today' in operational:
+            body += '<p class="muted">Background attempts today: ' + _text(operational['background_attempt_count_today']) + '/4 · Explicit manual diagnostics: ' + _text(operational.get('manual_attempt_count_today')) + ' · separate schedule allowance.</p>'
         if operational.get('last_result') == 'ATTEMPT_STARTED':
             body += '<p class="warning">An attempt is reserved and awaiting a retained completion. Any report below is from an earlier completed attempt. This status does not establish model progress.</p>'
         if operational.get('next_eligible_at'):
@@ -76,7 +78,8 @@ def render(value):
         if validation:
             label = {'EXPLICIT_DEADLINE_VALIDATION':'Explicit deadline validation',
                 'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'Explicit error-code diagnostic',
-                'EXPLICIT_RUNTIME_DIAGNOSTIC':'Explicit runtime diagnostic'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
+                'EXPLICIT_RUNTIME_DIAGNOSTIC':'Explicit runtime diagnostic',
+                'EXPLICIT_MODEL_SELECTION_VALIDATION':'Explicit model-selection validation'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
             body += '<article class="warning validation"><h2>' + label + '</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}

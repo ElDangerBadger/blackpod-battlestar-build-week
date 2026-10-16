@@ -164,3 +164,77 @@ v5 diagnostic will preserve all four failures and use the exact same retained
 headlines, 900/30 budget, v2 schema and 2,500-token ceiling. Its optional error
 sidecar can now verify the closed native category/counters against the exact
 request and receipt. No past error is retroactively reclassified.
+
+The reviewed ModelDock change is retained as a portable
+[patch](patches/modeldock-structured-validation-diagnostics.patch), SHA-256
+`04b055e846476f3386f77a4f4d283b7de78c0748334de15080818b26a740af28`,
+against base `970404f4a549c93834218306fcae33e1c9962c67`. It includes its new
+privacy tests. This is a review/reproduction artifact, not an automatic
+installer or a new BlackPod runtime dependency. Apply only after checking the
+target ModelDock checkout and preserving its unrelated work. Empty context
+lines are whitespace-normalized; Git's reverse-apply check against the exact
+deployed source passed.
+
+The service initially finished native model loading after the CLI's explicit
+30-second readiness wait had expired. That CLI retains an ERROR state even
+when HTTP health later becomes READY. A graceful idle stop and normal start
+with `--wait-seconds 180` restored READY under the owned lifecycle. This was
+startup waiting, separate from the 900-second generation budget. No state file
+was manually rewritten and no inference was retried.
+
+## Separately recorded runtime diagnostic
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-runtime \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id sentry-synthesis-b531fdf49039f8dae915f7265360991379b004e971c96dac2641a3da63b4bf43 \
+  > output/sentry-runtime-diagnostic-2026-10-15-001/validation-result.json
+```
+
+Reserved `2026-10-16T01:53:18.155171Z`, October 15, **6:53:18 p.m. PDT**.
+Capsule `0af2dda86a7aa5a84d97f2248bfcd1d4c5a9263e9dc097cdc2b22e7aa59f3955`.
+Oracle request
+`sentry-oracle-b17a31eab95b61cd9ec521338dd58ab6f8a0b8ace7d47a6951eb0ddcf05c236f`.
+All four ancestors were verified and fingerprinted before this new delivery;
+the packet SHA-256 remains
+`19f24178e3c03f1355ba1dcaa4c53a6ff1edc6f8b99ac3f469a161cc7c89d97d`.
+The actual wire retains `timeout: 900` and `max_tokens: 2500`.
+
+The runtime diagnostic completed at `2026-10-16T01:58:08.454070Z`, October 15,
+**6:58:08 p.m. PDT**. Report:
+`sentry-synthesis-9d971a17b14707ef1109a5122724ff96697655dc0e3578f796e3cd152de2bdc6`.
+Its verified v2 error sidecar reports `JSON_SYNTAX`, native
+`generated_token_count: 2500`, native `stop_reason: length`. The output reached
+the requested ceiling and failed JSON parsing. No draft was accepted and no
+challenge was called. All five reports and their ancestry verify; the four
+earlier capsule fingerprints remain unchanged. This diagnoses the latest
+attempt; it does not backfill the missing details of older failures.
+
+Error-observation SHA-256:
+`10d44670a161b7a5de321de308724528e7eb8b8749fba6ada3f59fa8c94d7687`.
+Receipt SHA-256:
+`90cf6c43d344fb617518d303417d95455904afb2f3ff5287d9c45dd3c8eec55d`.
+Only the closed diagnostic was retained; no generated output or arbitrary
+provider details were exposed. Metadata-only verification is saved privately
+under `output/sentry-runtime-diagnostic-2026-10-15-001/verified-result.json`.
+
+## Model selection correction before any token change
+
+After that request completed, the user observed ModelDock defaulting to Qwen
+and selected Gemma again. The post-restart checks had verified readiness but
+had not captured the active-model endpoint. **The v5 failed request's actual
+model is unverified**, because its failed response has no accepted execution
+provenance. Unchanged configuration hashes do not establish an unchanged
+in-memory active model. The user's observation is preserved separately from
+the independently verified token-exhaustion counters.
+
+At the next check, `/api/v1/models/active` reported `gemma-4-e4b-it-4bit`,
+provider `mlx`, engine `mlx-vlm`; health was READY and requests/compute were
+both zero. On the user's explicit steering, **no 4,096-token request ran**.
+The next separately recorded v6 `validate-model` trial preserves the original
+2,500-token ceiling, exact packet, prompts, v2 schema and 900/30 deadline.
+Its purpose is `EXPLICIT_MODEL_SELECTION_VALIDATION`. Original attempts stay
+unchanged. Any token-budget remedy remains conditional on this Gemma trial.
+Actual accepted model provenance must be checked for both roles; preflight
+selection alone is not a substitute for that provenance.

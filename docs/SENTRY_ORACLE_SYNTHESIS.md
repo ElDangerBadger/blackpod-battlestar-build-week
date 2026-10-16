@@ -60,7 +60,7 @@ configuration or reuse the old mission candidate workflow.
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
 | Background schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between ordinary attempts; maximum four ordinary attempts per LA day |
 | Explicit manual diagnostics | Separate from background hours/daily/spacing limits after the user's October 15 authorization; one serialized, deadline-bound delivery per deterministic identity, with no automatic resends |
-| Timeout | Current v5 and retained v3/v4 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
+| Timeout | Current v6 and retained v3/v4/v5 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -144,14 +144,14 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
-The current transport is **v5**, using the same v2 output contracts, prompts,
+The current transport is **v6**, using the same v2 output contracts, prompts,
 2,500-token limit, model routing and evidence selection. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
 honors this per-request timeout; its server default is a fallback, not a hard
 90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
 request bytes, identities and version-specific deadline limits still replay.
-Retained v3/v4 configuration hashes and 900/30 identities also replay exactly.
+Retained v3/v4/v5 configuration hashes and 900/30 identities also replay exactly.
 
 ### Explicit compatibility validation of a failed v1 attempt
 
@@ -253,6 +253,29 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
   --config output/blackpod-shadow-station/config.json \
   --source-report-id 'sentry-synthesis-<verified terminal v4 validation failure SHA-256>'
 ```
+
+### Explicit model-selection validation
+
+The user-selected Gemma trial uses `validate-model`, a single v6 child of the
+verified terminal v5 JSON-syntax failure at native 2,500 tokens / `length`.
+It preserves the five earlier capsules, original packet, schema, prompts,
+profile, 900/30 deadline and **2,500-token ceiling**. It does not increase the
+output budget or choose a model behind ModelDock's back. Check the active-model
+endpoint immediately before delivery and verify actual accepted provenance
+for both roles; a READY health response alone does not identify the model.
+Retain a failed role's missing model provenance as unavailable.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-model \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id 'sentry-synthesis-<verified terminal v5 syntax/length failure SHA-256>'
+```
+
+The UI labels model-selection validation and retains the historical evidence
+clock. This is an explicit research diagnostic with the same OFF/source,
+serialization, pause, clock and storage gates. It cannot be resent or used as
+another model-validation parent. No token increase is enabled by this command.
 
 ### Bounded HTTP-error metadata
 

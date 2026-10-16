@@ -81,6 +81,24 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_model_selection_validation_preserves_original_time_and_dissent(self):
+        value=fixture()
+        value['report']['validation']={'purpose':'EXPLICIT_MODEL_SELECTION_VALIDATION',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v6','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html=render(value)
+        for expected in ('Explicit model-selection validation','MANUAL_RETAINED_EVIDENCE',
+                         'not a fresh market assessment or a new forecast','CONTESTED','Auto-trading OFF'):
+            self.assertIn(expected,html)
+
+    def test_background_budget_and_manual_diagnostics_are_distinct(self):
+        value=fixture()
+        value['operational'].update(background_attempt_count_today=1,manual_attempt_count_today=6,attempt_count_today=7)
+        html=render(value)
+        self.assertIn('Background attempts today: 1/4',html)
+        self.assertIn('Explicit manual diagnostics: 6',html)
+        self.assertIn('separate schedule allowance',html)
+
     def test_runtime_diagnostic_retains_original_clock_and_shadow_authority(self):
         value=fixture()
         value['report']['validation']={'purpose':'EXPLICIT_RUNTIME_DIAGNOSTIC',

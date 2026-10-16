@@ -31,7 +31,9 @@ LEGACY_VERSION = 'blackpod.sentry_synthesis_transport.v1'
 V2_VERSION = 'blackpod.sentry_synthesis_transport.v2'
 V3_VERSION = 'blackpod.sentry_synthesis_transport.v3'
 V4_VERSION = 'blackpod.sentry_synthesis_transport.v4'
-VERSION = 'blackpod.sentry_synthesis_transport.v5'
+V5_VERSION = 'blackpod.sentry_synthesis_transport.v5'
+VERSION = 'blackpod.sentry_synthesis_transport.v6'
+LEGACY_MAX_TOKENS = 2500
 MAX_TOKENS = 2500
 MAX_FILE_BYTES = 1024 * 1024
 ERROR_OBSERVATION_VERSION = 'blackpod.sentry_http_error_observation.v1'
@@ -233,14 +235,14 @@ def _contracts():
 
 
 def _configuration(config, *, version=VERSION):
-    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, VERSION} else (120, 10)
+    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, VERSION} else (120, 10)
     if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
         raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, VERSION}:
         raise ValueError('unsupported synthesis transport version')
     configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
@@ -261,7 +263,7 @@ def _request(role, packet, config, draft, *, version=VERSION):
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
     if version != LEGACY_VERSION:
         bindings['transport_schema_version'] = version
-    if version in {V3_VERSION, V4_VERSION, VERSION}:
+    if version in {V3_VERSION, V4_VERSION, V5_VERSION, VERSION}:
         bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()
@@ -277,7 +279,8 @@ def _request(role, packet, config, draft, *, version=VERSION):
                    'UNSPECIFIED must have empty text; PROPOSED must have nonblank text. Never invent a missing historical condition.')
     wire = {'profile': config.profile, 'capabilities': ['text'],
         'response_format': {'type': 'json_schema', 'schema': schema_builder(role, packet, draft=draft, version='v1' if version == LEGACY_VERSION else 'v2')},
-        'timeout': max(1, math.ceil(config.timeout_seconds)), 'max_tokens': MAX_TOKENS,
+        'timeout': max(1, math.ceil(config.timeout_seconds)),
+        'max_tokens': MAX_TOKENS if version == VERSION else LEGACY_MAX_TOKENS,
         'messages': [{'role': 'system', 'content': system},
                      {'role': 'user', 'content': canonical_json_bytes(evidence).decode('utf-8')}],
         'metadata': {'blackpod_correlation': {'mission_id': context, 'request_id': request_id, 'symbol': 'WATCHLIST', 'run_mode': 'LIVE'}}}
@@ -422,12 +425,16 @@ def _validated_projection(provenance, wire, config, role, packet, draft):
     _safe_token(envelope['model'], 'model'); _safe_token(envelope['trace_id'], 'trace_id')
     revision = _model_revision(envelope)
     metadata = envelope['metadata']
+    # Replay validates the budget of the exact reserved wire version. Raising
+    # the current ceiling must never rewrite or invalidate older receipts.
+    max_tokens = wire['max_tokens']
     if (not isinstance(metadata, dict) or set(metadata) != {'blackpod_correlation', 'structured_output', 'requested_max_tokens',
         'effective_max_tokens', 'generated_token_count', 'generated_token_count_source', 'stop_reason', 'stop_reason_source'}
         or metadata['blackpod_correlation'] != wire['metadata']['blackpod_correlation']
         or metadata['structured_output'] != {'mode': 'json_schema', 'validated': True}
-        or metadata['requested_max_tokens'] != MAX_TOKENS or metadata['effective_max_tokens'] != MAX_TOKENS
-        or type(metadata['generated_token_count']) is not int or not 0 <= metadata['generated_token_count'] <= MAX_TOKENS
+        or type(metadata['requested_max_tokens']) is not int or metadata['requested_max_tokens'] != max_tokens
+        or type(metadata['effective_max_tokens']) is not int or metadata['effective_max_tokens'] != max_tokens
+        or type(metadata['generated_token_count']) is not int or not 0 <= metadata['generated_token_count'] <= max_tokens
         or metadata['generated_token_count_source'] != 'native' or metadata['stop_reason'] != 'stop' or metadata['stop_reason_source'] != 'native'):
         raise ValueError('invalid retained synthesis completion or correlation')
     for field in ('provider', 'model', 'trace_id', 'mocked'):

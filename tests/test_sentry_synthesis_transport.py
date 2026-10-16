@@ -70,7 +70,7 @@ class FixtureTransport:
             'model': 'local-fixture-model', 'content': json.dumps(self.content),
             'data': {'engine': 'mlx-vlm', 'model_path': '/private/fixture-model-path', 'profile': wire['profile']},
             'metadata': {'blackpod_correlation': wire['metadata']['blackpod_correlation'],
-                'requested_max_tokens': 2500, 'effective_max_tokens': 2500, 'generated_token_count': 200,
+                'requested_max_tokens': wire['max_tokens'], 'effective_max_tokens': wire['max_tokens'], 'generated_token_count': 200,
                 'generated_token_count_source': 'native', 'stop_reason': 'stop', 'stop_reason_source': 'native',
                 'generation_options': {}, 'structured_output': {'mode': 'json_schema', 'validated': True}},
             'trace_id': 'fixture-trace', 'mocked': False}
@@ -162,7 +162,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
     def test_v3_long_budget_reaches_service_and_delivery_without_prompt_changes(self):
         old, old_bindings, _ = transport._request('oracle', packet(), self.config, None, version=transport.V2_VERSION)
         self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
-        wire, bindings, configuration = transport._request('oracle', packet(), self.config, None)
+        wire, bindings, configuration = transport._request('oracle', packet(), self.config, None, version=transport.V3_VERSION)
         self.assertEqual(wire['timeout'], 900)
         self.assertEqual(self.config.delivery_timeout_seconds, 930)
         for field in ('messages', 'response_format', 'max_tokens', 'profile', 'capabilities'):
@@ -170,7 +170,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertNotEqual(wire['metadata'], old['metadata'])
         self.assertEqual(bindings['configuration_sha256'], sha256_bytes(canonical_json_bytes(configuration)))
         self.assertNotIn('configuration_sha256', old_bindings)
-        result = self.generate()
+        result = self.generate(version=transport.V3_VERSION)
         self.assertEqual(result['status'], 'ACCEPTED')
         request = self.fixture.calls[0]
         self.assertEqual(json.loads(request['body'])['timeout'], 900)
@@ -210,33 +210,125 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
         self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
         self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
-        for key in ('messages','response_format','timeout','max_tokens','profile','capabilities'):
+        for key in ('messages','response_format','timeout','profile','capabilities'):
             self.assertEqual(old['wire_request'][key], current[key])
+        self.assertEqual(old['wire_request']['max_tokens'], 2500)
+        self.assertEqual(current['max_tokens'], 2500)
         with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
             self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
             self.assertEqual(self.generate(), first)
         self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
         self.assertEqual(len(self.fixture.calls), 1)
 
-    def test_v4_exact_replay_under_v5_has_distinct_identity_without_prompt_schema_or_budget_changes(self):
+    def test_v4_exact_replay_under_current_default_preserves_old_budget(self):
         self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
         first = self.generate(version=transport.V4_VERSION)
         before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
         old = json.loads(before['intent.json'])
         current, bindings, configuration = transport._request('oracle', packet(), self.config, None)
         self.assertEqual(old['schema_version'], transport.V4_VERSION)
-        self.assertEqual(transport.VERSION, 'blackpod.sentry_synthesis_transport.v5')
+        self.assertEqual(transport.VERSION, 'blackpod.sentry_synthesis_transport.v6')
         self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
         self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
         self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
         self.assertEqual(old['configuration'], configuration)
-        for key in ('messages', 'response_format', 'timeout', 'max_tokens', 'profile', 'capabilities'):
+        for key in ('messages', 'response_format', 'timeout', 'profile', 'capabilities'):
             self.assertEqual(old['wire_request'][key], current[key])
+        self.assertEqual(old['wire_request']['max_tokens'], 2500)
+        self.assertEqual(current['max_tokens'], 2500)
         with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
             self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
             self.assertEqual(self.generate(), first)
         self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
         self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_v5_golden_wire_and_receipt_replay_exactly_under_v6_without_resend(self):
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
+        first = self.generate(version=transport.V5_VERSION)
+        self.assertEqual(first['status'], 'ACCEPTED')
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        old = json.loads(before['intent.json'])
+        wire = old['wire_request']
+        self.assertEqual(old['schema_version'], 'blackpod.sentry_synthesis_transport.v5')
+        self.assertEqual(wire['max_tokens'], 2500)
+        # Captured before introducing v6: configuration, prompts, schema and
+        # correlation identity all remain byte-for-byte reproducible.
+        self.assertEqual(sha256_bytes(canonical_json_bytes(wire)),
+                         'd5fc017d417f44ab86541e0c4b0499640f640d2983976eb0f7320f59d9b0baf5')
+        self.assertEqual(first['request_id'],
+                         'sentry-oracle-7b68495bebb143e2784de215089f3562749acc82213536e04a802ad7d39279cc')
+        receipt_hash = sha256_bytes(before['receipt.json'])
+        current, bindings, configuration = transport._request('oracle', packet(), self.config, None)
+        self.assertEqual(current['max_tokens'], 2500)
+        self.assertEqual(old['configuration'], configuration)
+        self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
+        self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
+        self.assertNotEqual(wire['metadata'], current['metadata'])
+        self.assertEqual({k:v for k,v in wire.items() if k not in {'max_tokens', 'metadata'}},
+                         {k:v for k,v in current.items() if k not in {'max_tokens', 'metadata'}})
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.generate(), first)
+        self.assertEqual(sha256_bytes((self.root / 'receipt.json').read_bytes()), receipt_hash)
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_all_versions_including_explicit_model_selection_keep_2500(self):
+        for version in (transport.LEGACY_VERSION, transport.V2_VERSION, transport.V3_VERSION,
+                        transport.V4_VERSION, transport.V5_VERSION, transport.VERSION):
+            wire, _, _ = transport._request('oracle', packet(), self.config, None, version=version)
+            with self.subTest(version=version):
+                self.assertEqual(wire['max_tokens'], 2500)
+
+    def test_native_completed_2500_budget_is_accepted_but_native_length_is_rejected(self):
+        self.fixture = FixtureTransport(mutate=lambda e: e['metadata'].update(generated_token_count=2500))
+        self.assertEqual(self.generate()['status'], 'ACCEPTED')
+        self.root = Path(self.tmp.name) / 'truncated'
+        self.fixture = FixtureTransport(mutate=lambda e: e['metadata'].update(generated_token_count=2500,
+                                                                             stop_reason='length'))
+        result = self.generate()
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertIsNone(result['response'])
+        self.assertIsNone(result['provenance'])
+        self.assertEqual(self.generate(), result)
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_budget_provenance_must_match_exact_reserved_wire_for_current_and_v5(self):
+        for version, wrong in ((transport.VERSION, 4096), (transport.V5_VERSION, 4096)):
+            for field in ('requested_max_tokens', 'effective_max_tokens', 'generated_token_count'):
+                self.root = Path(self.tmp.name) / f'{version[-2:]}-{field}'
+                observed = wrong
+                self.fixture = FixtureTransport(mutate=lambda e, f=field, n=observed:
+                                                e['metadata'].update({f:n}))
+                with self.subTest(version=version, field=field):
+                    result = self.generate(version=version)
+                    self.assertNotEqual(result['status'], 'ACCEPTED')
+                    self.assertIsNone(result['response'])
+                    self.assertEqual(self.generate(version=version), result)
+                    self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_rehashed_receipt_cannot_change_its_versioned_token_budget_or_integer_types(self):
+        for version, own_budget, other_budget in ((transport.VERSION, 2500, 4096),
+                                                  (transport.V5_VERSION, 2500, 4096)):
+            for field, observed in (('requested_max_tokens', other_budget),
+                                     ('effective_max_tokens', other_budget),
+                                     ('generated_token_count', own_budget + 1),
+                                     ('requested_max_tokens', float(own_budget)),
+                                     ('effective_max_tokens', float(own_budget))):
+                self.root = Path(self.tmp.name) / f'{version[-2:]}-{field}-{observed}'
+                self.fixture = FixtureTransport()
+                self.assertEqual(self.generate(version=version)['status'], 'ACCEPTED')
+                receipt = json.loads((self.root / 'receipt.json').read_bytes())
+                safe = receipt['provenance']['safe_response']
+                safe['metadata'][field] = observed
+                receipt['provenance']['safe_response_sha256'] = sha256_bytes(canonical_json_bytes(safe))
+                receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes({k:v for k,v in receipt.items()
+                                                                            if k != 'receipt_sha256'}))
+                (self.root / 'receipt.json').chmod(0o600)
+                (self.root / 'receipt.json').write_bytes(canonical_json_bytes(receipt))
+                with self.subTest(version=version, field=field, observed=observed), self.assertRaises(ValueError):
+                    transport.read_role('oracle', packet(), self.root, self.config)
+                self.assertEqual(len(self.fixture.calls), 1)
 
     def test_configuration_changes_get_distinct_v3_request_id(self):
         one, _, _ = transport._request('oracle', packet(), self.config, None)
@@ -800,7 +892,8 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
             def request(self, **kwargs):
                 return HttpResponse(500, {}, b'', complete=False)
         for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION,
-                                         transport.V3_VERSION, transport.V4_VERSION, transport.VERSION)):
+                                         transport.V3_VERSION, transport.V4_VERSION, transport.V5_VERSION,
+                                         transport.VERSION)):
             self.root = Path(self.tmp.name) / str(index)
             result = self.generate(version=version, client_factory=lambda config:
                 ModelDockClient(config, transport=EmptyHttpFailure(), now=lambda: NOW))
