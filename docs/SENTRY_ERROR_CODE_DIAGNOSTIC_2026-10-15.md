@@ -238,3 +238,65 @@ Its purpose is `EXPLICIT_MODEL_SELECTION_VALIDATION`. Original attempts stay
 unchanged. Any token-budget remedy remains conditional on this Gemma trial.
 Actual accepted model provenance must be checked for both roles; preflight
 selection alone is not a substitute for that provenance.
+
+The actual original-token command was:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-model \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id sentry-synthesis-9d971a17b14707ef1109a5122724ff96697655dc0e3578f796e3cd152de2bdc6 \
+  > output/sentry-gemma-validation-2026-10-15-001/validation-result.json
+```
+
+Reserved `2026-10-16T02:09:18.550943Z` (October 15, **7:09:18 p.m. PDT**),
+capsule `9d167055ba512965e1a30fc3033cc3c28387045afad65209e6e4a6ee6ef644a5`.
+ModelDock's active-model endpoint reported Gemma 4 E4B before, during and after
+delivery. These metadata-only observations are retained beside the command
+result and explicitly labeled as selection observations, not successful
+execution provenance.
+
+The role ended at `2026-10-16T02:15:53.238447Z` (7:15:53 p.m. PDT), again with
+HTTP 500 / `STRUCTURED_OUTPUT_INVALID`, `JSON_SYNTAX`, native count **2500** and
+native stop **`length`**. No Oracle or challenge was accepted. Report:
+`sentry-synthesis-353d720e03c83183ca276ccec3f794fa33344aea9f5dd4c974f2b1197baa6487`,
+completed `2026-10-16T02:16:01.408688Z`.
+Error-observation SHA-256:
+`4084c342d896f54fa4ed849644e8b2663688439cf1828b88451074761a5f0e83`.
+Receipt SHA-256:
+`4c694b18cfcfa6f93bde6bc61203402680bc71c8723cb4a3039122c47bfea9ae`.
+All six reports verify and all five older capsules retain their bytes. No
+higher-token request had run before this original-budget Gemma result.
+
+## Explicitly approved persistent startup model
+
+Read-only inspection found the concrete mismatch: the bundled
+`defaults/config/server.yaml` selects Gemma, but
+`~/Library/Application Support/ModelDock/config/server.yaml` selected
+`Qwen3-1.7B-4bit`. The per-user override wins on startup. Runtime activation
+does not persist that override in ModelDock's current activation path.
+
+The user explicitly approved **Persist Gemma as the startup default**. At
+`2026-10-16T02:15:58.527422Z`, only `active_model` changed to
+`gemma-4-e4b-it-4bit`; all other parsed settings and original formatting were
+preserved. A private original-file copy and before/after hashes are retained in
+`output/sentry-gemma-validation-2026-10-15-001/`. The write was atomic,
+fsynced and guarded against concurrent edits. No restart or model activation
+was performed, so the running validation was uninterrupted. This is the one
+separately authorized ModelDock configuration change; the earlier unchanged
+configuration checks above describe their original observation times.
+
+## Targeted output-budget validation
+
+The failed Gemma trial now supports the user's conditional token-budget check.
+Transport v7 allows **4,096 tokens** while preserving v1–v6 at exactly 2,500
+for replay. Packet, prompts, response schema, profile, model selection and
+900/30 deadline remain unchanged. Native `length` completions remain rejected;
+format validation and provenance checks are not relaxed. The explicit
+`validate-output-budget` path requires the exact verified terminal v6
+JSON-syntax / native 2,500-token / `length` failure, retains all six ancestors,
+and cannot be resent or used as another output-validation parent.
+
+During this targeted validation, ordinary background synthesis remains pinned
+to v6/2,500. Promotion of the normal path is gated on the real validation;
+no 4,096-token background call is claimed here.

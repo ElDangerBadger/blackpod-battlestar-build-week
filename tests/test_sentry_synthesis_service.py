@@ -100,6 +100,8 @@ class SentrySynthesisServiceTests(unittest.TestCase):
         self.assertEqual(len(self.http.calls), 2)
         self.assertEqual(len(self.factories), 2)
         requests = [json.loads(call['body']) for call in self.http.calls]
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.MODEL_TRANSPORT_VERSION)
+        self.assertEqual([item['max_tokens'] for item in requests], [2500, 2500])
         first = requests[0]['metadata']['blackpod_correlation']['request_id']
         second = requests[1]['metadata']['blackpod_correlation']['request_id']
         self.assertNotEqual(first, second)
@@ -1301,7 +1303,7 @@ class ExplicitModelSelectionValidationTests(unittest.TestCase):
                                    client_factory=self.helper.factory)
         self.assertEqual(len(self.helper.http.calls), 2)
 
-    def test_model_cli_requires_explicit_source_and_no_output_budget_option(self):
+    def test_model_cli_requires_explicit_source_and_rejects_arbitrary_token_overrides(self):
         with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
                 patch.object(service, 'validate_model', return_value={'status': 'FIXTURE_ONLY'}) as call, \
                 patch('sys.stdout', new_callable=StringIO):
@@ -1309,8 +1311,146 @@ class ExplicitModelSelectionValidationTests(unittest.TestCase):
                                            '--source-report-id', self.source_id]), 0)
         call.assert_called_once_with(self.config, self.source_id)
         with patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
-            service.main(['validate-output-budget', '--config', '/private/tmp/config.json',
-                          '--source-report-id', self.source_id])
+            service.main(['validate-model', '--config', '/private/tmp/config.json',
+                          '--source-report-id', self.source_id, '--max-tokens', '4096'])
+
+
+class ExplicitOutputBudgetValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ExplicitModelSelectionValidationTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.helper, self.config = self.fixture.helper, self.fixture.config
+        from unittest.mock import Mock
+        def opened(request, timeout):
+            wire = json.loads(request.data)
+            self.assertEqual(wire['max_tokens'], 2500)
+            identity = wire['metadata']['blackpod_correlation']['request_id']
+            raw = canonical_json_bytes({'error': {'code': 'STRUCTURED_OUTPUT_INVALID', 'request_id': identity,
+                'message': 'private repeated syntax fixture', 'details': [self.fixture.diagnostic]}})
+            raise HTTPError(request.full_url, 500, 'private', {'Content-Length': str(len(raw))}, BytesIO(raw))
+        with patch('blackpod_build_week.modeldock_client.urllib.request.build_opener', return_value=Mock(open=opened)):
+            self.parent_report = self.fixture.run_validation(client_factory=lambda config: ModelDockClient(config,
+                transport=transport._NamedSentryTransport(), now=lambda: self.helper.now))
+        self.parent = self.fixture.child()
+        self.source_id = self.parent_report['report_id']
+        self.originals = service.validation_chain_hashes(self.parent, self.config)
+        self.assertEqual(len(self.originals), 6)
+        self.assertEqual(self.parent_report['provenance']['oracle']['failure_code'], 'MODELDOCK_HTTP_500')
+        self.observation_path = self.parent / 'oracle/http-error.json'
+        self.observation_bytes = self.observation_path.read_bytes()
+        self.helper.http = BoundFixtureTransport()
+        self.helper.now += timedelta(seconds=1)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_output_budget(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id, output_budget=True)
+
+    def replace_observation(self, value):
+        value['observation_sha256'] = sha256_bytes(canonical_json_bytes(
+            {key: item for key, item in value.items() if key != 'observation_sha256'}))
+        self.observation_path.chmod(0o600)
+        self.observation_path.write_bytes(canonical_json_bytes(value))
+
+    def test_v7_is_explicit_4096_child_preserving_six_originals_and_no_resend(self):
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(result['validation']['purpose'], 'EXPLICIT_OUTPUT_BUDGET_VALIDATION')
+        self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
+        self.assertEqual(result['validation']['transport_schema_version'], service.OUTPUT_TRANSPORT_VERSION)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+        self.assertEqual(len(service.validation_chain_hashes(self.child(), self.config)), 7)
+        for role in ('oracle', 'challenge'):
+            intent = service.immutable_read(self.child() / role, 'intent.json')
+            self.assertEqual(intent['schema_version'], service.OUTPUT_TRANSPORT_VERSION)
+            self.assertEqual(intent['wire_request']['max_tokens'], 4096)
+        modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
+        self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
+        self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual(self.run_validation(), result)
+        self.assertEqual(service.verify(self.config)['attempt_count'], 7)
+        service.status(self.config, self.helper.now)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertTrue(all(item is False for item in result['authority'].values()))
+
+    def test_output_budget_requires_exact_native_2500_length_diagnostic(self):
+        variants = [
+            {'reason': 'VALIDATION_FAILURE'},
+            {'generated_token_count': 2499},
+            {'generated_token_count': 2500.0},
+            {'generated_token_count': True},
+            {'generated_token_count': 4096},
+            {'generated_token_count': None, 'generated_token_count_source': 'unavailable'},
+            {'generated_token_count_source': 'inferred'},
+            {'stop_reason': 'stop'},
+            {'stop_reason': 'unknown', 'stop_reason_source': 'unavailable'},
+            {'stop_reason_source': 'inferred'},
+        ]
+        for change in variants:
+            with self.subTest(change=change):
+                value = json.loads(self.observation_bytes)
+                value['validation_diagnostic'].update(change)
+                self.replace_observation(value)
+                with self.assertRaises(ValueError):
+                    self.run_validation()
+                self.assertFalse(self.child().exists())
+                self.assertEqual(self.helper.http.calls, [])
+
+    def test_output_budget_rejects_missing_or_uncorrelated_diagnostic(self):
+        self.observation_path.unlink()
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.observation_path.write_bytes(self.observation_bytes)
+        value = json.loads(self.observation_bytes)
+        value['request_id'] = 'unrelated-request'
+        self.replace_observation(value)
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_output_budget_interruption_stays_uncertain_and_never_resends(self):
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_packet_only_output_child_is_retained_uncertain_without_generating(self):
+        service.write_json_once(self.child(), 'packet.json', self.parent_report['context'])
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(service.verify(self.config)['abandoned_pre_reservation_count'], 1)
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_only_v6_failure_is_source_and_v7_cannot_create_another_child(self):
+        for report in (self.fixture.parent_report, self.fixture.fixture.parent_report):
+            with self.assertRaises(ValueError):
+                service.validate_output_budget(self.config, report['report_id'], now=self.helper.now,
+                                               client_factory=self.helper.factory)
+        self.assertEqual(self.helper.http.calls, [])
+        result = self.run_validation()
+        with self.assertRaises(ValueError):
+            service.validate_output_budget(self.config, result['report_id'], now=self.helper.now,
+                                           client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_output_budget_cli_requires_explicit_source(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_output_budget', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-output-budget', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
+        with patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
+            service.main(['validate-output-budget', '--config', '/private/tmp/config.json'])
 
 
 if __name__ == '__main__':
