@@ -46,10 +46,12 @@ logged in. The user LaunchAgent owns the 6:30 p.m. Los Angeles collection;
 the old Codex collector is paused and auto-trading stays OFF.
 
 The standalone app also has an independent [Sentry catalyst feed](docs/SENTRY_CATALYST_FEED.md):
-bounded headline polling and IEX price/volume observations for the explicitly
-selected ten-symbol watchlist. Its cards preserve source clocks, stale-data and
+bounded headline polling and consolidated SIP price/volume observations for the explicitly
+selected ten-symbol watchlist. The current account supports **15-minute delayed SIP**;
+real-time SIP was denied. Its cards preserve feed/delay labels, source clocks, stale-data and
 coverage warnings; they cannot recommend or execute trades. The frozen pilot
-remains independent.
+remains independent. [Consolidated-data setup and evidence](docs/SENTRY_CONSOLIDATED_MARKET_DATA.md)
+explain the current profile and the unchanged historical IEX snapshots.
 
 Its [feed-quality audit](docs/SENTRY_FEED_LATENCY_AUDIT.md) reports observed
 headline discovery lag, bar freshness and capture gaps, with immutable offline
@@ -58,7 +60,9 @@ exports. It leaves unknown coverage and missing attempt history explicit.
 The [Sentry → Oracle market brief](docs/SENTRY_ORACLE_SYNTHESIS.md) adds bounded
 local synthesis and a separate challenge pass, with cited evidence and original
 dissent retained. Its read-only page separates watchlist implications by desk;
-it has no authorization, allocation or execution authority.
+it has no authorization, allocation or execution authority. A separate current-market
+panel shows the latest saved consolidated observations without replacing the
+original price inputs used by the brief or its review.
 
 The [narrative-quality evaluation](docs/SENTRY_NARRATIVE_QUALITY_EVALUATION.md)
 reviews the preserved brief against its exact headline packet. Its read-only

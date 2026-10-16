@@ -22,6 +22,11 @@ new autonomous decision agents.
 
 ## Reading the brief
 
+- **Current market context:** latest verified saved consolidated Sentry observations,
+  with market volume, capture/minute-bar clocks and the explicit 15-minute delay
+  when applicable. This separate panel does not update the original model input,
+  narrative or linked quality review. If no consolidated capture is available,
+  it says so rather than substituting historical IEX counts.
 - **Overview:** a tentative picture of the selected news, with evidence links.
 - **Themes:** at most three interpretations, each linked to retained evidence.
 - **Symbol implications:** separate trading and investment questions. A direct
@@ -73,10 +78,16 @@ Only headlines are read. Article bodies, primary filings, earnings estimates,
 analyst research and verified company fundamentals are absent. Price change
 means a retained minute close versus the provider's previous daily close. It is
 not a measured post-headline response, a matched SPY/QQQ excess return, a causal
-effect, an executable quote or realized trade P&L. Displayed **IEX-only volume**
-counts shares on that single exchange, not total market volume or time-matched
-relative volume. It is the retained daily-bar count and may be stale or
-incomplete. See the [volume definition and correction](SENTRY_CATALYST_FEED.md).
+effect, an executable quote or realized trade P&L. The separate current-market
+panel uses **Market volume** from an explicitly identified consolidated SIP feed;
+this account uses **15-minute delayed SIP**. The collapsed original-source folder
+keeps the exact feed/count used by that specific brief. Its historical
+**IEX-only volume** counts one exchange and remains unchanged; newer market
+counts are not substituted into the original reasoning or its evaluation.
+Neither count is time-matched relative volume or guaranteed final daily volume.
+Daily-bar time is the interval start, not the last volume update; eligible
+extended-hours trades may contribute to the provider aggregate. See the
+[consolidated-data guide](SENTRY_CONSOLIDATED_MARKET_DATA.md).
 
 The challenge is a separate role prompt and request bound to the original
 draft and evidence packet. That provides a separate review pass; it does not

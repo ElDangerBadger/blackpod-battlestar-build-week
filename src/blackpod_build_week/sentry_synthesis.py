@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 
 from .hashing import canonical_json_bytes, sha256_bytes
-from .sentry_catalyst import CatalystStore, clock, stamp
+from .sentry_catalyst import CatalystStore, CONSOLIDATED_VERSION, clock, stamp
 from .sentry_catalyst_audit import build_report as feed_audit
 from .sentry_catalyst_service import paths as catalyst_paths
 from .sentry_history_cache import read_regular
@@ -72,10 +72,14 @@ def build_packet(records, verification, as_of):
              'last_seen_at':record['projection']['captured_at'],'content_level':'HEADLINE_ONLY'},
             {'capture_id':record['capture_id'],'captured_at':record['projection']['captured_at'],
              'news_sha256':record['evidence']['news']['sha256'],'provider_id':a['provider_id'],'revision_sha256':a['revision_sha256']})
-    fresh=stale=unavailable=future_prices=0
+    fresh=stale=unavailable=future_prices=delayed=0
+    consolidated = latest.get('schema_version') == CONSOLIDATED_VERSION
     for row in latest['contexts']:
         age=(as_of-clock(row['minute_at'])).total_seconds() if row.get('minute_at') else None
         label='UNAVAILABLE' if age is None else 'FUTURE_TIMESTAMP' if age<0 else 'RECENT' if age<=900 else 'STALE'
+        if consolidated and latest['market_feed'] == 'delayed_sip' and age is not None and 0 <= age <= 1800:
+            label = 'DELAYED'
+        delayed += label == 'DELAYED'
         fresh+=label=='RECENT';stale+=label=='STALE';unavailable+=label=='UNAVAILABLE';future_prices+=label=='FUTURE_TIMESTAMP'
         add('PRICE_CONTEXT',[row['symbol']],{**row,'freshness_at_packet':label,
             'age_at_packet_seconds':None if age is None else int(age),'price_change_basis':'MINUTE_CLOSE_VS_PREVIOUS_DAILY_CLOSE_NOT_NEWS_RESPONSE'},
@@ -89,6 +93,9 @@ def build_packet(records, verification, as_of):
         'unavailable_context_count':unavailable,'future_context_count':future_prices,
         'latest_capture_at':latest['captured_at'],'overall_news_coverage_fraction':None,
         'post_headline_reaction_available':False,'holdings_available':False}
+    if consolidated:
+        quality.update(market_feed=latest['market_feed'], feed_delay_seconds=latest['feed_delay_seconds'],
+                       delayed_context_count=delayed)
     add('FEED_QUALITY',[],quality,{'audit_report_id':audit['report_id'],
         'audit_report_sha256':sha256_bytes(canonical_json_bytes(audit))})
     signature=sha256_bytes(canonical_json_bytes({'watchlist':sorted(selected),

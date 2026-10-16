@@ -32,6 +32,26 @@ class SynthesisCoreTests(unittest.TestCase):
     def headlines(self, packet):
         return [row for row in packet['evidence'] if row['kind'] == 'HEADLINE']
 
+    def test_consolidated_context_preserves_feed_delay_and_replays_legacy_prefix(self):
+        self.store.append(*capture_packet())
+        original = self.build()
+        original_bytes = canonical_json_bytes(original)
+        later = NOW + timedelta(minutes=5)
+        self.store.append(*capture_packet(at=later, feed='delayed_sip'))
+        current = self.build(later)
+        self.assertEqual(current['quality']['market_feed'], 'delayed_sip')
+        self.assertEqual(current['quality']['feed_delay_seconds'], 900)
+        self.assertEqual(current['quality']['delayed_context_count'], len(WATCH))
+        self.assertEqual(current['quality']['fresh_context_count'], 0)
+        contexts = [r['data'] for r in current['evidence'] if r['kind'] == 'PRICE_CONTEXT']
+        self.assertTrue(all(r['feed'] == 'delayed_sip' and r['freshness_at_packet'] == 'DELAYED' for r in contexts))
+        self.assertEqual(synthesis.verify_packet(original, self.config), original)
+        self.assertEqual(canonical_json_bytes(original), original_bytes)
+        self.assertNotIn('market_feed', original['quality'])
+        old = self.build(later + timedelta(minutes=31))
+        self.assertEqual(old['quality']['delayed_context_count'], 0)
+        self.assertEqual(old['quality']['stale_context_count'], len(WATCH))
+
     def test_packet_is_deterministic_content_addressed_and_does_not_write_source(self):
         self.store.append(*capture_packet())
         before = {str(p.relative_to(self.store.root)): p.read_bytes()

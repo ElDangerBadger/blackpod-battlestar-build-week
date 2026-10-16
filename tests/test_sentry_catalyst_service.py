@@ -10,7 +10,7 @@ from unittest.mock import patch
 from blackpod_build_week import sentry_catalyst_service as service
 from blackpod_build_week import sentry_catalyst_presentation as presentation
 from blackpod_build_week import shadow_station
-from blackpod_build_week.sentry_catalyst import VERSION, CatalystStore, stamp
+from blackpod_build_week.sentry_catalyst import VERSION, CONSOLIDATED_VERSION, CatalystStore, stamp
 from blackpod_build_week.sentry_catalyst_capture import CatalystCaptureError
 from blackpod_build_week.paper_account_probe import PaperCredentials
 from blackpod_build_week.shadow_station import atomic_state, read_state
@@ -28,12 +28,12 @@ class WorkerTests(unittest.TestCase):
         self.config['credentials_file'] = str(root / 'private/keys.yaml')
         self.config['credential_format'] = 'GALACTICA_YAML'
         self.root, self.store = service.paths(self.config)
-        atomic_state(self.root / 'control.json', {'schema_version': VERSION, 'enabled': True, 'symbols': WATCH})
+        atomic_state(self.root / 'control.json', {'schema_version': CONSOLIDATED_VERSION, 'enabled': True, 'symbols': WATCH, 'feed': 'sip'})
         self.off = self.enterContext(patch.object(service, '_off'))
         self.enterContext(patch.object(service, 'utc_now', return_value=NOW))
         self.enterContext(patch.object(service, '_read_regular', return_value=b'not-a-real-key'))
         self.enterContext(patch.object(service, 'parse_credentials', return_value=PaperCredentials('fixture-key', 'fixture-secret')))
-        self.projection, self.blobs = packet()
+        self.projection, self.blobs = packet(feed='sip')
         self.calls = []
 
     def getter(self, kind, query, credentials):
@@ -55,7 +55,7 @@ class WorkerTests(unittest.TestCase):
     def test_outside_hours_and_disabled_never_read_credentials_or_call_provider(self):
         with patch.object(service, 'parse_credentials') as credentials:
             self.assertEqual(service.cycle(self.config, now=NOW.replace(hour=3), getter=self.getter), 'OUTSIDE_MONITORING_HOURS')
-            atomic_state(self.root / 'control.json', {'schema_version': VERSION, 'enabled': False, 'symbols': WATCH})
+            atomic_state(self.root / 'control.json', {'schema_version': CONSOLIDATED_VERSION, 'enabled': False, 'symbols': WATCH, 'feed': 'sip'})
             self.assertEqual(service.cycle(self.config, now=NOW, getter=self.getter), 'PAUSED')
             credentials.assert_not_called()
         self.assertEqual(self.calls, [])
@@ -161,11 +161,65 @@ class HTTPTests(_LocalHTTPMixin, unittest.TestCase):
         self.assertEqual(body.count(b'IEX-only volume <b>'), len(WATCH))
         self.assertIn(b'IEX-only volume <b>501,362</b> shares', body)
         self.assertIn(b'IEX-only volume <b>0</b> shares', body)
-        self.assertIn(b'shares from IEX only, not total market volume or relative volume', body)
+        self.assertIn(b'shares from IEX only, not total market volume', body)
+        self.assertIn(b'Volume is not relative volume', body)
         self.assertIn(b'Saved bars may be stale or incomplete', body)
         self.assertIn(b'STALE', body)
         self.assertNotIn(b'Day volume', body)
         self.assertEqual(self.value, before)
+
+    def test_reader_age_can_expire_delayed_context_without_changing_its_feed_or_count(self):
+        row = {'symbol': 'GOOGL', 'feed': 'delayed_sip', 'feed_delay_seconds': 900,
+               'status': 'DELAYED', 'freshness_at_packet': 'STALE',
+               'day_volume': '19243640', 'price': '349.27',
+               'change_from_previous_close_pct': '0.5', 'minute_at': '2026-10-15T19:59:00Z'}
+        before = deepcopy(row)
+        body = presentation.market_tiles([row])
+        self.assertIn('<br>STALE', body)
+        self.assertIn('Consolidated SIP · 15-minute delayed', body)
+        self.assertIn('19,243,640', body)
+        self.assertIn('349.27', body)
+        self.assertEqual(row, before)
+
+    def test_consolidated_and_delayed_market_volume_have_exact_feed_labels(self):
+        for feed, delay, badge in (('sip', 0, 'Consolidated SIP'),
+                                   ('delayed_sip', 900, 'Consolidated SIP · 15-minute delayed')):
+            with self.subTest(feed=feed):
+                self.value['capture'].update(market_feed=feed, feed_delay_seconds=delay)
+                for row in self.value['capture']['contexts']:
+                    row.update(feed=feed, feed_delay_seconds=delay, day_volume='19243640',
+                               status='DELAYED' if delay else 'OBSERVED')
+                before = deepcopy(self.value)
+                code, _, body = self.request('/sentry')
+                self.assertEqual(code, 200)
+                html = body.decode()
+                self.assertIn(badge, html)
+                self.assertEqual(html.count('Market volume <b>19,243,640</b> shares'), len(WATCH))
+                self.assertNotIn('IEX', html)
+                self.assertNotIn('Day volume', html)
+                self.assertIn('DELAYED' if delay else 'OBSERVED', html)
+                self.assertIn('Saved bars may be stale or incomplete', html)
+                self.assertEqual(json.loads(self.request('/sentry.json')[2]), before)
+                self.assertEqual(self.value, before)
+
+    def test_unverified_feed_or_delay_never_claims_consolidated_volume(self):
+        for feed, delay in (('unknown', 0), ('sip', 900), ('delayed_sip', 0), ('sip', False)):
+            with self.subTest(feed=feed, delay=delay):
+                self.value['capture'].update(market_feed=feed, feed_delay_seconds=delay)
+                for row in self.value['capture']['contexts']:
+                    row.update(feed=feed, feed_delay_seconds=delay)
+                html = presentation.render(self.value)
+                self.assertIn('Volume · feed unverified', html)
+                self.assertIn('Market feed unverified', html)
+                self.assertNotIn('Market volume <b>', html)
+                self.assertNotIn('Consolidated SIP', html)
+
+    def test_large_integer_volume_keeps_every_retained_digit(self):
+        self.value['capture'].update(market_feed='sip', feed_delay_seconds=0)
+        for row in self.value['capture']['contexts']:
+            row.update(feed='sip', feed_delay_seconds=0, day_volume='9999999999999999')
+        html = presentation.render(self.value)
+        self.assertEqual(html.count('Market volume <b>9,999,999,999,999,999</b> shares'), len(WATCH))
 
     def test_empty_stale_and_truncated_states_are_explicit(self):
         self.value['capture']['news_truncated'] = True

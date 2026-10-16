@@ -736,6 +736,17 @@ def status(config, now=None):
             'last_result': state.get('last_result', 'NOT_RUN')}
         packet = current_packet(config, as_of=now)
         value['current_source_head'] = packet['source']['head_sha256']
+        # Current observations are separate from the preserved model input.
+        if packet['quality'].get('market_feed') in {'sip', 'delayed_sip'}:
+            captured_at = packet['quality']['latest_capture_at']
+            age = (now - clock(captured_at)).total_seconds()
+            value['current_market_context'] = {
+                'status': 'FRESH' if 0 <= age <= 600 else 'STALE',
+                'captured_at': captured_at,
+                'market_feed': packet['quality']['market_feed'],
+                'feed_delay_seconds': packet['quality']['feed_delay_seconds'],
+                'contexts': [row['data'] for row in packet['evidence'] if row['kind'] == 'PRICE_CONTEXT'],
+            }
         for directory, _, _, _ in reversed(entries):
             if (directory / 'report.json').exists():
                 report = read_report(directory, config)
@@ -748,6 +759,7 @@ def status(config, now=None):
         _off(Path(config['runtime_root']))
     except ERRORS:
         value.update(status='UNAVAILABLE', report=None, auto_trading='UNVERIFIED')
+        value.pop('current_market_context', None)
     # An additive read-only attachment. It cannot alter the original report,
     # invoke generation, or make an evaluation failure look like approval.
     from .sentry_narrative_evaluation import evaluation_status

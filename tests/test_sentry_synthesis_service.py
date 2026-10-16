@@ -95,6 +95,33 @@ class SentrySynthesisServiceTests(unittest.TestCase):
     def directory(self):
         return service.ledger(self.runs)[-1][0]
 
+    def test_current_consolidated_context_is_separate_from_original_model_input(self):
+        self.assertEqual(self.cycle(), 'CHALLENGED_INTERPRETATION')
+        directory = self.directory()
+        original = (directory / 'report.json').read_bytes()
+        later = NOW + timedelta(minutes=5)
+        self.store.append(*packet(at=later, feed='delayed_sip'))
+        with patch.object(ModelDockClient, 'generate_text', side_effect=AssertionError('inference forbidden')):
+            value = service.status(self.config, later)
+        current = value['current_market_context']
+        self.assertEqual(current['market_feed'], 'delayed_sip')
+        self.assertEqual(current['feed_delay_seconds'], 900)
+        self.assertEqual(current['captured_at'], catalyst.stamp(later))
+        self.assertEqual(current['status'], 'FRESH')
+        self.assertTrue(all(r['feed'] == 'delayed_sip' for r in current['contexts']))
+        self.assertTrue(all(e['data']['feed'] == 'iex' for e in value['report']['context']['evidence'] if e['kind'] == 'PRICE_CONTEXT'))
+        self.assertEqual((directory / 'report.json').read_bytes(), original)
+        self.assertEqual(len(self.http.calls), 2)
+
+    def test_off_postflight_failure_hides_current_consolidated_context(self):
+        self.store.append(*packet(at=NOW + timedelta(minutes=5), feed='sip'))
+        self.off.side_effect = [None, ValueError('OFF cannot be verified')]
+        value = service.status(self.config, NOW + timedelta(minutes=5))
+        self.assertEqual(value['auto_trading'], 'UNVERIFIED')
+        self.assertEqual(value['status'], 'UNAVAILABLE')
+        self.assertNotIn('current_market_context', value)
+        self.assertEqual(self.http.calls, [])
+
     def test_two_roles_real_client_fake_http_and_separate_immutable_dissent(self):
         self.assertEqual(self.cycle(), 'CHALLENGED_INTERPRETATION')
         self.assertEqual(len(self.http.calls), 2)

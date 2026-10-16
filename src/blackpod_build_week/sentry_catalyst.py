@@ -18,6 +18,8 @@ from .hashing import canonical_json_bytes, sha256_bytes
 from .trading_historical_intake import parse_historical_json
 
 VERSION = 'blackpod.sentry_catalyst.v1'
+CONSOLIDATED_VERSION = 'blackpod.sentry_catalyst.v2'
+CONSOLIDATED_FEEDS = ('sip', 'delayed_sip')
 MAX_CAPTURES = 4096
 MAX_STORE_BYTES = 256 * 1024 * 1024
 DEFAULT_SYMBOLS = ['SPY', 'QQQ', 'NVDA', 'AMZN', 'LULU', 'NKE', 'DG', 'PG', 'CLX', 'GOOGL']
@@ -50,8 +52,16 @@ def symbols(value):
 
 
 def control(value):
-    if (not isinstance(value, dict) or set(value) != {'schema_version', 'enabled', 'symbols'}
-            or value['schema_version'] != VERSION or type(value['enabled']) is not bool):
+    if not isinstance(value, dict) or type(value.get('enabled')) is not bool:
+        raise ValueError('invalid catalyst control')
+    if value.get('schema_version') == VERSION:
+        if set(value) != {'schema_version', 'enabled', 'symbols'}:
+            raise ValueError('invalid legacy catalyst control')
+    elif value.get('schema_version') == CONSOLIDATED_VERSION:
+        if (set(value) != {'schema_version', 'enabled', 'symbols', 'feed'}
+                or value['feed'] not in CONSOLIDATED_FEEDS):
+            raise ValueError('invalid consolidated catalyst control')
+    else:
         raise ValueError('invalid catalyst control')
     return {**value, 'symbols': symbols(value['symbols'])}
 
@@ -85,8 +95,14 @@ def _bar(value, now):
     return {**{k: str(v) for k, v in prices.items()}, 'v': str(_number(value['v'], integer=True)), 't': stamp(t)}
 
 
-def project(news_raw, snapshots_raw, watchlist, captured_at):
+def project(news_raw, snapshots_raw, watchlist, captured_at, *, feed='iex'):
     """Pure projection; no event sentiment, profitability, or trading inference."""
+    # The legacy default exists solely to reproduce retained v1 evidence. The
+    # collector independently permits only consolidated feeds for new requests.
+    if feed not in ('iex', *CONSOLIDATED_FEEDS):
+        raise ValueError('unsupported catalyst market feed')
+    consolidated = feed in CONSOLIDATED_FEEDS
+    delay = 900 if feed == 'delayed_sip' else 0
     watchlist, now = symbols(watchlist), clock(captured_at)
     news, snapshots = parse_historical_json(news_raw), parse_historical_json(snapshots_raw)
     if (not isinstance(news, dict) or not isinstance(news.get('news'), list) or len(news['news']) > 50
@@ -124,6 +140,8 @@ def project(news_raw, snapshots_raw, watchlist, captured_at):
     contexts = []
     for symbol in watchlist:
         row = {'symbol': symbol, 'status': 'UNAVAILABLE', 'reason': 'MISSING_OR_INVALID_BARS'}
+        if consolidated:
+            row.update(feed=feed, feed_delay_seconds=delay)
         try:
             snap = snapshots[symbol]
             day, previous, minute = (_bar(snap[k], now) for k in ('dailyBar', 'prevDailyBar', 'minuteBar'))
@@ -134,17 +152,28 @@ def project(news_raw, snapshots_raw, watchlist, captured_at):
                 arithmetic.rounding = ROUND_HALF_EVEN
                 change = (Decimal(minute['c']) / Decimal(previous['c']) - 1) * 100
             age = int((now - clock(minute['t'])).total_seconds())
-            row = {'symbol': symbol, 'status': 'OBSERVED' if age <= 900 else 'STALE', 'bar_age_seconds': age, 'minute_at': minute['t'],
+            context_status = ('DELAYED' if 0 <= age <= 1800 else 'STALE') if delay else ('OBSERVED' if age <= 900 else 'STALE')
+            row = {'symbol': symbol, 'status': context_status, 'bar_age_seconds': age, 'minute_at': minute['t'],
                    'price': minute['c'], 'change_from_previous_close_pct': str(change),
                    'day_bar_at': day['t'], 'day_volume': day['v'],
                    'previous_day_bar_at': previous['t'], 'previous_day_volume': previous['v'],
-                   'minute_volume': minute['v'], 'feed': 'iex'}
+                   'minute_volume': minute['v'], 'feed': feed}
+            if consolidated:
+                row['feed_delay_seconds'] = delay
         except (ValueError, TypeError, KeyError):
             pass
         contexts.append(row)
-    return {'schema_version': VERSION, 'captured_at': stamp(now), 'symbols': watchlist,
+    result = {'schema_version': CONSOLIDATED_VERSION if consolidated else VERSION,
+            'captured_at': stamp(now), 'symbols': watchlist,
             'articles': articles, 'contexts': contexts, 'news_truncated': bool(token),
             'limitations': LIMITATIONS, 'authority': 'OBSERVATION_ONLY'}
+    if consolidated:
+        result.update(market_feed=feed, feed_delay_seconds=delay,
+            limitations=[('CONSOLIDATED_MARKET_FEED' if v == 'IEX_ONLY_NOT_CONSOLIDATED_MARKET' else v)
+                         for v in LIMITATIONS] + ['CONSOLIDATED_VOLUME_AS_OF_RETAINED_BAR_NOT_GUARANTEED_FINAL',
+                            'FIFTEEN_MINUTE_DELAYED_CONSOLIDATED_FEED' if delay else
+                            'CONSOLIDATED_FEED_ENTITLEMENT_REQUIRED'])
+    return result
 
 
 class CatalystStore:
@@ -181,10 +210,13 @@ class CatalystStore:
             raw, _ = _read_regular(entries, name)
             record = parse_strict_json_object_bytes(raw)
             if (set(record) != {'schema_version', 'sequence', 'previous_sha256', 'capture_id', 'projection', 'evidence'}
-                    or record['schema_version'] != VERSION or type(record['sequence']) is not int
+                    or record['schema_version'] not in (VERSION, CONSOLIDATED_VERSION) or type(record['sequence']) is not int
                     or record['sequence'] != index or record['previous_sha256'] != previous):
                 raise ValueError('capture chain differs')
             projection, refs = record['projection'], record['evidence']
+            if (not isinstance(projection, dict)
+                    or projection.get('schema_version') != record['schema_version']):
+                raise ValueError('capture and projection versions differ')
             if not isinstance(refs, dict) or set(refs) != {'news', 'snapshots', 'news_receipt', 'snapshots_receipt'}:
                 raise ValueError('capture evidence differs')
             expected_id = sha256_bytes(canonical_json_bytes({'projection': projection, 'evidence': refs}))
@@ -205,7 +237,7 @@ class CatalystStore:
                     blobs[kind] = body
             if evidence_check:
                 self._validate(projection, blobs)
-            elif projection.get('schema_version') != VERSION or projection.get('authority') != 'OBSERVATION_ONLY':
+            elif projection.get('schema_version') not in (VERSION, CONSOLIDATED_VERSION) or projection.get('authority') != 'OBSERVATION_ONLY':
                 raise ValueError('invalid capture projection')
             if records and clock(projection['captured_at']) < clock(records[-1]['projection']['captured_at']):
                 raise ValueError('capture clock moved backwards')
@@ -218,13 +250,19 @@ class CatalystStore:
         from .sentry_catalyst_capture import validate_receipt
         if set(blobs) != {'news', 'snapshots', 'news_receipt', 'snapshots_receipt'} or any(not isinstance(v, bytes) or not 0 < len(v) <= 1024 * 1024 for v in blobs.values()):
             raise ValueError('invalid retained response set')
+        snapshot_feed = None
         for kind in ('news', 'snapshots'):
             receipt = validate_receipt(parse_strict_json_object_bytes(blobs[kind + '_receipt']), kind)
             if (receipt['body_sha256'] != sha256_bytes(blobs[kind]) or receipt['size_bytes'] != len(blobs[kind])
                     or clock(receipt['captured_at']) > clock(projection['captured_at'])
                     or receipt['query']['symbols'] != ','.join(projection['symbols'])):
                 raise ValueError('capture receipt binding differs')
-        if project(blobs['news'], blobs['snapshots'], projection['symbols'], projection['captured_at']) != projection:
+            if kind == 'snapshots':
+                snapshot_feed = receipt['query']['feed']
+        # Infer replay provenance only from the validated, hash-bound receipt.
+        # A v1 blob can never be relabeled as consolidated volume.
+        if project(blobs['news'], blobs['snapshots'], projection['symbols'], projection['captured_at'],
+                   feed=snapshot_feed) != projection:
             raise ValueError('capture replay differs')
 
     @staticmethod
@@ -309,7 +347,7 @@ class CatalystStore:
                         existing, _ = _read_regular(evidence, digest)
                         if existing != value:
                             raise ValueError('immutable evidence conflict')
-                record = {'schema_version': VERSION, 'sequence': len(records) + 1, 'previous_sha256': head,
+                record = {'schema_version': projection['schema_version'], 'sequence': len(records) + 1, 'previous_sha256': head,
                           'capture_id': identity, 'projection': projection, 'evidence': refs}
                 _publish_immutable(staging, entries, f'{len(records) + 1:08}.json', canonical_json_bytes(record))
                 return {'written': True, 'capture_id': identity}

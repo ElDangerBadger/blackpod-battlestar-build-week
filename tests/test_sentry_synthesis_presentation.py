@@ -32,7 +32,7 @@ def fixture():
                               'published_at': '2026-10-15T16:00:00Z', 'updated_at': '2026-10-15T17:00:00Z',
                               'first_seen_at': '2026-10-15T17:05:00Z', 'last_seen_at': '2026-10-15T18:00:00Z'}},
                     {'evidence_id': 'price-1', 'kind': 'PRICE_CONTEXT', 'symbols': ['NVDA'],
-                     'data': {'status': 'STALE', 'change_from_previous_close_pct': '1.25', 'day_volume': '2500',
+                     'data': {'status': 'STALE', 'feed': 'iex', 'change_from_previous_close_pct': '1.25', 'day_volume': '2500',
                               'minute_at': '2026-10-15T17:00:00Z', 'day_bar_at': '2026-10-15T04:00:00Z',
                               'previous_day_bar_at': '2026-10-14T04:00:00Z'}},
                     {'evidence_id': 'quality-1', 'kind': 'FEED_QUALITY', 'symbols': [],
@@ -379,7 +379,7 @@ class SynthesisPresentationTests(unittest.TestCase):
         self.assertIn('href="#evidence-0"', html)
         for expected in ('11:00:00 AM PDT', '11:05:00 AM PDT', '09:00:00 AM PDT', '10:00:00 AM PDT',
                          '10:05:00 AM PDT', '09:00:00 PM PDT', 'Minute bar:', 'Previous daily bar:',
-                         'First seen', 'Last seen', 'shares from IEX only, not total market volume or relative volume'):
+                         'First seen', 'Last seen', 'shares from IEX only, not total market volume'):
             self.assertIn(expected, html)
 
     def test_volume_scope_is_iex_only_without_rewriting_saved_evidence(self):
@@ -388,13 +388,66 @@ class SynthesisPresentationTests(unittest.TestCase):
         before = deepcopy(value)
         html = render(value)
         self.assertIn('IEX-only volume: 501362 shares', html)
-        self.assertIn('shares from IEX only, not total market volume or relative volume', html)
+        self.assertIn('shares from IEX only, not total market volume', html)
+        self.assertIn('Volume is not relative volume', html)
         self.assertIn('Saved bars may be stale or incomplete', html)
-        self.assertIn('Price context · STALE', html)
+        self.assertIn('Original price context · STALE', html)
         self.assertIn('Minute bar:', html)
-        self.assertIn('Daily bar:', html)
+        self.assertIn('Daily bar start:', html)
         self.assertNotIn('Day volume', html)
         self.assertEqual(value, before)
+
+    def test_new_consolidated_context_is_separate_from_original_iex_evidence(self):
+        for feed, delay, badge in (('sip', 0, 'Consolidated SIP'),
+                                   ('delayed_sip', 900, 'Consolidated SIP · 15-minute delayed')):
+            with self.subTest(feed=feed):
+                value = fixture()
+                value['report']['context']['evidence'][1]['data']['day_volume'] = '501362'
+                value['current_market_context'] = {
+                    'status': 'FRESH', 'captured_at': '2026-10-15T22:00:00Z',
+                    'market_feed': feed, 'feed_delay_seconds': delay,
+                    'contexts': [{'symbol': 'NVDA', 'status': 'DELAYED' if delay else 'OBSERVED', 'feed': feed,
+                                  'feed_delay_seconds': delay, 'day_volume': '19243640',
+                                  'price': '100.125', 'change_from_previous_close_pct': '2.50',
+                                  'minute_at': '2026-10-15T21:44:00Z'}]}
+                before = deepcopy(value)
+                html = render(value)
+                current = html.split('class="card current-market-context"', 1)[1].split('</section>', 1)[0]
+                self.assertIn(badge, current)
+                self.assertIn('Market volume <b>19,243,640</b> shares', current)
+                self.assertIn('Saved price 100.125', current)
+                self.assertIn('+2.50%', current)
+                self.assertIn('DELAYED' if delay else 'OBSERVED', current)
+                self.assertIn('02:44:00 PM PDT', current)
+                self.assertIn('03:00:00 PM PDT', current)
+                self.assertIn('separate from the original brief inputs', current)
+                self.assertIn('do not update the Oracle interpretation or its review', current)
+                self.assertNotIn('IEX', current)
+                historical = html.split('class="card source-folder"', 1)[1]
+                self.assertIn('original historical snapshot', historical)
+                self.assertIn('IEX-only volume: 501362 shares', historical)
+                self.assertIn('Historical IEX', historical)
+                self.assertNotIn('19,243,640', historical)
+                self.assertIn('Original interpretation of the agreement.', html)
+                self.assertIn('The headline supplies no revenue figure.', html)
+                self.assertLess(html.index('Current market context'), html.index('Oracle · original interpretation'))
+                self.assertEqual(value, before)
+
+    def test_current_market_context_does_not_promote_unknown_or_legacy_feed(self):
+        for feed, delay in (('iex', 0), ('unknown', 0), ('sip', 900), ('delayed_sip', 0)):
+            with self.subTest(feed=feed, delay=delay):
+                value = fixture()
+                value['current_market_context'] = {
+                    'status': 'FRESH', 'captured_at': '2026-10-15T22:00:00Z',
+                    'market_feed': feed, 'feed_delay_seconds': delay,
+                    'contexts': [{'symbol': 'NVDA', 'feed': feed, 'feed_delay_seconds': delay,
+                                  'status': 'OBSERVED', 'day_volume': '19243640'}]}
+                html = render(value)
+                current = html.split('class="card current-market-context"', 1)[1].split('</section>', 1)[0]
+                self.assertIn('Consolidated market context is unavailable', current)
+                self.assertNotIn('19,243,640', current)
+                self.assertNotIn('IEX-only volume', current)
+                self.assertIn('IEX-only volume: 2500 shares', html)
 
     def test_unknown_naive_and_invalid_source_times_never_gain_a_timezone(self):
         value = fixture()

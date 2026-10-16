@@ -13,9 +13,10 @@ import os
 from zoneinfo import ZoneInfo
 
 from .hashing import canonical_json_bytes, sha256_bytes
-from .sentry_catalyst import CatalystStore, clock, stamp
+from .sentry_catalyst import CatalystStore, CONSOLIDATED_VERSION, clock, stamp
 
 VERSION = 'blackpod.sentry_catalyst_audit.v1'
+CONSOLIDATED_AUDIT_VERSION = 'blackpod.sentry_catalyst_audit.v2'
 LA = ZoneInfo('America/Los_Angeles')
 LIMITATIONS = [
     'DESCRIPTIVE_FEED_AUDIT_NOT_TRADING_EDGE_OR_EXECUTION_AUTHORITY',
@@ -73,6 +74,7 @@ def build_report(records, verification, as_of):
     if verification['capture_count'] != len(records):
         raise ValueError('audit source count differs')
     projections = [r['projection'] for r in records]
+    consolidated = any(p['schema_version'] == CONSOLIDATED_VERSION for p in projections)
     times = [clock(p['captured_at']) for p in projections]
     if times and (times[-1] > as_of or any(a > b for a, b in zip(times, times[1:]))):
         raise ValueError('audit clock precedes source or source clocks reversed')
@@ -137,7 +139,8 @@ def build_report(records, verification, as_of):
     captured_slots = expected_slots & complete_slots
     gaps = [milliseconds(b-a) for a, b in zip(times, times[1:])]
     latest_gap = milliseconds(as_of - times[-1]) if times else None
-    result = {'schema_version': VERSION, 'authority': 'OBSERVATION_ONLY', 'as_of': stamp(as_of),
+    result = {'schema_version': CONSOLIDATED_AUDIT_VERSION if consolidated else VERSION,
+        'authority': 'OBSERVATION_ONLY', 'as_of': stamp(as_of),
         'source': {'capture_count': len(records), 'head_sha256': verification['head_sha256'],
             'capture_ids': [r['capture_id'] for r in records], 'evidence_count': verification['evidence_count'],
             'orphan_evidence_count': verification['orphan_evidence_count'],
@@ -166,6 +169,12 @@ def build_report(records, verification, as_of):
             'nominal_slot_definition': 'WEEKDAY_LA_0500_1700_FIVE_MINUTE_FULLY_ELAPSED_SLOTS_FROM_FIRST_CAPTURE_SLOT'},
         'assessment': 'NO_VERIFIED_CAPTURES' if not records else 'DESCRIPTIVE_ONLY_NO_READINESS_OR_EDGE_APPROVAL',
         'limitations': LIMITATIONS}
+    if consolidated:
+        result['prices']['feed_counts'] = [
+            {'feed': feed, 'feed_delay_seconds': delay,
+             'capture_count': sum(p.get('market_feed', 'iex') == feed for p in projections)}
+            for feed, delay in (('iex', 0), ('sip', 0), ('delayed_sip', 900))
+            if any(p.get('market_feed', 'iex') == feed for p in projections)]
     result['report_id'] = 'sentry-audit-' + sha256_bytes(canonical_json_bytes(result))
     return result
 
@@ -205,6 +214,13 @@ def render(value, *, live=True):
             ('Typical discovery lag', lag(n['later_publication_to_first_seen']['p50_ms']), 'Publication → first complete observation'),
             ('Truncated news pages', f"{n['truncated_capture_count']} / {n['capture_count']}", 'Overall coverage remains unknown')]
         body = '<div class="grid">' + ''.join('<article><span>'+text(k)+'</span><strong>'+text(v)+'</strong><small>'+text(d)+'</small></article>' for k,v,d in facts) + '</div>'
+        consolidated = report['schema_version'] == CONSOLIDATED_AUDIT_VERSION
+        if consolidated:
+            names = {'iex': 'Historical IEX', 'sip': 'Consolidated SIP',
+                     'delayed_sip': 'Consolidated SIP · 15-minute delayed'}
+            body += '<h2>Retained feed coverage</h2><p>' + ' · '.join(
+                text(names[row['feed']]) + ': ' + text(row['capture_count']) + ' capture(s)'
+                for row in p['feed_counts']) + '</p>'
         total = p['symbol_capture_pairs']
         body += '<h2>Price freshness when captured</h2><div class="bar">'
         for key, label, css in [('fresh_at_capture_count','Recent','recent'),('stale_at_capture_count','Stale','stale'),('unavailable_count','Unavailable','missing'),('future_timestamp_count','Future clock','missing')]:
@@ -218,7 +234,9 @@ def render(value, *, live=True):
         body += '</tbody></table></div><h2>What we can and cannot conclude</h2><p>'+text(c['slots_with_complete_capture'])+' of '+text(c['nominal_completed_slots'])+' fully elapsed nominal monitoring slots contain a complete capture. '+text(c['slots_without_complete_capture'])+' do not. Empty slots can reflect pauses, sleep, failures, or the collector’s minimum-delay timing; they are not proven failed requests.</p>'
         body += '<p>Overall headline coverage, missed-article count and HTTP request latency are <b>unknown</b>. The retained receipts do not contain request-start times, and complete captures are not an attempt history. Repeated observations and initial backfill are not new alerts.</p>'
         body += '<p>Discovery lag p95: <b>'+text(lag(n['later_publication_to_first_seen']['p95_ms']))+'</b> across '+text(n['later_publication_to_first_seen']['count'])+' non-negative later discoveries. Startup/watchlist baseline articles: '+text(n['initial_or_watchlist_baseline_article_count'])+'. This short sample cannot demonstrate predictive edge or justify trading.</p>'
-        body += '<details><summary>Evidence and definitions</summary><p>First capture: '+text(report['window']['first_capture_at'])+'<br>Last capture: '+text(report['window']['last_capture_at'])+'<br>Audit clock: '+text(report['as_of'])+'<br>Source head: '+text(report['source']['head_sha256'])+'<br>Report: '+text(report['report_id'])+'</p><p>Percentiles use nearest rank. Discovery lags are measured only once per provider article; version lags once per observed revision. Negative clock lags are excluded and counted in the JSON. IEX is partial-market context. Watchlist changes create new baseline cohorts. No feed, polling, risk or trading policy is changed by this audit.</p></details>'
+        feed_note = ('Historical IEX records cover one exchange; consolidated SIP records identify their feed and any configured delay. Physical bar ages include that delay and are not a measure of market coverage or collector latency.'
+                     if consolidated else 'IEX is partial-market context.')
+        body += '<details><summary>Evidence and definitions</summary><p>First capture: '+text(report['window']['first_capture_at'])+'<br>Last capture: '+text(report['window']['last_capture_at'])+'<br>Audit clock: '+text(report['as_of'])+'<br>Source head: '+text(report['source']['head_sha256'])+'<br>Report: '+text(report['report_id'])+'</p><p>Percentiles use nearest rank. Discovery lags are measured only once per provider article; version lags once per observed revision. Negative clock lags are excluded and counted in the JSON. '+feed_note+' Watchlist changes create new baseline cohorts. No feed, polling, risk or trading policy is changed by this audit.</p></details>'
     refresh = '<meta http-equiv="refresh" content="60">' if live else ''
     json_url = '/sentry-audit.json' if live else 'report.json'
     return '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' + refresh + '<link rel="icon" href="data:,"><title>Sentry · Feed quality</title><style>body{margin:0;background:#0c1721;color:#e5edf4;font:15px/1.6 system-ui}main{max-width:1100px;padding:28px;margin:auto}h1{font-size:34px;letter-spacing:-.04em}a{color:#b8dcec}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}article{padding:16px;background:#142633;border:1px solid #294554;border-radius:12px}article span,small{display:block;color:#b2c5d0}strong{display:block;font-size:28px}h2{margin-top:28px}.bar{display:flex;min-height:32px;border-radius:8px;overflow:hidden}.bar span{text-align:center;min-width:20px;box-sizing:border-box}.recent{background:#296c64}.stale{background:#806323}.missing{background:#754748}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:12px;border-bottom:1px solid #294554;white-space:nowrap}details{overflow-wrap:anywhere;background:#142633;padding:16px;border-radius:10px;margin-top:20px}.warning{background:#493a1a;padding:16px;border-radius:10px}</style><main><p>BLACKPOD · OBSERVATION ONLY</p><h1>Sentry feed quality</h1><p>Does the feed arrive soon enough, and what does it actually cover?</p>'+body+'<p><a href="http://127.0.0.1:5183/sentry">← Sentry headlines</a> · <a href="' + json_url + '">Audit JSON</a></p></main></html>'
@@ -236,7 +254,9 @@ def export_report(report, root, config):
         check_separate_root(root, Path(config[key]))
     check_separate_root(root, Path(config['credentials_file']).parent)
     files = {'report.json': canonical_json_bytes(report), 'report.html': render({'status':'VERIFIED','report':report},live=False).encode()}
-    manifest = {'schema_version': VERSION, 'report_id': report['report_id'],
+    if report['schema_version'] not in (VERSION, CONSOLIDATED_AUDIT_VERSION):
+        raise ValueError('unsupported audit export version')
+    manifest = {'schema_version': report['schema_version'], 'report_id': report['report_id'],
                 'files': {name: {'sha256':sha256_bytes(raw),'size_bytes':len(raw)} for name,raw in files.items()}}
     files['manifest.json'] = canonical_json_bytes(manifest)
     directory = _open_root(root, create=True)
@@ -265,7 +285,8 @@ def verify_export(root, config):
     _off(Path(config['runtime_root']))
     root = Path(root).absolute()
     manifest = parse_strict_json_object_bytes(read_regular(root/'manifest.json',max_bytes=2*1024*1024))
-    if (set(manifest) != {'schema_version','report_id','files'} or manifest['schema_version'] != VERSION
+    if (set(manifest) != {'schema_version','report_id','files'}
+            or manifest['schema_version'] not in (VERSION, CONSOLIDATED_AUDIT_VERSION)
             or set(manifest['files']) != {'report.json','report.html'}):
         raise ValueError('invalid audit manifest')
     files = {}
@@ -275,6 +296,8 @@ def verify_export(root, config):
             raise ValueError('audit export differs')
         files[name] = raw
     report = parse_strict_json_object_bytes(files['report.json'])
+    if report['schema_version'] != manifest['schema_version']:
+        raise ValueError('audit manifest and report versions differ')
     _,store_root = paths(config)
     records,_ = CatalystStore(store_root).verified_records()
     count = report['source']['capture_count']

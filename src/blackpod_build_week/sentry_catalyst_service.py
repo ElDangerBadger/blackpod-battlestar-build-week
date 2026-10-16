@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 from .decision_journal_store import JournalStoreError, check_separate_root
 from .hashing import canonical_json_bytes
 from .paper_account_probe import MAX_CREDENTIAL_BYTES, _read_regular, parse_credentials
-from .sentry_catalyst import CatalystStore, VERSION, DEFAULT_SYMBOLS, clock, stamp, control, project
+from .sentry_catalyst import (CatalystStore, VERSION, CONSOLIDATED_VERSION,
+    CONSOLIDATED_FEEDS, DEFAULT_SYMBOLS, clock, stamp, control, project, symbols)
 from .sentry_catalyst_capture import market_get, CatalystCaptureError
 from .shadow_station import atomic_state, read_state, service_lock
 from .shadow_station_collection import _off
@@ -64,8 +65,11 @@ def due(now, state, enabled):
     return True, 'DUE'
 
 
-def collect(config, selected, *, getter=market_get):
+def collect(config, selected, *, feed='sip', getter=market_get):
     """At most two GETs, retaining any successful first request on second failure."""
+    if feed not in CONSOLIDATED_FEEDS:
+        raise ValueError('new catalyst captures require consolidated market data')
+    selected = symbols(selected)
     root, store_root = paths(config)
     _off(Path(config['runtime_root']))
     store = CatalystStore(store_root)
@@ -81,22 +85,28 @@ def collect(config, selected, *, getter=market_get):
     blobs = {}
     # Separate, bounded pending receipt preserves a successful response if the
     # other endpoint fails. These are not complete observations or alert cards.
-    for kind, query in (('news', query), ('snapshots', {'symbols': named, 'feed': 'iex'})):
+    for kind, query in (('news', query), ('snapshots', {'symbols': named, 'feed': feed})):
         raw, receipt = getter(kind, query, credentials)
         blobs[kind], blobs[kind + '_receipt'] = raw, receipt
         store.retain_transport(raw, receipt)
     _off(Path(config['runtime_root']))
     captured_at = stamp(utc_now())
-    projection = project(blobs['news'], blobs['snapshots'], selected, captured_at)
+    projection = project(blobs['news'], blobs['snapshots'], selected, captured_at, feed=feed)
     result = store.append(projection, blobs)
     return {'status': 'CAPTURED', 'capture_id': result['capture_id'], 'captured_at': captured_at,
             'article_count': len(projection['articles']), 'news_truncated': projection['news_truncated'],
-            'context_count': sum(row['status'] == 'OBSERVED' for row in projection['contexts'])}
+            'context_count': sum(row['status'] in ('OBSERVED', 'DELAYED') for row in projection['contexts']),
+            'delayed_context_count': sum(row['status'] == 'DELAYED' for row in projection['contexts']),
+            'market_feed': feed, 'feed_delay_seconds': projection['feed_delay_seconds']}
 
 
 def cycle(config, *, now=None, getter=market_get):
     root, _ = paths(config)
     selected = control(read_state(root / 'control.json'))
+    if selected['schema_version'] != CONSOLIDATED_VERSION:
+        # Retain legacy evidence and controls, but require an explicit choice
+        # before new transport. In particular, do not silently request IEX.
+        return 'MARKET_FEED_CONFIGURATION_REQUIRED'
     state = read_state(root / 'state.json')
     if state and state.get('schema_version') != VERSION:
         raise ValueError('unsupported catalyst state')
@@ -111,7 +121,7 @@ def cycle(config, *, now=None, getter=market_get):
                  attempts_today=attempts + 1, status='ATTEMPT_STARTED', http_status=None, blocked_until=None)
     atomic_state(root / 'state.json', state)  # Consume budget before reading credentials or GETs.
     try:
-        receipt = collect(config, selected['symbols'], getter=getter)
+        receipt = collect(config, selected['symbols'], feed=selected['feed'], getter=getter)
         state.update(receipt, last_success_at=receipt['captured_at'])
     except CatalystCaptureError as exc:
         state.update(status=exc.code, http_status=exc.http_status,
@@ -162,7 +172,12 @@ def status(config, now=None):
         heartbeat = health.get('heartbeat_at')
         alive = heartbeat is not None and 0 <= (now - clock(heartbeat)).total_seconds() < 120
         admitted, reason = due(now, state, selected['enabled'])
-        result.update(symbols=selected['symbols'], status=reason if alive else 'WORKER_STALE_OR_STOPPED',
+        selected_feed = selected.get('feed')
+        if selected_feed is None:
+            reason = 'MARKET_FEED_CONFIGURATION_REQUIRED'
+        result.update(symbols=selected['symbols'], market_feed=selected_feed,
+            feed_delay_seconds=(900 if selected_feed == 'delayed_sip' else 0) if selected_feed else None,
+            status=reason if alive or selected_feed is None else 'WORKER_STALE_OR_STOPPED',
             collector={'enabled': selected['enabled'], 'reason': reason, 'worker_healthy': alive, 'last_attempt_at': state.get('last_attempt_at'),
                        'last_success_at': state.get('last_success_at'), 'last_result': state.get('status', 'NOT_RUN'),
                        'http_status': state.get('http_status'), 'blocked_until': state.get('blocked_until')})
@@ -170,6 +185,9 @@ def status(config, now=None):
             result['capture'] = CatalystStore(store_root).view(now)
             if result['capture'] and result['capture']['symbols'] != selected['symbols']:
                 result['status'] = 'WATCHLIST_CHANGED_AWAITING_CAPTURE'
+            elif (selected_feed is not None and result['capture']
+                  and result['capture'].get('market_feed', 'iex') != selected_feed):
+                result['status'] = 'MARKET_FEED_CHANGED_AWAITING_CAPTURE'
         return result
     except ERRORS:
         return {**result, 'status': 'UNAVAILABLE', 'capture': None}
@@ -182,6 +200,8 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--symbols', help='Explicit comma-separated watchlist, maximum 10 symbols')
     parser.add_argument('--enabled', action='store_true')
+    parser.add_argument('--feed', choices=CONSOLIDATED_FEEDS, default='sip',
+                        help='Consolidated market feed; SIP needs entitlement, delayed SIP is 15 minutes delayed')
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -189,7 +209,8 @@ def main(argv=None):
         if args.command == 'configure':
             if not args.symbols:
                 raise ValueError('explicit watchlist required')
-            selected = control({'schema_version': VERSION, 'enabled': args.enabled, 'symbols': args.symbols.split(',')})
+            selected = control({'schema_version': CONSOLIDATED_VERSION, 'enabled': args.enabled,
+                                'symbols': args.symbols.split(','), 'feed': args.feed})
             _off(Path(config['runtime_root']))
             atomic_state(root / 'control.json', selected)
             result = selected

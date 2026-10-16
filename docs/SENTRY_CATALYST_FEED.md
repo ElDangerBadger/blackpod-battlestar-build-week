@@ -14,8 +14,10 @@ remain distinct. This adds no provider requests or collection-policy changes.
 
 - **Headline cards:** provider source link, publication/update time, BlackPod's
   first-seen and last-observed times, and the number of observed revisions.
-- **Symbol tiles:** IEX minute close versus the provider's previous daily close,
-  IEX-only volume in shares, and the actual minute-bar timestamp. These are USD price proxies,
+- **Symbol tiles:** consolidated SIP minute close versus the provider's previous daily close,
+  **Market volume** in shares, and the actual minute-bar timestamp. The current
+  account profile uses **15-minute delayed SIP**, with an explicit delay label.
+  Historical IEX captures retain their single-exchange label. These are USD price proxies,
   not executable quotes or a trade simulation.
 - **Warnings:** stale prices, stale captures, unavailable symbols, failed
   collection, and incomplete news pages. A fresh download does not establish
@@ -33,16 +35,21 @@ time. First-seen means the first **complete, validated** observation in this
 store; a successful orphan transport response is not promoted to a complete
 observation after a failed cycle. Exact source bytes remain available for audit.
 
-**IEX-only volume is not total market volume.** The collector explicitly selects
-`feed=iex` for Alpaca snapshots, and the displayed count is the retained
-`dailyBar.v` without scaling. IEX is a single exchange; SIP is the consolidated
-feed. See [Alpaca's feed definitions](https://docs.alpaca.markets/us/docs/market-data-faq).
-This selection is fixed by this integration, not inferred from the account's
-subscription. No SIP entitlement has been tested or enabled by this correction.
+**Market volume uses a consolidated feed.** New captures explicitly select
+`sip` or `delayed_sip`; this account's successful bounded check used
+`delayed_sip`. Both aggregate market venues, whereas historical `feed=iex`
+captures contain single-exchange counts. The displayed count remains the
+retained `dailyBar.v`, without scaling, extrapolation or substitution.
+Real-time SIP returned HTTP 403 for this profile; delayed SIP returned HTTP 200.
+There is no automatic fallback to IEX or another feed. See the
+[consolidated-data guide](SENTRY_CONSOLIDATED_MARKET_DATA.md) and
+[Alpaca's feed definitions](https://docs.alpaca.markets/us/docs/market-data-faq).
 
 The count is also **not unusual/relative volume**: comparing an incomplete day with
 a full day would be misleading. A daily bar's timestamp identifies its interval
-start, not the last volume update. Use retained capture and freshness indicators;
+start, not the last volume update. The provider's daily aggregate may include
+eligible extended-hours trades; it is not guaranteed to equal a regular-session-only
+or final end-of-day count on another site. Use retained capture and freshness indicators;
 an old brief is not a live or necessarily complete end-of-day snapshot.
 Price movement does not prove headline
 causation or an opportunity remaining after detection. There are no sentiment,
@@ -50,7 +57,11 @@ earnings-surprise, analyst-revision, insider-trade or legal-event classifiers.
 Those event-specific feeds and a testable predictive hypothesis remain future,
 separately authorized work. This feed is not another trading experiment.
 
-### October 15, 2026 volume-label correction
+### Historical October 15, 2026 IEX volume-label correction
+
+This preceding correction described the original IEX integration. The later
+consolidated-data change above supersedes its feed choice for new captures;
+the source records and historical validation results below remain unchanged.
 
 The preserved Oracle packet showed GOOGL volume `501362`. That exactly matches
 the retained Alpaca snapshot's `dailyBar.v`, with SHA-256
@@ -59,7 +70,7 @@ The packet was retained at 2:20:44 p.m. PDT and explicitly carried `feed: iex`;
 its minute bar was at 12:59 p.m. PDT and marked STALE. This verifies the source
 of the number, not GOOGL's total market volume or independent market accuracy.
 
-The feed and synthesis views now label each count **IEX-only volume**, with
+That correction labeled each count **IEX-only volume**, with
 shares and an explicit single-exchange/stale-or-incomplete explanation. Source
 records, JSON fields, numbers, capture rules and forecast inputs are unchanged.
 No provider request, inference or feed-entitlement change was needed.
@@ -77,9 +88,10 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
   test_sentry_narrative_evaluation -q
 ```
 
-The source data and market coverage are unchanged. Consolidated snapshot
-access would need an explicit SIP entitlement check and a separately governed
-intake change; changing a label does not acquire missing market data.
+At that point, source data and market coverage were unchanged. The subsequent
+explicit SIP checks and versioned intake change are recorded in the
+[consolidated-data guide](SENTRY_CONSOLIDATED_MARKET_DATA.md); changing a label
+alone did not acquire missing market data.
 The owned, idle standalone service was gracefully reloaded. Its local JSON API
 still returned the original report, GOOGL count and linked evaluation; all nine
 original synthesis capsules and the frozen pilot remained unchanged, with
@@ -89,7 +101,7 @@ auto-trading OFF. Rendering and HTTP fixtures verify the new labels.
 
 The existing launchd research station supervises an independent Sentry thread:
 
-| Bound | Version 1 behavior |
+| Bound | Current version 2 behavior |
 | --- | --- |
 | Watchlist | Explicit, unique, 1–10 normalized symbols |
 | Monitoring | Weekdays, 05:00–17:00 America/Los_Angeles, DST aware |
@@ -97,7 +109,7 @@ The existing launchd research station supervises an independent Sentry thread:
 | Daily budget | Maximum 144 attempted cycles / 288 GETs per LA day |
 | Endpoints | Only Alpaca news and stock snapshots; never account/order APIs |
 | News | Latest updated-first page, preceding 24 hours, maximum 50 items; no full article content |
-| Prices | Explicit `feed=iex`; no automatic entitlement/feed substitution |
+| Prices | Explicit `feed=sip` or `feed=delayed_sip`; current profile selects delayed SIP; no automatic feed substitution |
 | Transport | HTTPS, GET, verified TLS, no proxy/redirect, 20-second request deadline, 1 MiB response bound |
 | Failures | No immediate retry; 15-minute cooldown, 75 minutes for HTTP 401/403/429 |
 | Evidence capacity | 4,096 complete captures or 256 MiB total evidence/entries/staging; manual archive review required |
@@ -106,8 +118,10 @@ Monitoring hours are a weekday operating schedule, **not an exchange calendar**;
 holiday or closed-market snapshots may be stale. The Mac must remain awake,
 online, and logged in. The app window and Codex may be closed. Overnight/weekend
 coverage is absent. Polling, provider latency and subscription coverage prevent
-any claim of getting news before other traders. Prices over 15 minutes old are
-explicitly STALE; capture freshness is independently limited to ten minutes.
+any claim of getting news before other traders. Delayed SIP bars retain their
+actual age: age through 1,800 seconds is **DELAYED**, and older bars are **STALE**.
+For real-time SIP, bars over 900 seconds old are **STALE**. Capture freshness is
+independently limited to ten minutes; a recent capture does not remove a feed delay.
 
 The endpoints and response roles are documented by Alpaca:
 [news](https://docs.alpaca.markets/reference/news-3) and
@@ -123,7 +137,9 @@ open in the user's browser, outside the native app's local webview.
 Operational files live under the existing station's `catalyst/` directory,
 separate from the pilot journal, historical bundles and runtime:
 
-- `control.json`: versioned enabled flag and exact watchlist.
+- `control.json`: versioned enabled flag, exact watchlist and explicit consolidated feed.
+  Version 1 controls require explicit reconfiguration before another collection;
+  they are not silently converted to a new feed.
 - `state.json`: last attempt/success, daily budget and sanitized failure code.
 - `health.json`: independent worker heartbeat; an old success does not imply a running worker.
 - `evidence-store/evidence/`: immutable exact successful response/GET receipt bytes, named by SHA-256.
@@ -174,7 +190,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
   -m blackpod_build_week.sentry_catalyst_service configure \
   --config output/blackpod-shadow-station/config.json \
-  --symbols SPY,QQQ,NVDA,AMZN,LULU,NKE,DG,PG,CLX,GOOGL
+  --symbols SPY,QQQ,NVDA,AMZN,LULU,NKE,DG,PG,CLX,GOOGL \
+  --feed delayed_sip
 
 # Resume the same watchlist: add --enabled to the command above.
 ```
@@ -238,6 +255,9 @@ publication are accepted only when every inode link is accounted for inside
 this store. External hardlinks remain rejected. Recovery never deletes evidence
 or resets the attempt budget. Source hashes are not cryptographic signatures.
 
-The next recommended work is a bounded **latency and coverage audit** of this
-feed before proposing an event-driven prediction rule. Do not infer edge from
-alert counts or silently replace the existing frozen experiment.
+The [latency and coverage audit](SENTRY_FEED_LATENCY_AUDIT.md) is implemented;
+its version 2 reports retain consolidated-feed and expected-delay metadata,
+while version 1 exports replay unchanged. The
+[consolidated-data guide](SENTRY_CONSOLIDATED_MARKET_DATA.md) records the later
+feed change. Neither alert counts nor consolidated coverage establishes edge
+or replaces the existing frozen experiment.

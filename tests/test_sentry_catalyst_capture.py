@@ -35,7 +35,7 @@ class CaptureTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.object(socket.socket, "connect", side_effect=AssertionError("network forbidden")))
 
-    def run_capture(self, raw=b"[]", change=None):
+    def run_capture(self, raw=b"[]", change=None, *, kind="snapshots", query=None):
         seen = []
         def open_request(request, timeout):
             seen.append(request)
@@ -45,13 +45,14 @@ class CaptureTests(unittest.TestCase):
             return response
         opener = Mock(open=open_request)
         with patch.object(capture, "build_opener", return_value=opener) as factory:
-            result = capture.market_get("snapshots", QUERY, CREDS)
+            result = capture.market_get(kind, QUERY if query is None else query, CREDS)
         return result, seen, factory
 
     def test_exact_get_body_and_receipt_without_credentials(self):
         (raw, receipt_raw), seen, factory = self.run_capture()
         self.assertEqual(raw, b"[]")
         receipt = json.loads(receipt_raw)
+        self.assertEqual(receipt["schema_version"], "blackpod.sentry_catalyst_get.v1")
         self.assertEqual(receipt["body_sha256"], sha256_bytes(raw))
         self.assertEqual(receipt["size_bytes"], 2)
         self.assertEqual(receipt["method"], "GET")
@@ -96,7 +97,7 @@ class CaptureTests(unittest.TestCase):
                     capture.market_get(kind, query, CREDS)
                 factory.assert_not_called()
 
-    def test_bounded_news_and_fixed_snapshot_feed(self):
+    def test_bounded_news_and_exact_snapshot_feeds(self):
         base = {"symbols": "SPY,QQQ", "start": "2026-10-14T18:00:00Z", "end": "2026-10-15T18:00:00Z",
                 "limit": 50, "sort": "desc", "include_content": "false"}
         self.assertEqual(capture.validate_query("news", base), base)
@@ -105,8 +106,76 @@ class CaptureTests(unittest.TestCase):
                              ("start", "2026-01-01T00:00:00Z")):
             with self.subTest(field=field), self.assertRaises(capture.CatalystCaptureError):
                 capture.validate_query("news", {**base, field: value})
-        with self.assertRaises(capture.CatalystCaptureError):
-            capture.validate_query("snapshots", {"symbols": "SPY", "feed": "sip"})
+        for feed in ("iex", "sip", "delayed_sip"):
+            with self.subTest(feed=feed):
+                query = {"symbols": "SPY", "feed": feed}
+                self.assertEqual(capture.validate_query("snapshots", query), query)
+        for feed in ("SIP", "", None, ["sip"], "sip&feed=iex", "boats"):
+            with self.subTest(feed=feed), self.assertRaises(capture.CatalystCaptureError):
+                capture.validate_query("snapshots", {"symbols": "SPY", "feed": feed})
+
+    def test_consolidated_snapshots_have_v2_receipts_and_fixed_get_boundary(self):
+        for feed in ("sip", "delayed_sip"):
+            with self.subTest(feed=feed):
+                query = {"symbols": "SPY,QQQ", "feed": feed}
+                (raw, receipt_raw), seen, factory = self.run_capture(query=query)
+                receipt = json.loads(receipt_raw)
+                self.assertEqual(receipt["schema_version"], "blackpod.sentry_catalyst_get.v2")
+                self.assertEqual(receipt["query"], query)
+                self.assertEqual(receipt["body_sha256"], sha256_bytes(raw))
+                self.assertEqual(len(seen), 1)
+                self.assertEqual(seen[0].full_url, capture.URLS["snapshots"] +
+                                 "?feed=" + feed + "&symbols=SPY%2CQQQ")
+                self.assertEqual(seen[0].get_method(), "GET")
+                self.assertIsNone(seen[0].data)
+                handlers = factory.call_args.args
+                self.assertEqual(handlers[0].proxies, {})
+                self.assertIsInstance(handlers[1], capture._RefuseRedirects)
+                self.assertEqual(handlers[2]._context.verify_mode, ssl.CERT_REQUIRED)
+                self.assertTrue(handlers[2]._context.check_hostname)
+
+    def test_receipt_version_is_bound_to_endpoint_and_feed(self):
+        base = {"method": "GET", "url": capture.URLS["snapshots"], "query": QUERY,
+                "captured_at": "2026-10-15T18:00:00Z", "status": 200,
+                "body_sha256": sha256_bytes(b"[]"), "size_bytes": 2}
+        for feed in ("iex", "sip", "delayed_sip"):
+            for version in ("blackpod.sentry_catalyst_get.v1", "blackpod.sentry_catalyst_get.v2"):
+                with self.subTest(feed=feed, version=version):
+                    receipt = {**base, "query": {**QUERY, "feed": feed}, "schema_version": version}
+                    expected = "blackpod.sentry_catalyst_get.v1" if feed == "iex" else "blackpod.sentry_catalyst_get.v2"
+                    if version == expected:
+                        self.assertEqual(capture.validate_receipt(receipt, "snapshots"), receipt)
+                    else:
+                        with self.assertRaises(capture.CatalystCaptureError) as caught:
+                            capture.validate_receipt(receipt, "snapshots")
+                        self.assertEqual(caught.exception.code, "RECEIPT_REFUSED")
+
+    def test_news_receipts_remain_v1(self):
+        query = {"symbols": "SPY,QQQ", "start": "2026-10-14T18:00:00Z", "end": "2026-10-15T18:00:00Z",
+                 "limit": 50, "sort": "desc", "include_content": "false"}
+        (_, receipt_raw), seen, _ = self.run_capture(kind="news", query=query)
+        receipt = json.loads(receipt_raw)
+        self.assertEqual(receipt["schema_version"], "blackpod.sentry_catalyst_get.v1")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(capture.validate_receipt(receipt, "news"), receipt)
+        with self.assertRaises(capture.CatalystCaptureError) as caught:
+            capture.validate_receipt({**receipt, "schema_version": "blackpod.sentry_catalyst_get.v2"}, "news")
+        self.assertEqual(caught.exception.code, "RECEIPT_REFUSED")
+
+    def test_consolidated_entitlement_denial_never_retries_or_falls_back(self):
+        for feed in ("sip", "delayed_sip"):
+            with self.subTest(feed=feed), patch.object(capture, "build_opener") as factory:
+                factory.return_value.open.side_effect = HTTPError(
+                    "https://data.alpaca.markets/v2/stocks/snapshots", 403,
+                    "fixture-catalyst-secret", {}, None)
+                with self.assertRaises(capture.CatalystCaptureError) as caught:
+                    capture.market_get("snapshots", {"symbols": "SPY,QQQ", "feed": feed}, CREDS)
+                self.assertEqual(caught.exception.code, "HTTP_ERROR")
+                self.assertEqual(caught.exception.http_status, 403)
+                factory.return_value.open.assert_called_once()
+                request = factory.return_value.open.call_args.args[0]
+                self.assertIn("?feed=" + feed + "&", request.full_url)
+                self.assertNotIn("secret", str(caught.exception))
 
     def test_native_exceptions_are_sanitized(self):
         for error, code in ((URLError("fixture-catalyst-secret"), "URL_ERROR"),

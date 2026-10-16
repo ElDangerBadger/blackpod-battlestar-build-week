@@ -15,8 +15,8 @@ from test_sentry_catalyst import NOW, WATCH, packet
 from test_shadow_station import _LocalHTTPMixin
 
 
-def changed_packet(at=NOW, selected=WATCH, change=None):
-    _, blobs = packet(at=at)
+def changed_packet(at=NOW, selected=WATCH, change=None, *, feed='iex'):
+    _, blobs = packet(at=at, feed=feed)
     news, snapshots = json.loads(blobs['news']), json.loads(blobs['snapshots'])
     snapshots = {k:v for k,v in snapshots.items() if k in selected}
     if change:
@@ -27,7 +27,7 @@ def changed_packet(at=NOW, selected=WATCH, change=None):
         receipt['query']['symbols'] = ','.join(selected)
         receipt.update(body_sha256=sha256_bytes(blobs[kind]),size_bytes=len(blobs[kind]))
         blobs[kind+'_receipt'] = canonical_json_bytes(receipt)
-    return core.project(blobs['news'],blobs['snapshots'],selected,core.stamp(at)),blobs
+    return core.project(blobs['news'],blobs['snapshots'],selected,core.stamp(at),feed=feed),blobs
 
 
 class AuditTests(unittest.TestCase):
@@ -156,6 +156,44 @@ class AuditTests(unittest.TestCase):
         after={str(p.relative_to(self.store.root)):p.read_bytes() for p in self.store.root.rglob('*') if p.is_file()}
         self.assertEqual(before,after)
 
+    def test_legacy_v1_json_and_export_html_are_byte_identical_to_retained_contract(self):
+        self.store.append(*packet())
+        report = self.report()
+        self.assertEqual(report['schema_version'], audit.VERSION)
+        self.assertNotIn('feed_counts', report['prices'])
+        # Authored fixture digests from the pre-consolidated v1 implementation.
+        self.assertEqual(sha256_bytes(canonical_json_bytes(report)),
+                         '0267cc14efffc32c669c7e4614cd1078a4e6be731c07dc69478d423a304995d5')
+        self.assertEqual(sha256_bytes(audit.render({'status':'VERIFIED','report':report},live=False).encode()),
+                         '7a6ebbdf7cd720c5721756d5eddeac0c552aa00351301a6023979ac3ca4404e9')
+
+    def test_mixed_consolidated_audit_versions_feed_counts_and_physical_bar_ages(self):
+        self.store.append(*packet())
+        self.store.append(*packet(at=NOW+timedelta(minutes=5), feed='sip'))
+        later = NOW+timedelta(minutes=10)
+        def delay(news, snapshots):
+            for row in snapshots.values():
+                row['minuteBar']['t'] = core.stamp(later-timedelta(seconds=901))
+        self.store.append(*changed_packet(later,change=delay,feed='delayed_sip'))
+        report = self.report(later)
+        self.assertEqual(report['schema_version'], audit.CONSOLIDATED_AUDIT_VERSION)
+        self.assertEqual(report['prices']['feed_counts'], [
+            {'feed':'iex','feed_delay_seconds':0,'capture_count':1},
+            {'feed':'sip','feed_delay_seconds':0,'capture_count':1},
+            {'feed':'delayed_sip','feed_delay_seconds':900,'capture_count':1}])
+        # The original <=15-minute physical-age metric is preserved. Delayed
+        # delivery does not subtract 15 minutes and become collector latency.
+        self.assertEqual(report['prices']['symbol_capture_pairs'], 6)
+        self.assertEqual(report['prices']['fresh_at_capture_count'], 4)
+        self.assertEqual(report['prices']['stale_at_capture_count'], 2)
+        self.assertTrue(all(r['latest_bar_age_at_audit_ms'] == 901000 for r in report['prices']['symbols']))
+        html = audit.render({'status':'VERIFIED','report':report}, live=False)
+        self.assertIn('Consolidated SIP · 15-minute delayed: 1 capture(s)', html)
+        self.assertIn('Historical IEX: 1 capture(s)', html)
+        self.assertIn('Physical bar ages include that delay', html)
+        self.assertIn('not a measure of market coverage or collector latency', html)
+        self.assertNotIn('IEX is partial-market context.', html)
+
     def test_partial_transport_does_not_manufacture_complete_capture(self):
         _,blobs=packet()
         self.store.retain_transport(blobs['news'],blobs['news_receipt'])
@@ -207,6 +245,38 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result['provider_calls'],0)
         html=root/'report.html';html.chmod(0o600);html.write_bytes(b'changed')
         with patch('blackpod_build_week.shadow_station_collection._off'),self.assertRaises(ValueError):audit.verify_export(root,self.config)
+
+    def test_legacy_export_replays_after_consolidated_append_without_rewriting(self):
+        self.store.append(*packet())
+        report = self.report()
+        root = self.base/'repo_root/output/legacy-audit'
+        audit.export_report(report,root,self.config)
+        before = {name:(root/name).read_bytes() for name in ('report.json','report.html','manifest.json')}
+        self.store.append(*packet(at=NOW+timedelta(minutes=5),feed='delayed_sip'))
+        with patch('blackpod_build_week.shadow_station_collection._off'):
+            result = audit.verify_export(root,self.config)
+        self.assertEqual(result['source_capture_count'],1)
+        self.assertEqual(result['provider_calls'],0)
+        self.assertTrue(result['verified'])
+        self.assertEqual({name:(root/name).read_bytes() for name in before},before)
+
+    def test_consolidated_export_manifest_versions_match_and_replay(self):
+        self.store.append(*packet())
+        self.store.append(*packet(at=NOW+timedelta(minutes=5),feed='delayed_sip'))
+        report = self.report(NOW+timedelta(minutes=5))
+        root = self.base/'repo_root/output/consolidated-audit'
+        audit.export_report(report,root,self.config)
+        self.assertEqual(json.loads((root/'manifest.json').read_bytes())['schema_version'],
+                         audit.CONSOLIDATED_AUDIT_VERSION)
+        self.store.append(*packet(at=NOW+timedelta(minutes=10),feed='sip'))
+        with patch('blackpod_build_week.shadow_station_collection._off'):
+            self.assertTrue(audit.verify_export(root,self.config)['verified'])
+        manifest = json.loads((root/'manifest.json').read_bytes())
+        manifest['schema_version'] = audit.VERSION
+        (root/'manifest.json').chmod(0o600)
+        (root/'manifest.json').write_bytes(canonical_json_bytes(manifest))
+        with patch('blackpod_build_week.shadow_station_collection._off'), self.assertRaisesRegex(ValueError,'versions differ'):
+            audit.verify_export(root,self.config)
 
     def test_export_forbids_source_overlap_symlinks_and_unrelated_files(self):
         self.store.append(*packet());report=self.report()

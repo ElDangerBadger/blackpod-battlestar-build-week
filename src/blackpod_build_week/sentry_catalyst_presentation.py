@@ -1,37 +1,81 @@
 """Small server-rendered, read-only Sentry cards; escaped untrusted headlines."""
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from html import escape
 from zoneinfo import ZoneInfo
 
 
+def text(value):
+    return escape(str(value) if value is not None else '—', quote=True)
+
+
+def when(value):
+    if not value:
+        return 'Not yet recorded'
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(ZoneInfo('America/Los_Angeles')).strftime('%b %d · %I:%M:%S %p %Z')
+    except (ValueError, TypeError, AttributeError):
+        return 'Unavailable'
+
+
+def number(value, percent=False):
+    try:
+        if percent:
+            return f'{float(value):+.2f}%'
+        count = Decimal(str(value))
+        return f'{count:,.0f}' if count.is_finite() else '—'
+    except (ValueError, TypeError, OverflowError, InvalidOperation):
+        return '—'
+
+
+def volume_scope(value):
+    """Describe only the recorded feed; never infer consolidated coverage."""
+    feed = value.get('feed', value.get('market_feed'))
+    delay = value.get('feed_delay_seconds')
+    if feed == 'sip' and type(delay) is int and delay == 0:
+        return ('Market volume', 'Consolidated SIP',
+                'Market volume counts shares across market venues in the saved SIP daily bar.')
+    if feed == 'delayed_sip' and type(delay) is int and delay == 900:
+        return ('Market volume', 'Consolidated SIP · 15-minute delayed',
+                'Market volume counts shares across market venues in the saved 15-minute delayed SIP daily bar.')
+    if feed == 'iex' and (delay is None or (type(delay) is int and delay == 0)):
+        return ('IEX-only volume', 'Historical IEX · partial-market context',
+                'Historical IEX-only volume counts shares from IEX only, not total market volume.')
+    return ('Volume · feed unverified', 'Market feed unverified',
+            'Volume coverage and feed delay are unverified; total market volume is not established.')
+
+
+def market_feed_scope(capture):
+    if capture.get('market_feed') is not None:
+        return volume_scope(capture)
+    rows = capture.get('contexts') or []
+    scopes = {volume_scope(row) for row in rows if isinstance(row, dict)}
+    return next(iter(scopes)) if len(scopes) == 1 else volume_scope({})
+
+
+def market_tiles(rows, symbols=None):
+    contexts = {row['symbol']: row for row in rows if isinstance(row, dict) and 'symbol' in row}
+    tiles = []
+    for symbol in symbols if symbols is not None else contexts:
+        row = contexts.get(symbol, {})
+        volume_label, feed_badge, _ = volume_scope(row)
+        display_status = row.get('freshness_at_packet', row.get('status', 'UNAVAILABLE'))
+        observed = display_status in {'OBSERVED', 'RECENT', 'DELAYED', 'STALE'}
+        tiles.append('<article class="tile"><b>' + text(symbol) + '</b><strong>' +
+            (text(number(row.get('change_from_previous_close_pct'), True)) if observed else 'Unavailable') +
+            '</strong><span>vs previous daily close</span>' + ('<p>Saved price ' + text(row['price']) + '</p>' if observed and row.get('price') is not None else '') + '<p>' + text(volume_label) + ' <b>' + text(number(row.get('day_volume'))) +
+            '</b> shares</p><small>' + text(feed_badge) + '<br>' + text(display_status) +
+            ' · Minute bar: ' + text(when(row.get('minute_at'))) + '</small></article>')
+    return ''.join(tiles)
+
+
 def render(status):
-    def text(value):
-        return escape(str(value) if value is not None else '—', quote=True)
-    def when(value):
-        if not value:
-            return 'Not yet recorded'
-        try:
-            return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(ZoneInfo('America/Los_Angeles')).strftime('%b %d · %I:%M:%S %p %Z')
-        except (ValueError, TypeError, AttributeError):
-            return 'Unavailable'
-    def number(value, percent=False):
-        try:
-            return f'{float(value):+.2f}%' if percent else f'{float(value):,.0f}'
-        except (ValueError, TypeError, OverflowError):
-            return '—'
     labels = {'WAITING_FOR_NEXT_SLOT': 'Monitoring · five-minute polling', 'OUTSIDE_MONITORING_HOURS': 'Outside monitoring hours', 'COOLDOWN': 'Capture paused after a failure', 'WORKER_STALE_OR_STOPPED': 'Collector needs attention', 'PAUSED': 'Collection paused'}
     label = labels.get(status.get('status'), str(status.get('status', 'Unavailable')).replace('_', ' ').capitalize())
     capture = status.get('capture') or {}
     collector = status.get('collector') or {}
-    contexts = {row['symbol']: row for row in capture.get('contexts', [])}
-    tiles = []
-    for symbol in status.get('symbols', []):
-        row = contexts.get(symbol, {})
-        fresh = row.get('status') in {'OBSERVED', 'STALE'}
-        tiles.append('<article class="tile"><b>' + text(symbol) + '</b><strong>' +
-            (text(number(row.get('change_from_previous_close_pct'), True)) if fresh else 'Unavailable') +
-            '</strong><span>vs previous daily close</span><p>IEX-only volume <b>' + text(number(row.get('day_volume'))) +
-            '</b> shares</p><small>' + text(row.get('status', 'UNAVAILABLE')) + ' · Bar: ' + text(when(row.get('minute_at'))) + '</small></article>')
+    tiles = market_tiles(capture.get('contexts') or [], status.get('symbols', []))
+    _, feed_badge, volume_note = market_feed_scope(capture)
     cards = []
     for item in capture.get('articles', []):
         chips = ''.join('<b class="chip">' + text(s) + '</b>' for s in item['symbols'])
@@ -52,7 +96,7 @@ def render(status):
     return '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>BlackPod · Sentry</title><link rel="icon" href="data:,">
 <style>body{margin:0;background:#0c1721;color:#e5edf4;font:15px/1.5 system-ui}main{max-width:1100px;margin:auto;padding:28px}h1{font-size:36px;letter-spacing:-.05em;margin:8px 0}h2{font-size:20px;line-height:1.4}a{color:#c2e4f2;text-decoration:none}a:hover{text-decoration:underline}.eyebrow,small,.times,.tile span{color:#9fb7c7}.badges{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.badge,.chip{padding:4px 10px;border:1px solid #345466;border-radius:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.tile,.card{background:#142633;border:1px solid #294554;border-radius:12px;padding:16px}.tile{padding:12px}.tile strong{display:block;font-size:22px;margin-top:2px}.tile small{font-size:10px}.tile span{font-size:12px}.tile p{margin:4px 0}.card{margin:14px 0}.chip{font-size:12px;margin-right:6px}.source{color:#a8c2d1}.times{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin-bottom:10px}.warning{background:#493a1a;color:#ffe1a1;padding:14px;border-radius:10px}footer{color:#a8bdcb;border-top:1px solid #304854;padding-top:18px;margin-top:30px}nav{margin-top:24px}</style><main><div class="eyebrow">BLACKPOD · OBSERVATION ONLY</div><h1>Sentry catalyst feed</h1><p>What happened. When we saw it. How the watchlist moved.</p>''' + \
         '<div class="badges"><b class="badge">' + text(freshness) + '</b><span class="badge">Auto-trading ' + text(status.get('auto_trading')) + \
-        '</span><span class="badge">IEX · partial-market context</span></div><p>Captured ' + text(when(capture.get('captured_at'))) + \
-        ' · ' + text(label) + '</p><p><a href="/sentry-synthesis">Market brief + challenge →</a> · <a href="/sentry-audit">Feed quality audit →</a></p>' + warning + '<div class="grid">' + ''.join(tiles) + \
+        '</span><span class="badge">' + text(feed_badge) + '</span></div><p>Captured ' + text(when(capture.get('captured_at'))) + \
+        ' · ' + text(label) + '</p><p><a href="/sentry-synthesis">Market brief + challenge →</a> · <a href="/sentry-audit">Feed quality audit →</a></p>' + warning + '<div class="grid">' + tiles + \
         '</div><h2>Latest retained headlines</h2>' + (''.join(cards) or '<p>No verified headlines recorded yet. This does not mean there is no news.</p>') + \
-        '<footer>Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles · maximum 10 symbols.<br>IEX-only volume counts shares from IEX only, not total market volume or relative volume. Saved bars may be stale or incomplete. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'
+        '<footer>Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles · maximum 10 symbols.<br>' + text(volume_note) + ' Volume is not relative volume. Saved bars may be stale or incomplete. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'

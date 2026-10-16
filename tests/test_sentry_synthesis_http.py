@@ -104,8 +104,32 @@ class SentrySynthesisHTTPTests(_LocalHTTPMixin, unittest.TestCase):
             code, _, body = self.request('/sentry-synthesis')
             self.assertEqual(code, 200)
             self.assertIn(b'IEX-only volume: 501362 shares', body)
-            self.assertIn(b'not total market volume or relative volume', body)
+            self.assertIn(b'not total market volume', body)
+            self.assertIn(b'Volume is not relative volume', body)
             self.assertNotIn(b'Day volume', body)
+            code, _, body = self.request('/sentry-synthesis.json')
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(body), self.value)
+
+    def test_new_delayed_market_panel_does_not_replace_original_model_inputs(self):
+        from test_sentry_synthesis_presentation import fixture
+        self.value = fixture()
+        self.value['report']['context']['evidence'][1]['data']['day_volume'] = '501362'
+        self.value['current_market_context'] = {
+            'status': 'FRESH', 'captured_at': '2026-10-15T22:00:00Z',
+            'market_feed': 'delayed_sip', 'feed_delay_seconds': 900,
+            'contexts': [{'symbol': 'NVDA', 'status': 'DELAYED', 'feed': 'delayed_sip',
+                          'feed_delay_seconds': 900, 'day_volume': '19243640',
+                          'change_from_previous_close_pct': '2.50',
+                          'minute_at': '2026-10-15T21:44:00Z'}]}
+        with patch('blackpod_build_week.sentry_synthesis_transport.generate_role', side_effect=AssertionError('inference forbidden')):
+            code, _, body = self.request('/sentry-synthesis')
+            self.assertEqual(code, 200)
+            self.assertIn(b'Current market context', body)
+            self.assertIn(b'15-minute delayed', body)
+            self.assertIn(b'Market volume <b>19,243,640</b> shares', body)
+            self.assertIn(b'IEX-only volume: 501362 shares', body)
+            self.assertIn(b'do not update the Oracle interpretation or its review', body)
             code, _, body = self.request('/sentry-synthesis.json')
             self.assertEqual(code, 200)
             self.assertEqual(json.loads(body), self.value)

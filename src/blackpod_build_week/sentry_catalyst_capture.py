@@ -16,6 +16,9 @@ from .sentry_catalyst import symbols, clock, stamp
 URLS = {"news": "https://data.alpaca.markets/v1beta1/news",
         "snapshots": "https://data.alpaca.markets/v2/stocks/snapshots"}
 MAX_BYTES = 1024 * 1024
+LEGACY_RECEIPT_VERSION = 'blackpod.sentry_catalyst_get.v1'
+CONSOLIDATED_RECEIPT_VERSION = 'blackpod.sentry_catalyst_get.v2'
+SNAPSHOT_FEEDS = ('iex', 'sip', 'delayed_sip')
 
 class CatalystCaptureError(ValueError):
     def __init__(self, code, http_status=None):
@@ -31,7 +34,7 @@ def validate_query(kind, query):
             raise ValueError()
         symbols(query['symbols'].split(','))
         if kind == 'snapshots':
-            if query != {'symbols': query['symbols'], 'feed': 'iex'}:
+            if set(query) != {'symbols', 'feed'} or query['feed'] not in SNAPSHOT_FEEDS:
                 raise ValueError()
         else:
             if (set(query) != {'symbols', 'start', 'end', 'limit', 'sort', 'include_content'}
@@ -45,14 +48,23 @@ def validate_query(kind, query):
 
 def validate_receipt(value, kind):
     if (not isinstance(value, dict) or set(value) != {'schema_version','method','url','query','captured_at','status','body_sha256','size_bytes'}
-            or value['schema_version'] != 'blackpod.sentry_catalyst_get.v1' or value['method'] != 'GET'
+            or value['schema_version'] not in (LEGACY_RECEIPT_VERSION, CONSOLIDATED_RECEIPT_VERSION)
+            or value['method'] != 'GET'
             or value['url'] != URLS.get(kind) or type(value['status']) is not int or value['status'] != 200
             or not isinstance(value['body_sha256'], str) or not re.fullmatch('[a-f0-9]{64}', value['body_sha256'])
             or type(value['size_bytes']) is not int or not 0 < value['size_bytes'] <= MAX_BYTES):
         raise CatalystCaptureError('RECEIPT_REFUSED')
-    validate_query(kind, value['query'])
+    query = validate_query(kind, value['query'])
+    if value['schema_version'] != _receipt_version(kind, query):
+        raise CatalystCaptureError('RECEIPT_REFUSED')
     clock(value['captured_at'])
     return value
+
+def _receipt_version(kind, query):
+    """Preserve old news/IEX receipts; consolidated snapshots have a new contract."""
+    if kind == 'snapshots' and query['feed'] in ('sip', 'delayed_sip'):
+        return CONSOLIDATED_RECEIPT_VERSION
+    return LEGACY_RECEIPT_VERSION
 
 class _RefuseRedirects(HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, newurl):
@@ -117,7 +129,7 @@ def market_get(kind, query, credentials, *, timeout=20):
             raise
         except (ValueError, TypeError, RecursionError):
             raise CatalystCaptureError("INVALID_RESPONSE") from None
-        receipt = validate_receipt({"schema_version": "blackpod.sentry_catalyst_get.v1",
+        receipt = validate_receipt({"schema_version": _receipt_version(kind, query),
             "method": "GET", "url": URLS[kind], "query": query, "captured_at": utc_now(),
             "status": 200, "body_sha256": sha256_bytes(raw), "size_bytes": len(raw)}, kind)
         return raw, canonical_json_bytes(receipt)

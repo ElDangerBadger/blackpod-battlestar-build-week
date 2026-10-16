@@ -8,6 +8,8 @@ from html import escape
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from .sentry_catalyst_presentation import market_feed_scope, market_tiles, volume_scope
+
 
 def _text(value):
     return escape(str(value) if value is not None else 'Unavailable', quote=True)
@@ -47,6 +49,22 @@ def _invalidation(value):
     if isinstance(value, dict):
         return value.get('text') if value.get('status') == 'PROPOSED' else 'Not specified; not invented.'
     return value or 'Not specified; not invented.'
+
+
+def _current_market_context(projection):
+    """Keep newer observations visibly separate from the original model input."""
+    if not isinstance(projection, dict):
+        return ''
+    title = '<section class="card current-market-context"><h2>Current market context</h2>'
+    _, badge, note = market_feed_scope(projection)
+    if (projection.get('status') not in {'FRESH', 'STALE', 'AVAILABLE', 'VERIFIED'}
+            or projection.get('market_feed') not in {'sip', 'delayed_sip'}
+            or badge == 'Market feed unverified' or not isinstance(projection.get('contexts'), list)):
+        return title + '<p>Consolidated market context is unavailable. Historical inputs below remain unchanged; no current numbers are substituted.</p></section>'
+    body = title + '<p class="muted">Latest saved Sentry observations, separate from the original brief inputs. These numbers do not update the Oracle interpretation or its review.</p>'
+    body += '<div class="badges"><b class="badge">' + _text(badge) + '</b><span class="badge">' + _text(projection['status']) + '</span></div>'
+    body += '<p>Captured ' + _text(_when(projection.get('captured_at'))) + '</p><div class="grid">' + market_tiles(projection['contexts']) + '</div>'
+    return body + '<p class="muted">' + _text(note) + ' Volume is not relative volume. Saved bars may be stale or incomplete; check the capture and minute-bar times.</p></section>'
 
 
 def _narrative_evaluation(projection, report, citations=None):
@@ -132,6 +150,7 @@ def render(value):
     report = value.get('report')
     auto = 'OFF' if value.get('auto_trading') == 'OFF' else 'UNVERIFIED'
     body = '<div class="badges"><b class="badge">' + _text(labels.get(status, 'Synthesis unavailable')) + '</b><span class="badge">Auto-trading ' + auto + '</span><span class="badge">NOT TRADE AUTHORITY</span></div>'
+    body += _current_market_context(value.get('current_market_context'))
     body += '<p class="warning">Unverified headline-based interpretation. Structured validation checks format and evidence references; it does not establish truth, causation, consensus or a trading edge.</p>'
     if operational:
         body += '<p class="muted">Synthesis worker: ' + ('enabled' if operational.get('enabled') is True else 'paused or unavailable') + ' · Last attempt: ' + _text(operational.get('last_result', 'NOT_RUN')) + '</p>'
@@ -260,7 +279,7 @@ def render(value):
             body += '<h3>' + title + '</h3><dl>' + ''.join('<dt>' + _text(key) + '</dt><dd>' + _text(v) + '</dd>' for key, v in fields if v is not None) + '</dl>'
             if not provenance:
                 body += '<p>Model identity metadata unavailable; no model independence is claimed.</p>'
-        body += '</details><details class="card source-folder"><summary>Source evidence · ' + str(len(evidence)) + ' retained item(s)</summary><p class="muted">Evidence supplied to the models. Full evidence IDs are retained below. Source links may require a subscription; an accessible headline does not establish access to the article body.</p>'
+        body += '</details><details class="card source-folder"><summary>Source evidence · ' + str(len(evidence)) + ' retained item(s) · original historical snapshot</summary><p class="muted">Original evidence supplied to the models, retained at the source snapshot time. This is historical context, separate from newer market observations above. Full evidence IDs are retained below. Source links may require a subscription; an accessible headline does not establish access to the article body.</p>'
         for number, item in enumerate(evidence):
             data = item.get('data') or {}
             kind = item.get('kind')
@@ -270,7 +289,8 @@ def render(value):
                 title = _text(data.get('headline'))
                 body += '<h3>' + ('<a href="' + _text(target) + '" target="_blank" rel="noopener noreferrer">' + title + '</a>' if target else title) + '</h3><p>Named source: ' + _text(data.get('source')) + '</p><p class="muted">Published ' + _text(_when(data.get('published_at'))) + ' · Updated ' + _text(_when(data.get('updated_at'))) + '<br>First seen ' + _text(_when(data.get('first_seen_at'))) + ' · Last seen ' + _text(_when(data.get('last_seen_at'))) + '</p>'
             elif kind == 'PRICE_CONTEXT':
-                body += '<h3>Price context · ' + _text(data.get('status', 'UNAVAILABLE')) + '</h3><p>Change versus previous daily close: ' + _text(data.get('change_from_previous_close_pct')) + '% · IEX-only volume: ' + _text(data.get('day_volume')) + ' shares</p><p class="muted">Minute bar: ' + _text(_when(data.get('minute_at'))) + ' · Daily bar: ' + _text(_when(data.get('day_bar_at'))) + ' · Previous daily bar: ' + _text(_when(data.get('previous_day_bar_at'))) + '</p><p>IEX-only volume counts shares from IEX only, not total market volume or relative volume. Saved bars may be stale or incomplete. This is not an event-time or benchmark comparison.</p>'
+                volume_label, feed_badge, volume_note = volume_scope(data)
+                body += '<h3>Original price context · ' + _text(data.get('status', 'UNAVAILABLE')) + '</h3><p>' + _text(feed_badge) + ' · historical model input</p><p>Change versus previous daily close: ' + _text(data.get('change_from_previous_close_pct')) + '% · ' + _text(volume_label) + ': ' + _text(data.get('day_volume')) + ' shares</p><p class="muted">Minute bar: ' + _text(_when(data.get('minute_at'))) + ' · Daily bar start: ' + _text(_when(data.get('day_bar_at'))) + ' · Previous daily bar: ' + _text(_when(data.get('previous_day_bar_at'))) + '</p><p>' + _text(volume_note) + ' Volume is not relative volume. Saved bars may be stale or incomplete. This is not an event-time or benchmark comparison.</p>'
             elif kind == 'FEED_QUALITY':
                 body += '<h3>Feed quality</h3><dl>' + ''.join('<dt>' + _text(key) + '</dt><dd>' + _text(v) + '</dd>' for key, v in data.items()) + '</dl>'
             body += '</article>'
