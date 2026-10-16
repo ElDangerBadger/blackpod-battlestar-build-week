@@ -12,7 +12,15 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
-**Latest, October 15 at 4:13 p.m. Los Angeles:** the separately authorized
+**Latest, October 15 at 5:22 p.m. Los Angeles:** the separately recorded
+900-second validation passed the former 90-second cutoff but returned HTTP
+500 after about 400.8 seconds. It produced no accepted draft or challenge.
+The exact schema passes offline compilation; the server error code was not
+retained, so its cause remains unknown. All three failures are preserved and
+the content request is still NOT_RUN. See the
+[long-deadline validation and diagnosis](SENTRY_DEADLINE_VALIDATION_REVIEW_2026-10-15.md).
+
+**Earlier, October 15 at 4:13 p.m. Los Angeles:** the separately authorized
 v2 validation reached ModelDock but returned `MODELDOCK_HTTP_504` after about
 90 seconds. Both failures are preserved. No accepted pair exists and no
 article-content GET ran. The native endpoint and named client activity are

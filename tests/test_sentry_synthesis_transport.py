@@ -2,15 +2,18 @@
 import copy
 from datetime import datetime, timezone
 import json
+from io import BytesIO
 import os
 from pathlib import Path
 import tempfile
 import threading
+import socket
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from urllib.error import HTTPError
 
 from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes
-from blackpod_build_week.modeldock_client import ModelDockClient, HttpResponse
+from blackpod_build_week.modeldock_client import ModelDockClient, HttpResponse, UrlLibTransport
 from blackpod_build_week.modeldock_config import ModelDockConfig
 from blackpod_build_week import sentry_synthesis_transport as transport
 
@@ -548,6 +551,225 @@ class SentrySynthesisTransportTests(unittest.TestCase):
                 off_check=lambda: None, verify_source=lambda: None, now=lambda: NOW)
         self.assertEqual(result['status'], 'FAILED')
         self.assertEqual(self.fixture.calls, [])
+
+
+class SentryHttpErrorObservationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir='/private/tmp')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'role'
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 60, delivery_grace_seconds=5)
+        self.code, self.status = 'INFERENCE_FAILURE', 500
+        self.foreign_id, self.raw_override, self.declared = None, None, 'AUTO'
+        self.read_failure, self.expire_after_headers, self.read_advance = None, False, 0
+        self.clock = 0
+        self.calls, self.streams = [], []
+        self.enterContext(patch.object(socket.socket, 'connect', side_effect=AssertionError('network forbidden')))
+        original_client = ModelDockClient
+        self.enterContext(patch.object(transport, 'ModelDockClient', side_effect=lambda config, **kw:
+            original_client(config, now=lambda: NOW, monotonic=lambda: self.clock, **kw)))
+        self.enterContext(patch.object(transport, 'UrlLibTransport', side_effect=lambda:
+            UrlLibTransport(monotonic=lambda: self.clock)))
+        self.enterContext(patch('blackpod_build_week.modeldock_client.urllib.request.build_opener',
+            return_value=Mock(open=self.opened)))
+
+    def opened(self, request, timeout):
+        self.calls.append((request, timeout))
+        wire = json.loads(request.data)
+        identity = wire['metadata']['blackpod_correlation']['request_id']
+        envelope = {'error': {'code': self.code, 'request_id': self.foreign_id or identity,
+            'message': 'PRIVATE_ERROR_MESSAGE sk-proj-fixture-not-real',
+            'details': [{'private_path': '/PRIVATE_MODEL_PATH', 'text': 'PRIVATE_MODEL_OUTPUT'}]}}
+        raw = self.raw_override if self.raw_override is not None else canonical_json_bytes(envelope)
+        owner = self
+        class ErrorBody(BytesIO):
+            def __init__(self, body):
+                super().__init__(body)
+                self.read_sizes, self.supplied, self.timeouts = [], 0, []
+            def settimeout(self, remaining):
+                self.timeouts.append(remaining)
+            def read(self, count=-1):
+                self.read_sizes.append(count)
+                if owner.read_failure:
+                    raise owner.read_failure
+                result = super().read(count)
+                self.supplied += len(result)
+                owner.clock += owner.read_advance
+                return result
+        stream = ErrorBody(raw)
+        self.streams.append(stream)
+        headers = {'Content-Type': 'application/json', 'X-Request-ID': identity}
+        if self.declared == 'AUTO':
+            headers['Content-Length'] = str(len(raw))
+        elif self.declared is not None:
+            headers['Content-Length'] = self.declared
+        if self.expire_after_headers:
+            self.clock = timeout - 0.5
+        raise HTTPError(request.full_url, self.status, 'PRIVATE_HTTP_REASON', headers, stream)
+
+    def generate(self, **changes):
+        return transport.generate_role('oracle', packet(), self.root, self.config,
+            off_check=lambda: None, verify_source=lambda: None, now=lambda: NOW, **changes)
+
+    def observation(self):
+        return transport.read_error_observation('oracle', packet(), self.root, self.config)
+
+    def test_actual_urllib_http_error_stream_retains_only_correlated_safe_metadata(self):
+        result = self.generate()
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+        saved = self.observation()
+        self.assertEqual(saved['status'], 'AVAILABLE')
+        self.assertEqual(saved['code'], 'INFERENCE_FAILURE')
+        self.assertEqual(saved['http_status'], 500)
+        self.assertEqual(saved['request_id'], result['request_id'])
+        self.assertTrue(saved['body_complete'])
+        request = self.calls[0][0]
+        self.assertEqual(saved['request_sha256'], sha256_bytes(request.data))
+        self.assertEqual(saved['receipt_sha256'], sha256_bytes((self.root / 'receipt.json').read_bytes()))
+        self.assertEqual(request.get_header('X-modeldock-client'), 'BlackPod-Sentry')
+        self.assertTrue(self.streams[0].closed)
+        self.assertTrue(self.streams[0].timeouts)
+        self.assertTrue(all(0 < t <= self.config.delivery_timeout_seconds for t in self.streams[0].timeouts))
+        for path in self.root.rglob('*'):
+            if path.is_file():
+                raw = path.read_bytes()
+                for private in (b'PRIVATE_ERROR_MESSAGE', b'PRIVATE_MODEL_PATH', b'PRIVATE_MODEL_OUTPUT', b'PRIVATE_HTTP_REASON'):
+                    self.assertNotIn(private, raw)
+
+    def test_sidecar_does_not_change_role_result_or_receipt_and_retry_is_provider_free(self):
+        first = self.generate()
+        before = {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no inference on replay')):
+            self.assertEqual(self.generate(), first)
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.observation()['code'], 'INFERENCE_FAILURE')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertNotIn('error_observation', first)
+        self.assertNotIn('http-error', (self.root / 'receipt.json').read_text())
+
+    def test_unknown_code_and_mismatched_id_never_retain_untrusted_strings(self):
+        for index, (code, identity) in enumerate([('PRIVATE_SECRET_CODE', None), ('INFERENCE_FAILURE', 'PRIVATE_FOREIGN_ID'),
+                                                 ({'private': 'PRIVATE_CODE_OBJECT'}, None)]):
+            self.root = Path(self.tmp.name) / str(index)
+            self.code, self.foreign_id = code, identity
+            self.assertEqual(self.generate()['failure_code'], 'MODELDOCK_HTTP_500')
+            value = self.observation()
+            self.assertEqual(value['status'], 'UNAVAILABLE')
+            self.assertIsNone(value['code'])
+            self.assertTrue(value['body_complete'])
+            self.assertNotIn('PRIVATE_', json.dumps(value))
+
+    def test_malformed_duplicate_keys_or_non_json_envelope_has_no_code(self):
+        cases = [b'<html>PRIVATE_ERROR_BODY</html>', b'{"error":{},"error":{}}', b'{"error":NaN}', b'[]']
+        for index, raw in enumerate(cases):
+            self.root = Path(self.tmp.name) / str(index)
+            self.raw_override = raw
+            self.generate()
+            value = self.observation()
+            self.assertEqual(value['status'], 'UNAVAILABLE')
+            self.assertIsNone(value['code'])
+            self.assertTrue(value['body_complete'])
+            self.assertEqual(value['body_sha256'], sha256_bytes(raw))
+            self.assertEqual(value['size_bytes'], len(raw))
+
+    def test_oversize_and_declared_size_mismatch_never_claim_complete_body_hash(self):
+        cases = [(b'x' * 8193, None), (b'{}', '100'), (b'{}', 'invalid'), (b'{}', '8193')]
+        for index, (raw, declared) in enumerate(cases):
+            self.root = Path(self.tmp.name) / str(index)
+            self.raw_override, self.declared = raw, declared
+            self.assertEqual(self.generate()['failure_code'], 'MODELDOCK_HTTP_500')
+            value = self.observation()
+            self.assertEqual(value['status'], 'UNAVAILABLE')
+            self.assertFalse(value['body_complete'])
+            self.assertIsNone(value['body_sha256'])
+            self.assertIsNone(value['size_bytes'])
+            self.assertLessEqual(self.streams[-1].supplied, 8193)
+
+    def test_deadline_and_read_failure_preserve_original_http_status_without_retry(self):
+        for index, failure in enumerate([TimeoutError('PRIVATE_TIMEOUT'), OSError('PRIVATE_SOCKET')]):
+            self.root = Path(self.tmp.name) / str(index)
+            self.read_failure = failure
+            result = self.generate()
+            self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+            self.assertEqual(self.observation()['status'], 'UNAVAILABLE')
+            self.assertFalse(self.observation()['body_complete'])
+        self.root = Path(self.tmp.name) / 'expired'
+        self.read_failure, self.expire_after_headers = None, True
+        self.assertEqual(self.generate()['failure_code'], 'MODELDOCK_HTTP_500')
+        self.assertEqual(self.streams[-1].supplied, 0)
+        self.assertEqual(self.observation()['status'], 'UNAVAILABLE')
+        self.assertEqual(len(self.calls), 3)
+
+    def test_slow_error_body_has_two_second_diagnostic_cap_without_masking_http_failure(self):
+        self.read_advance = 2.1
+        result = self.generate()
+        self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+        value = self.observation()
+        self.assertEqual(value['status'], 'UNAVAILABLE')
+        self.assertFalse(value['body_complete'])
+        self.assertIsNone(value['body_sha256'])
+        self.assertLessEqual(self.streams[-1].timeouts[0], 2)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_near_delivery_deadline_skips_diagnostic_read_and_preserves_http_status(self):
+        self.expire_after_headers = True
+        result = self.generate()
+        self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+        self.assertEqual(self.streams[-1].read_sizes, [])
+        self.assertEqual(self.observation()['status'], 'UNAVAILABLE')
+        self.assertEqual(len(self.calls), 1)
+
+    def test_tampered_metadata_fails_closed_even_when_self_hash_recomputed(self):
+        self.generate()
+        path = self.root / 'http-error.json'
+        original = json.loads(path.read_bytes())
+        for field, value in [('request_sha256', '0' * 64), ('receipt_sha256', '0' * 64), ('http_status', 503),
+                             ('request_id', 'wrong-request'), ('code', 'PRIVATE_SECRET_CODE')]:
+            changed = copy.deepcopy(original)
+            changed[field] = value
+            changed['observation_sha256'] = sha256_bytes(canonical_json_bytes({k: v for k, v in changed.items() if k != 'observation_sha256'}))
+            path.chmod(0o600)
+            path.write_bytes(canonical_json_bytes(changed))
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.observation()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_optional_diagnostic_write_failure_does_not_erase_http_failure_or_resend(self):
+        original = transport._publish
+        def interrupted(root, staging, name, value):
+            if name == 'http-error.json':
+                raise OSError('fixture optional metadata publication failure')
+            return original(root, staging, name, value)
+        with patch.object(transport, '_publish', side_effect=interrupted):
+            result = self.generate()
+        self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+        self.assertIsNone(self.observation())
+        self.assertEqual(self.generate(), result)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_old_failures_are_never_backfilled_or_resent(self):
+        class EmptyHttpFailure:
+            def request(self, **kwargs):
+                return HttpResponse(500, {}, b'', complete=False)
+        for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION, transport.VERSION)):
+            self.root = Path(self.tmp.name) / str(index)
+            result = self.generate(version=version, client_factory=lambda config:
+                ModelDockClient(config, transport=EmptyHttpFailure(), now=lambda: NOW))
+            self.assertEqual(result['status'], 'FAILED')
+            before = {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+            with patch.object(transport, '_default_client', side_effect=AssertionError('no historical retry')):
+                self.assertEqual(self.generate(), result)
+                self.assertIsNone(self.observation())
+            self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(self.calls, [])
+
+    def test_unbound_sidecar_cannot_trigger_a_new_delivery(self):
+        transport.write_json_once(self.root, 'http-error.json', {'fake': 'metadata without a request'})
+        with self.assertRaises(ValueError):
+            self.generate()
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == '__main__':

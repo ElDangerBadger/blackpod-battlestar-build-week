@@ -1,5 +1,11 @@
 # Explicit Sentry v2 validation · October 15, 2026
 
+Subsequent explicitly authorized work raised the per-request budget in a new
+v3 capsule. That request returned HTTP 500 after 400.8 seconds, preserving
+both failures described here. See the
+[later diagnosis and validation record](SENTRY_DEADLINE_VALIDATION_REVIEW_2026-10-15.md).
+This document retains the original v2 observation times and limits.
+
 **Blocked at local generation: HTTP 504.** The separately authorized v2
 validation reached ModelDock, but produced no accepted Oracle draft. No
 challenge or article-content request followed. This is a processing-status

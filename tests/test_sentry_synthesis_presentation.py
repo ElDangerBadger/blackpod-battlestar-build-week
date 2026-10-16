@@ -132,7 +132,7 @@ class SynthesisPresentationTests(unittest.TestCase):
 
     def test_separate_trading_investment_and_readthrough_lenses(self):
         html = render(fixture())
-        for expected in ('Trading lens', 'Investment lens', 'Direct headline mention',
+        for expected in ('Trading lens', 'Investment lens', 'Provider symbol tag · textual connection unverified',
                          'Hypothetical read-through · not established', 'Business impact requires contract details.',
                          'Broad read-through is speculative.', 'not a portfolio assessment',
                          'Proposed review horizon:', 'not an approved investment horizon',

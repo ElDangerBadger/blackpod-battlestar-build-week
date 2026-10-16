@@ -25,7 +25,9 @@ new autonomous decision agents.
 - **Overview:** a tentative picture of the selected news, with evidence links.
 - **Themes:** at most three interpretations, each linked to retained evidence.
 - **Symbol implications:** separate trading and investment questions. A direct
-  mention requires a cited headline tagged with that symbol. A possible wider
+  mention in the retained contract requires a cited headline tagged with that
+  symbol by the provider; it does not prove the text names that company. The UI
+  labels this as a provider symbol tag with textual connection unverified. A possible wider
   connection is explicitly labeled hypothetical read-through.
 - **Challenge:** one review per theme, preserving disagreement, alternatives,
   missing evidence and unresolved assumptions. It cannot approve an action.
@@ -208,6 +210,24 @@ a reserved attempt from the previous completed report. A bounded processing
 health allowance reflects the configured delivery window; it does not claim
 native token progress or successful completion. Idle health retains its
 ordinary five-minute threshold.
+
+### Bounded HTTP-error metadata
+
+Sentry's owned HTTP opener can retain an optional `http-error.json` beside a
+future failed role. It reads at most 8 KiB, for at most two seconds within the
+original deadline with a delivery margin. Only an allowlisted error code with
+an exact matching request ID can be AVAILABLE. Malformed, oversized, partial,
+unknown-code or mismatched responses remain UNAVAILABLE. The metadata binds
+the request, terminal receipt and complete-body hash/count when available;
+no error message, details, raw body or model output is retained or displayed.
+
+The canonical mission urllib client still discards HTTP error bodies. Sentry
+returns the same terminal status and report shape, and diagnostics cannot
+create an automatic retry, relax response validation or alter authority.
+Existing capsules are never backfilled. Provider-free
+`sentry_synthesis_transport.read_error_observation` verifies this optional
+metadata; missing evidence remains unavailable. The completed October 15
+HTTP 500 predates this observer, so its specific code cannot be reconstructed.
 
 Requests, sanitized response projections, response hashes, processing receipts and immutable reports
 remain local under the separate synthesis operational root. They are not part
