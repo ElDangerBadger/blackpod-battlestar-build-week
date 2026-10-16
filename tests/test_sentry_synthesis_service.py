@@ -700,24 +700,24 @@ class ExplicitDeadlineValidationTests(unittest.TestCase):
         self.assertEqual(len(self.helper.http.calls), 2)
         self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
 
-    def test_manual_scope_does_not_bypass_hourly_budget_or_disabled_control(self):
-        self.assertEqual(self.run_validation(now=NOW + timedelta(hours=1, minutes=59))['status'],
-                         'WAITING_FOR_NEXT_SLOT')
+    def test_manual_scope_has_separate_spacing_but_respects_disabled_control(self):
+        self.assertEqual(service.due(NOW + timedelta(hours=1, minutes=59),
+            service.ledger(self.helper.runs), True, manual_retained=True)[1], 'DUE')
         self.helper.control['enabled'] = False
         atomic_state(self.helper.root / 'control.json', self.helper.control)
         self.assertEqual(self.run_validation()['status'], 'PAUSED')
         self.assertFalse(self.child().exists())
         self.assertEqual(self.helper.http.calls, [])
 
-    def test_manual_scope_still_shares_four_reservations_per_day(self):
+    def test_manual_diagnostic_does_not_consume_or_share_background_daily_budget(self):
         for index in (2, 3):
             at = NOW + timedelta(hours=index)
             self.helper.append_capture(at, headline='Later independently admitted evidence ' + str(index), identity=500 + index)
             self.assertEqual(self.helper.cycle(at), 'CHALLENGED_INTERPRETATION')
         self.helper.now = NOW + timedelta(hours=8)
-        self.assertEqual(self.run_validation()['status'], 'DAILY_BUDGET_EXHAUSTED')
-        self.assertFalse(self.child().exists())
-        self.assertEqual(len(self.helper.http.calls), 4)
+        self.assertEqual(self.run_validation()['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertTrue(self.child().exists())
+        self.assertEqual(len(self.helper.http.calls), 6)
 
     def test_other_deadlines_do_not_enter_fixed_manual_validation(self):
         for timeout, grace in ((899, 30), (900, 29), (901, 30), (900, 31)):
@@ -920,7 +920,7 @@ class ExplicitErrorDiagnosticTests(unittest.TestCase):
     def child(self):
         return self.helper.runs / service.validation_directory(self.source_id, error_diagnostic=True)
 
-    def test_fourth_manual_child_uses_same_packet_preserves_all_three_failures_and_exhausts_daily_budget(self):
+    def test_fourth_manual_child_preserves_three_failures_without_consuming_background_budget(self):
         result = self.run_validation()
         self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
         self.assertEqual(result['validation']['purpose'], 'EXPLICIT_ERROR_CODE_DIAGNOSTIC')
@@ -934,7 +934,10 @@ class ExplicitErrorDiagnosticTests(unittest.TestCase):
         entries = service.ledger(self.helper.runs)
         self.assertEqual(len(entries), 4)
         self.assertEqual(service.due(self.helper.now + timedelta(hours=1), entries, True, manual_retained=True)[1],
-                         'DAILY_BUDGET_EXHAUSTED')
+                         'DUE')
+        status = service.status(self.config, self.helper.now)
+        self.assertEqual(status['operational']['background_attempt_count_today'], 1)
+        self.assertEqual(status['operational']['manual_attempt_count_today'], 3)
         self.assertEqual(service.verify(self.config)['report_dispositions'],
                          {'FAILED': 3, 'CHALLENGED_INTERPRETATION': 1})
         self.assertEqual(self.run_validation(), result)
@@ -965,9 +968,10 @@ class ExplicitErrorDiagnosticTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_MODEL', json.dumps(error))
         self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
 
-    def test_shared_hourly_gate_applies_before_error_diagnostic(self):
-        result = self.run_validation(now=self.helper.now - timedelta(seconds=1))
-        self.assertEqual(result['status'], 'WAITING_FOR_NEXT_SLOT')
+    def test_named_error_diagnostic_is_not_subject_to_background_hourly_spacing(self):
+        result = service.due(self.helper.now - timedelta(seconds=1), service.ledger(self.helper.runs),
+                             True, manual_retained=True)
+        self.assertEqual(result[1], 'DUE')
         self.assertFalse(self.child().exists())
         self.assertEqual(self.helper.http.calls, [])
 
@@ -1026,6 +1030,147 @@ class ExplicitErrorDiagnosticTests(unittest.TestCase):
                 patch.object(service, 'validate_error', return_value={'status': 'FIXTURE_ONLY'}) as call, \
                 patch('sys.stdout', new_callable=StringIO):
             self.assertEqual(service.main(['validate-error', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
+
+
+class SeparateManualBudgetTests(unittest.TestCase):
+    def row(self, at, *, manual=False):
+        return (None, None, {'schema_version': service.RUNTIME_VALIDATION_VERSION if manual else service.VERSION,
+                             'reserved_at': catalyst.stamp(at)}, None)
+
+    def test_manual_admission_bypasses_only_monitoring_hourly_and_daily_caps(self):
+        entries = [self.row(NOW - timedelta(hours=n)) for n in (1, 2, 3, 4)]
+        entries += [self.row(NOW - timedelta(seconds=1), manual=True)]
+        self.assertEqual(service.due(NOW, entries, True)[1], 'DAILY_BUDGET_EXHAUSTED')
+        self.assertEqual(service.due(NOW, entries, True, manual_retained=True)[1], 'DUE')
+        self.assertEqual(service.due(NOW, entries, False, manual_retained=True)[1], 'PAUSED')
+        entries.append(self.row(NOW + timedelta(seconds=1), manual=True))
+        self.assertEqual(service.due(NOW, entries, True, manual_retained=True)[1], 'CLOCK_BLOCKED')
+        self.assertEqual(service.due(NOW, entries, True)[1], 'CLOCK_BLOCKED')
+
+    def test_recent_manual_reservations_do_not_consume_background_spacing_or_daily_budget(self):
+        entries = [self.row(NOW - timedelta(hours=2))]
+        entries += [self.row(NOW - timedelta(seconds=n), manual=True) for n in (1, 2, 3, 4, 5)]
+        self.assertEqual(service.due(NOW, entries, True)[1], 'DUE')
+        self.assertEqual(service.due(NOW.replace(hour=3), [], True)[1], 'OUTSIDE_MONITORING_HOURS')
+        self.assertEqual(service.due(NOW.replace(hour=3), [], True, manual_retained=True)[1], 'DUE')
+        entries.append(self.row(NOW - timedelta(minutes=30)))
+        self.assertEqual(service.due(NOW, entries, True)[1], 'WAITING_FOR_NEXT_SLOT')
+
+
+class ExplicitRuntimeDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ExplicitErrorDiagnosticTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.helper, self.config = self.fixture.helper, self.fixture.config
+        from unittest.mock import Mock
+        def opened(request, timeout):
+            identity = json.loads(request.data)['metadata']['blackpod_correlation']['request_id']
+            raw = canonical_json_bytes({'error': {'code': 'STRUCTURED_OUTPUT_INVALID', 'request_id': identity,
+                'message': 'private fixture diagnostics', 'details': None}})
+            raise HTTPError(request.full_url, 500, 'private', {'Content-Length': str(len(raw))}, BytesIO(raw))
+        with patch('blackpod_build_week.modeldock_client.urllib.request.build_opener', return_value=Mock(open=opened)):
+            self.parent_report = self.fixture.run_validation(client_factory=lambda config: ModelDockClient(config,
+                transport=transport._NamedSentryTransport(), now=lambda: self.helper.now))
+        self.parent = self.fixture.child()
+        self.source_id = self.parent_report['report_id']
+        self.originals = service.validation_chain_hashes(self.parent, self.config)
+        self.assertEqual(len(self.originals), 4)
+        self.helper.http = BoundFixtureTransport()
+        self.helper.now += timedelta(seconds=1)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_runtime(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id, runtime_diagnostic=True)
+
+    def test_v5_is_one_separate_manual_child_with_exact_retained_evidence_and_no_parent_changes(self):
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(result['validation']['purpose'], 'EXPLICIT_RUNTIME_DIAGNOSTIC')
+        self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
+        self.assertEqual(result['validation']['transport_schema_version'], service.RUNTIME_TRANSPORT_VERSION)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertEqual(self.run_validation(), result)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        counts = service.status(self.config, self.helper.now)['operational']
+        self.assertEqual(counts['background_attempt_count_today'], 1)
+        self.assertEqual(counts['manual_attempt_count_today'], 4)
+        self.assertEqual(service.verify(self.config)['attempt_count'], 5)
+        self.assertTrue(all(v is False for v in result['authority'].values()))
+
+    def test_missing_or_wrong_safe_error_code_cannot_authorize_runtime_diagnostic(self):
+        path = self.parent / 'oracle/http-error.json'
+        raw = path.read_bytes()
+        path.unlink()
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        value = json.loads(raw)
+        value['code'] = 'INFERENCE_FAILURE'
+        value['observation_sha256'] = sha256_bytes(canonical_json_bytes({k: v for k, v in value.items() if k != 'observation_sha256'}))
+        path.write_bytes(canonical_json_bytes(value))
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_mismatched_observation_request_binding_blocks_before_inference(self):
+        path = self.parent / 'oracle/http-error.json'
+        value = json.loads(path.read_bytes())
+        value['request_id'] = 'different-request'
+        value['observation_sha256'] = sha256_bytes(canonical_json_bytes({k: v for k, v in value.items() if k != 'observation_sha256'}))
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(value))
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_pause_future_clock_archive_off_and_pins_still_block_new_manual_work(self):
+        self.helper.control['enabled'] = False
+        atomic_state(self.helper.root / 'control.json', self.helper.control)
+        self.assertEqual(self.run_validation()['status'], 'PAUSED')
+        self.helper.control['enabled'] = True
+        atomic_state(self.helper.root / 'control.json', self.helper.control)
+        self.assertEqual(self.run_validation(now=self.helper.now - timedelta(seconds=2))['status'], 'CLOCK_BLOCKED')
+        with patch.object(service, 'MAX_RUNS', 4):
+            self.assertEqual(self.run_validation()['status'], 'ARCHIVE_REVIEW_REQUIRED')
+        for gate in (self.helper.off, self.fixture.fixture.fixture.pins):
+            gate.side_effect = ValueError('source gate blocked')
+            with self.assertRaises(ValueError):
+                self.run_validation()
+            gate.side_effect = None
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_runtime_diagnostic_stays_serial_and_interrupted_delivery_is_never_resent(self):
+        with service.service_lock(self.helper.root), self.assertRaises(ValueError):
+            self.run_validation()
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_v5_cannot_be_used_as_another_runtime_parent(self):
+        result = self.run_validation()
+        with self.assertRaises(ValueError):
+            service.validate_runtime(self.config, result['report_id'], now=self.helper.now,
+                                     client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_runtime_cli_requires_explicit_source_and_exposes_no_reset_flags(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_runtime', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-runtime', '--config', '/private/tmp/config.json',
                                            '--source-report-id', self.source_id]), 0)
         call.assert_called_once_with(self.config, self.source_id)
 

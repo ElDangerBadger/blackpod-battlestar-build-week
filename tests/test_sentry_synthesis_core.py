@@ -367,6 +367,20 @@ class SynthesisCoreTests(unittest.TestCase):
             synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW),
                 validation={key:value for key,value in metadata.items() if key!='scope'})
 
+    def test_runtime_diagnostic_requires_manual_scope_and_v5_link(self):
+        self.store.append(*capture_packet())
+        packet=self.build();oracle,challenge=self.model_results(packet)
+        metadata={'purpose':'EXPLICIT_RUNTIME_DIAGNOSTIC',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v5',
+            'scope':'MANUAL_RETAINED_EVIDENCE'}
+        report=synthesis.compose_report(packet,oracle,challenge,catalyst.stamp(NOW),validation=metadata)
+        self.assertEqual(report['context'],packet)
+        self.assertEqual(report['validation'],metadata)
+        for key,value in [('scope','AUTOMATIC'),('transport_schema_version','blackpod.sentry_synthesis_transport.v4')]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                synthesis.compose_report(packet,oracle,challenge,catalyst.stamp(NOW),validation={**metadata,key:value})
+
     def test_error_code_diagnostic_requires_manual_scope_and_v4_link(self):
         self.store.append(*capture_packet())
         packet = self.build(); oracle, challenge = self.model_results(packet)

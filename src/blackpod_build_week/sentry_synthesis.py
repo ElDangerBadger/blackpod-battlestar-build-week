@@ -133,9 +133,10 @@ def compose_report(packet,oracle,challenge,completed_at,*,validation=None):
     if validation is not None:
         versions={'EXPLICIT_V2_VALIDATION':'blackpod.sentry_synthesis_transport.v2',
             'EXPLICIT_DEADLINE_VALIDATION':'blackpod.sentry_synthesis_transport.v3',
-            'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'blackpod.sentry_synthesis_transport.v4'}
+            'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'blackpod.sentry_synthesis_transport.v4',
+            'EXPLICIT_RUNTIME_DIAGNOSTIC':'blackpod.sentry_synthesis_transport.v5'}
         purpose=validation.get('purpose') if isinstance(validation,dict) else None
-        manual=purpose in {'EXPLICIT_DEADLINE_VALIDATION','EXPLICIT_ERROR_CODE_DIAGNOSTIC'}
+        manual=purpose in {'EXPLICIT_DEADLINE_VALIDATION','EXPLICIT_ERROR_CODE_DIAGNOSTIC','EXPLICIT_RUNTIME_DIAGNOSTIC'}
         fields={'purpose','parent_report_id','parent_report_sha256','transport_schema_version'}
         if manual:fields.add('scope')
         if (not isinstance(validation,dict)

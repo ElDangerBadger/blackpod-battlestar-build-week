@@ -75,7 +75,8 @@ def render(value):
         validation = report.get('validation')
         if validation:
             label = {'EXPLICIT_DEADLINE_VALIDATION':'Explicit deadline validation',
-                'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'Explicit error-code diagnostic'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
+                'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'Explicit error-code diagnostic',
+                'EXPLICIT_RUNTIME_DIAGNOSTIC':'Explicit runtime diagnostic'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
             body += '<article class="warning validation"><h2>' + label + '</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}

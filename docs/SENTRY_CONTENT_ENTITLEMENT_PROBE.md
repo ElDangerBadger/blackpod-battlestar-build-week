@@ -12,7 +12,15 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
-**Latest, October 15 at 5:22 p.m. Los Angeles:** the separately recorded
+**Latest, October 15 at 6:27 p.m. Los Angeles:** the separately authorized
+error-code diagnostic returned HTTP 500 with verified code
+`STRUCTURED_OUTPUT_INVALID`. This identifies final JSON/schema rejection but
+does not distinguish truncation from other validation failures. Four failed
+attempts are retained, today's shared budget is exhausted, no accepted pair
+exists and the content request remains NOT_RUN. See the
+[actual error-code diagnostic](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+
+**Earlier, October 15 at 5:22 p.m. Los Angeles:** the separately recorded
 900-second validation passed the former 90-second cutoff but returned HTTP
 500 after about 400.8 seconds. It produced no accepted draft or challenge.
 The exact schema passes offline compilation; the server error code was not

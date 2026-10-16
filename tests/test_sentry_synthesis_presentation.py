@@ -81,6 +81,16 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_runtime_diagnostic_retains_original_clock_and_shadow_authority(self):
+        value=fixture()
+        value['report']['validation']={'purpose':'EXPLICIT_RUNTIME_DIAGNOSTIC',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v5','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html=render(value)
+        for expected in ('Explicit runtime diagnostic','MANUAL_RETAINED_EVIDENCE',
+                         'not a fresh market assessment or a new forecast','CONTESTED','Auto-trading OFF'):
+            self.assertIn(expected,html)
+
     def test_error_code_diagnostic_is_historical_and_not_a_new_forecast(self):
         value = fixture()
         value['report']['validation'] = {'purpose':'EXPLICIT_ERROR_CODE_DIAGNOSTIC',

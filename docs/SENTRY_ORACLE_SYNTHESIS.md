@@ -58,8 +58,9 @@ configuration or reuse the old mission candidate workflow.
 | Market context | Latest retained price/volume context for up to ten symbols, with actual source timestamps |
 | Feed quality | Retained-prefix audit and explicit unknown coverage; no fabricated missing-news count |
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
-| Schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between attempts; maximum four attempts per LA day |
-| Timeout | Current v4 and retained v3 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
+| Background schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between ordinary attempts; maximum four ordinary attempts per LA day |
+| Explicit manual diagnostics | Separate from background hours/daily/spacing limits after the user's October 15 authorization; one serialized, deadline-bound delivery per deterministic identity, with no automatic resends |
+| Timeout | Current v5 and retained v3/v4 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -143,14 +144,14 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
-The current transport is **v4**, using the same v2 output contracts, prompts,
+The current transport is **v5**, using the same v2 output contracts, prompts,
 2,500-token limit, model routing and evidence selection. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
 honors this per-request timeout; its server default is a fallback, not a hard
 90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
 request bytes, identities and version-specific deadline limits still replay.
-Retained v3 configuration hashes and 900/30 identities also replay exactly.
+Retained v3/v4 configuration hashes and 900/30 identities also replay exactly.
 
 ### Explicit compatibility validation of a failed v1 attempt
 
@@ -200,8 +201,10 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
 
 This explicit manual scope permits a historical diagnostic outside monitoring
 hours. It does not change the background schedule or admit new market evidence.
-The same real clock, enabled control, one-hour spacing, four-attempt daily
-budget, archive bounds, watchlist, OFF and frozen-source gates still apply.
+The real clock, enabled control, archive bounds, watchlist, OFF and
+frozen-source gates still apply. Explicit manual diagnostics no longer consume
+the background hourly/daily budget; the user authorized this separation on
+October 15 after the fourth diagnostic. No old ledger entry is edited or reset.
 Its deterministic identity excludes deadline changes as a way to create another
 try. Duplicate and interrupted calls inspect retained work; they never resend.
 
@@ -228,12 +231,28 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
   --source-report-id 'sentry-synthesis-<terminal v3 HTTP 500 report SHA-256>'
 ```
 
-As with deadline validation, only the manual monitoring-hours restriction is
-different; real-clock spacing, shared daily budget, storage, OFF, source pins
-and watchlist gates still apply. An existing reservation is never resent.
+As with deadline validation, manual diagnostics have a separate schedule
+allowance; real-clock sanity, enabled control, serialization, storage, OFF,
+source pins and watchlist gates still apply. An existing reservation is never resent.
 The UI labels this as an explicit error-code diagnostic and separates the
 original evidence clock from its later processing clock. See the
 [October 15 diagnostic record](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+
+### Explicit runtime diagnostic
+
+After the user's separate authorization and deployment of safe native
+validation metadata, `validate-runtime` admits one v5 child of the exact
+terminal v4 HTTP 500 with a verified `STRUCTURED_OUTPUT_INVALID` observation.
+It retains the original four failures and packet. Accepted, uncertain,
+wrong-code, missing-observation and v5 parents are ineligible. No output repair,
+token-limit change or automatic retry is introduced.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-runtime \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id 'sentry-synthesis-<verified terminal v4 validation failure SHA-256>'
+```
 
 ### Bounded HTTP-error metadata
 
@@ -243,7 +262,16 @@ original deadline with a delivery margin. Only an allowlisted error code with
 an exact matching request ID can be AVAILABLE. Malformed, oversized, partial,
 unknown-code or mismatched responses remain UNAVAILABLE. The metadata binds
 the request, terminal receipt and complete-body hash/count when available;
-no error message, details, raw body or model output is retained or displayed.
+no error message, arbitrary details, raw body or model output is retained or displayed.
+
+For a complete correlated HTTP 500 / `STRUCTURED_OUTPUT_INVALID`, sidecar v2
+can additionally retain exactly one closed native validation diagnostic:
+fixed reason/stage labels, an allowlisted schema keyword, and correctly typed
+native token/stop counters or explicit unavailability. Extra fields, unknown
+labels, inconsistent provenance or private values discard the entire detail
+object, leaving the original v1 code-only observation. Schema paths, instance
+values and exception strings are excluded. Both versions verify their original
+request, receipt and self hashes without rewriting older sidecars.
 
 The canonical mission urllib client still discards HTTP error bodies. Sentry
 returns the same terminal status and report shape, and diagnostics cannot

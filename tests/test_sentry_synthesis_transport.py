@@ -47,6 +47,13 @@ def challenge():
             'missing_evidence': ['Original company announcement']}], 'overall_limitations': ['Same provider and evidence.']}
 
 
+def validation_diagnostic(**changes):
+    return {'schema': 'modeldock.structured-validation-diagnostic.v1', 'stage': 'RESULT_VALIDATION',
+        'reason': 'JSON_SYNTAX', 'schema_keyword': None, 'generated_token_count': 2500,
+        'generated_token_count_source': 'native', 'stop_reason': 'length', 'stop_reason_source': 'native',
+        **changes}
+
+
 class FixtureTransport:
     def __init__(self, response=None, *, mutate=None, exception=None):
         self.content = response if response is not None else draft()
@@ -204,6 +211,26 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
         self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
         for key in ('messages','response_format','timeout','max_tokens','profile','capabilities'):
+            self.assertEqual(old['wire_request'][key], current[key])
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.generate(), first)
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_v4_exact_replay_under_v5_has_distinct_identity_without_prompt_schema_or_budget_changes(self):
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
+        first = self.generate(version=transport.V4_VERSION)
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        old = json.loads(before['intent.json'])
+        current, bindings, configuration = transport._request('oracle', packet(), self.config, None)
+        self.assertEqual(old['schema_version'], transport.V4_VERSION)
+        self.assertEqual(transport.VERSION, 'blackpod.sentry_synthesis_transport.v5')
+        self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
+        self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
+        self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
+        self.assertEqual(old['configuration'], configuration)
+        for key in ('messages', 'response_format', 'timeout', 'max_tokens', 'profile', 'capabilities'):
             self.assertEqual(old['wire_request'][key], current[key])
         with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
             self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
@@ -578,6 +605,7 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
         self.root = Path(self.tmp.name) / 'role'
         self.config = ModelDockConfig('http://127.0.0.1:8000', 60, delivery_grace_seconds=5)
         self.code, self.status = 'INFERENCE_FAILURE', 500
+        self.error_details = [{'private_path': '/PRIVATE_MODEL_PATH', 'text': 'PRIVATE_MODEL_OUTPUT'}]
         self.foreign_id, self.raw_override, self.declared = None, None, 'AUTO'
         self.read_failure, self.expire_after_headers, self.read_advance = None, False, 0
         self.clock = 0
@@ -597,7 +625,7 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
         identity = wire['metadata']['blackpod_correlation']['request_id']
         envelope = {'error': {'code': self.code, 'request_id': self.foreign_id or identity,
             'message': 'PRIVATE_ERROR_MESSAGE sk-proj-fixture-not-real',
-            'details': [{'private_path': '/PRIVATE_MODEL_PATH', 'text': 'PRIVATE_MODEL_OUTPUT'}]}}
+            'details': self.error_details}}
         raw = self.raw_override if self.raw_override is not None else canonical_json_bytes(envelope)
         owner = self
         class ErrorBody(BytesIO):
@@ -771,7 +799,8 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
         class EmptyHttpFailure:
             def request(self, **kwargs):
                 return HttpResponse(500, {}, b'', complete=False)
-        for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION, transport.VERSION)):
+        for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION,
+                                         transport.V3_VERSION, transport.V4_VERSION, transport.VERSION)):
             self.root = Path(self.tmp.name) / str(index)
             result = self.generate(version=version, client_factory=lambda config:
                 ModelDockClient(config, transport=EmptyHttpFailure(), now=lambda: NOW))
@@ -782,6 +811,138 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
                 self.assertIsNone(self.observation())
             self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir() if p.is_file()})
         self.assertEqual(self.calls, [])
+
+    def test_safe_closed_structured_diagnostic_is_versioned_and_receipt_bound_without_private_strings(self):
+        self.code = 'STRUCTURED_OUTPUT_INVALID'
+        self.error_details = [validation_diagnostic()]
+        result = self.generate()
+        saved = self.observation()
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertEqual(result['failure_code'], 'MODELDOCK_HTTP_500')
+        self.assertEqual(saved['schema_version'], transport.ERROR_DETAIL_OBSERVATION_VERSION)
+        self.assertEqual(saved['code'], 'STRUCTURED_OUTPUT_INVALID')
+        self.assertEqual(saved['validation_diagnostic'], validation_diagnostic())
+        self.assertEqual(saved['request_id'], result['request_id'])
+        self.assertEqual(saved['receipt_sha256'], sha256_bytes((self.root/'receipt.json').read_bytes()))
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay inference')):
+            self.assertEqual(self.generate(), result)
+            self.assertEqual(self.observation(), saved)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        for path in self.root.rglob('*'):
+            if path.is_file():
+                for private in (b'PRIVATE_ERROR_MESSAGE', b'sk-proj-fixture-not-real', b'PRIVATE_HTTP_REASON',
+                                b'PRIVATE_MODEL_OUTPUT', b'PRIVATE_MODEL_PATH'):
+                    self.assertNotIn(private, path.read_bytes())
+        self.assertNotIn('validation_diagnostic', result)
+
+    def test_all_closed_reason_categories_preserve_only_known_semantics(self):
+        for index, reason in enumerate(sorted(transport.VALIDATION_REASONS)):
+            self.root = Path(self.tmp.name)/str(index)
+            self.code = 'STRUCTURED_OUTPUT_INVALID'
+            detail = validation_diagnostic(reason=reason,
+                schema_keyword='type' if reason == 'SCHEMA_VIOLATION' else None)
+            if reason == 'MOCK_OUTPUT':
+                detail.update(generated_token_count=None, generated_token_count_source='unavailable',
+                              stop_reason='unknown', stop_reason_source='unavailable')
+            self.error_details = [detail]
+            self.generate()
+            with self.subTest(reason=reason): self.assertEqual(self.observation()['validation_diagnostic'], detail)
+
+    def test_safe_schema_keywords_are_finite_and_never_paths_or_schema_values(self):
+        for keyword in transport.VALIDATION_KEYWORDS | {None}:
+            detail = validation_diagnostic(reason='SCHEMA_VIOLATION', schema_keyword=keyword)
+            self.assertEqual(transport._validation_diagnostic(detail), detail)
+        for keyword in ('/themes/0/PRIVATE_SCHEMA_PATH', 'PRIVATE_PROPERTY_NAME', ['type'], {'type': 'private'}):
+            self.assertIsNone(transport._validation_diagnostic(
+                validation_diagnostic(reason='SCHEMA_VIOLATION', schema_keyword=keyword)))
+
+    def test_unavailable_count_and_stop_remain_unknown_with_independent_native_fields(self):
+        cases = [validation_diagnostic(generated_token_count=None, generated_token_count_source='unavailable',
+                                      stop_reason='unknown', stop_reason_source='unavailable'),
+                 validation_diagnostic(generated_token_count=0, stop_reason='stop'),
+                 validation_diagnostic(generated_token_count=2**63-1, stop_reason='unknown', stop_reason_source='unavailable'),
+                 validation_diagnostic(generated_token_count=None, generated_token_count_source='unavailable', stop_reason='stop')]
+        for index, detail in enumerate(cases):
+            self.root = Path(self.tmp.name)/str(index)
+            self.code, self.error_details = 'STRUCTURED_OUTPUT_INVALID', [detail]
+            self.generate()
+            with self.subTest(detail=detail): self.assertEqual(self.observation()['validation_diagnostic'], detail)
+
+    def test_malformed_extra_or_private_details_are_ignored_without_changing_code_only_schema(self):
+        invalid_details = [None, [], {}, 'PRIVATE_DETAILS', [validation_diagnostic(), validation_diagnostic()], [{}],
+            [validation_diagnostic(private_path='/PRIVATE_MODEL_PATH')],
+            [validation_diagnostic(schema='PRIVATE_SCHEMA')], [validation_diagnostic(stage='PRIVATE_STAGE')],
+            [validation_diagnostic(reason='PRIVATE_REASON')], [validation_diagnostic(reason=['JSON_SYNTAX'])],
+            [validation_diagnostic(schema_keyword='type')], [validation_diagnostic(generated_token_count=True)],
+            [validation_diagnostic(generated_token_count=2500.0)], [validation_diagnostic(generated_token_count=-1)],
+            [validation_diagnostic(generated_token_count=2**63)], [validation_diagnostic(generated_token_count=None)],
+            [validation_diagnostic(generated_token_count_source='estimated')],
+            [validation_diagnostic(generated_token_count_source='unavailable')],
+            [validation_diagnostic(stop_reason='unknown')], [validation_diagnostic(stop_reason='PRIVATE_STOP')],
+            [validation_diagnostic(stop_reason_source='inferred')], [validation_diagnostic(stop_reason_source='unavailable')],
+            [validation_diagnostic(reason='MOCK_OUTPUT')]]
+        for index, details in enumerate(invalid_details):
+            self.root = Path(self.tmp.name)/str(index)
+            self.code, self.error_details = 'STRUCTURED_OUTPUT_INVALID', details
+            self.generate()
+            saved = self.observation()
+            with self.subTest(details=details):
+                self.assertEqual(saved['status'], 'AVAILABLE')
+                self.assertEqual(saved['code'], 'STRUCTURED_OUTPUT_INVALID')
+                self.assertEqual(saved['schema_version'], transport.ERROR_OBSERVATION_VERSION)
+                self.assertNotIn('validation_diagnostic', saved)
+                self.assertNotIn('PRIVATE_', json.dumps(saved))
+
+    def test_safe_detail_requires_complete_correlated_http500_structured_output_failure(self):
+        for index, (code, status, foreign, advance) in enumerate([
+                ('INFERENCE_FAILURE', 500, None, 0), ('STRUCTURED_OUTPUT_INVALID', 422, None, 0),
+                ('STRUCTURED_OUTPUT_INVALID', 500, 'foreign-request', 0),
+                ('STRUCTURED_OUTPUT_INVALID', 500, None, 2.1)]):
+            self.root = Path(self.tmp.name)/str(index)
+            self.code, self.status, self.foreign_id, self.read_advance = code, status, foreign, advance
+            self.error_details = [validation_diagnostic()]
+            self.generate()
+            with self.subTest(code=code, status=status, foreign=foreign, advance=advance):
+                saved = self.observation()
+                self.assertEqual(saved['schema_version'], transport.ERROR_OBSERVATION_VERSION)
+                self.assertNotIn('validation_diagnostic', saved)
+
+    def test_detailed_sidecar_tampering_fails_closed_even_with_recomputed_self_hash(self):
+        self.code, self.error_details = 'STRUCTURED_OUTPUT_INVALID', [validation_diagnostic()]
+        self.generate()
+        path = self.root/'http-error.json'
+        original = json.loads(path.read_bytes())
+        cases = []
+        for field, value in [('request_sha256', '0'*64), ('receipt_sha256', '0'*64),
+                             ('request_id', 'wrong-request'), ('http_status', 422), ('status', 'UNAVAILABLE'),
+                             ('code', 'INFERENCE_FAILURE'), ('body_complete', False)]:
+            changed = copy.deepcopy(original); changed[field] = value; cases.append(changed)
+        for field, value in [('reason', 'PRIVATE_REASON'), ('schema_keyword', 'type'),
+                             ('generated_token_count', True), ('generated_token_count_source', 'estimated'),
+                             ('stop_reason', 'eos'), ('stop_reason_source', 'inferred')]:
+            changed = copy.deepcopy(original); changed['validation_diagnostic'][field] = value; cases.append(changed)
+        changed = copy.deepcopy(original); changed['validation_diagnostic']['private'] = 'PRIVATE_VALUE'; cases.append(changed)
+        changed = copy.deepcopy(original); changed['schema_version'] = transport.ERROR_OBSERVATION_VERSION; cases.append(changed)
+        changed = copy.deepcopy(original); del changed['validation_diagnostic']; cases.append(changed)
+        for changed in cases:
+            changed['observation_sha256'] = sha256_bytes(canonical_json_bytes({k:v for k,v in changed.items() if k!='observation_sha256'}))
+            path.chmod(0o600); path.write_bytes(canonical_json_bytes(changed))
+            with self.subTest(changed=changed), self.assertRaises(ValueError): self.observation()
+        self.assertEqual(len(self.calls), 1)
+
+    def test_legacy_code_only_sidecar_bytes_are_unchanged_and_never_gain_new_fields(self):
+        result = self.generate(version=transport.V4_VERSION)
+        path = self.root/'http-error.json'
+        before = path.read_bytes()
+        self.assertEqual(json.loads(before)['schema_version'], transport.ERROR_OBSERVATION_VERSION)
+        self.assertNotIn(b'validation_diagnostic', before)
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay calls')):
+            self.assertEqual(self.generate(), result)
+            self.assertIsNone(self.observation().get('validation_diagnostic'))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(self.calls), 1)
 
     def test_unbound_sidecar_cannot_trigger_a_new_delivery(self):
         transport.write_json_once(self.root, 'http-error.json', {'fake': 'metadata without a request'})
