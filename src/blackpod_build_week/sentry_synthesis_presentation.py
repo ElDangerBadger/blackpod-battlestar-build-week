@@ -49,6 +49,79 @@ def _invalidation(value):
     return value or 'Not specified; not invented.'
 
 
+def _narrative_evaluation(projection, report, citations=None):
+    """Display a saved assessment only beside the exact brief it reviewed."""
+    projection = projection if isinstance(projection, dict) else {}
+    evaluation = projection.get('report')
+    status = projection.get('status', 'NOT_RECORDED')
+    title = '<article class="card narrative-quality"><h2>Narrative quality</h2>'
+    if status == 'AVAILABLE' and isinstance(evaluation, dict):
+        identity = report.get('report_id') if isinstance(report, dict) else None
+        if not identity or evaluation.get('source_report_id') != identity:
+            status = 'NO_MATCHING_REVIEW'
+        else:
+            summary = evaluation.get('summary') or {}
+            labels = {'NEEDS_REVISION': 'Needs revision', 'REVIEW_INCOMPLETE': 'Review incomplete',
+                      'MIXED_REVIEW': 'Mixed review', 'MEETS_REVIEW_RUBRIC': 'Meets review rubric'}
+            assessments = {'MEETS_RUBRIC': ('meets', 'Meets rubric'), 'PARTIAL': ('partial', 'Partial'),
+                           'NEEDS_WORK': ('needs-work', 'Needs work'), 'NOT_ASSESSED': ('unassessed', 'Not assessed')}
+            criterion_labels = {
+                'evidence_support': 'Claims / citations', 'economic_mechanism': 'Economic connection',
+                'alternatives': 'Alternatives', 'challenge': 'Challenge',
+                'missing_evidence': 'Missing evidence', 'boundaries': 'Boundaries', 'clarity': 'Clarity',
+            }
+            body = title + '<p class="quality-verdict">' + _text(labels.get(summary.get('status'), 'Assessment unavailable')) + '</p>'
+            body += '<p class="muted">Assistant adjudication of this saved brief under a fixed rubric. This is a judgment about reasoning, not verified truth, a market forecast, or evidence of a trading edge. Original prose and dissent remain below.</p>'
+            body += '<div class="quality-grid" aria-label="Narrative review criteria">'
+            criteria = evaluation.get('criteria') or []
+            for row in criteria:
+                tone, label = assessments.get(row.get('assessment'), ('unassessed', 'Assessment unavailable'))
+                name = criterion_labels.get(row.get('criterion_id'), row.get('criterion_id'))
+                body += '<div class="quality-criterion ' + tone + '"><b>' + _text(name) + '</b><span>' + label + '</span></div>'
+            body += '</div><p class="muted">Claims reviewed: ' + _text(summary.get('reviewed_claim_count')) + ' / ' + _text(summary.get('claim_count')) + ' · Mechanical observations: ' + _text(summary.get('mechanical_finding_count')) + '</p>'
+            body += '<details class="quality-detail"><summary>Why these assessments?</summary>'
+            for row in criteria:
+                name = criterion_labels.get(row.get('criterion_id'), row.get('criterion_id'))
+                body += '<h3>' + _text(name) + '</h3><p>' + _text(row.get('rationale')) + '</p>'
+                if row.get('evidence_ids'):
+                    body += citations(row['evidence_ids']) if citations else _list(row['evidence_ids'])
+            body += '</details><details class="quality-detail"><summary>Claim support · original wording retained</summary>'
+            for row in evaluation.get('claims') or []:
+                scope = ' · '.join(_text(row[key]) for key in ('lens', 'symbol') if row.get(key) is not None)
+                body += '<section class="quality-claim"><p><b>' + _text(row.get('assessment')) + '</b>' + (' · ' + scope if scope else '') + '</p><blockquote>' + _text(row.get('claim_text')) + '</blockquote><p>' + _text(row.get('rationale')) + '</p>'
+                for key, label in (('cited_evidence_ids', 'Original citations'), ('packet_evidence_ids', 'Reviewer packet references')):
+                    if row.get(key):
+                        body += '<b>' + label + '</b>' + (citations(row[key]) if citations else _list(row[key]))
+                body += '<b>Still needed</b>' + _list(row.get('needed_evidence') or [], 'No additional evidence recorded for this claim.') + '<p class="muted">Original field: <code>' + _text(row.get('claim_path')) + '</code></p></section>'
+            mechanical = evaluation.get('mechanical') or {}
+            body += '</details><details class="quality-detail"><summary>Mechanical observations · no meaning or truth verdict</summary><p>These checks describe text and retained inputs. They do not decide whether a market interpretation is true or false.</p>'
+            findings = mechanical.get('findings') or []
+            if not findings:
+                body += '<p>No mechanical observations recorded; this does not establish analytical quality.</p>'
+            for row in findings:
+                body += '<h3>' + _text(row.get('code')) + '</h3><p>' + _text(row.get('detail')) + '</p>' + _list(row.get('paths') or [], 'No field paths recorded.')
+                if row.get('evidence_ids'):
+                    body += citations(row['evidence_ids']) if citations else _list(row['evidence_ids'])
+            coverage = mechanical.get('coverage') or {}
+            body += '<p>Symbols without a recorded implication: ' + (', '.join(_text(s) for s in coverage.get('unmentioned_symbols') or []) or 'None recorded') + '. This is coverage of prose, not a recommendation.</p>'
+            body += '</details><details class="quality-detail"><summary>Review identity and limits</summary><dl>'
+            for key, label in (('evaluation_id', 'Evaluation'), ('source_report_id', 'Reviewed brief'),
+                               ('source_report_sha256', 'Brief SHA-256'), ('packet_sha256', 'Packet SHA-256'),
+                               ('rubric_version', 'Rubric'), ('rubric_sha256', 'Rubric SHA-256'),
+                               ('review_id', 'Review'), ('reviewer', 'Reviewer')):
+                body += '<dt>' + label + '</dt><dd>' + _text(evaluation.get(key)) + '</dd>'
+            body += '<dt>Reviewed</dt><dd>' + _text(_when(evaluation.get('reviewed_at'))) + '</dd></dl>'
+            body += _list(evaluation.get('limitations') or [], 'No additional review limitations recorded.')
+            body += _list(mechanical.get('limitations') or [], 'No additional mechanical limitations recorded.')
+            return body + '</details><p class="muted">No recommendations, authorizations, orders, allocation changes or experiment changes follow from this review.</p></article>'
+    messages = {
+        'NOT_RECORDED': 'No narrative-quality review has been recorded for this brief.',
+        'NO_MATCHING_REVIEW': 'A saved review belongs to another brief. No assessment is attached to the brief displayed here.',
+        'UNAVAILABLE': 'The saved narrative-quality review could not be verified. No assessment is shown.',
+    }
+    return title + '<p>' + messages.get(status, messages['UNAVAILABLE']) + '</p></article>'
+
+
 def render(value):
     """Return a document with the original draft and challenge kept separate."""
     status = value.get('status', 'UNAVAILABLE')
@@ -72,6 +145,8 @@ def render(value):
             body += '<p class="muted">Next eligible check: ' + _text(_when(operational['next_eligible_at'])) + ' · new headline evidence required.</p>'
     if not report:
         body += '<article class="card"><h2>No verified synthesis to display</h2><p>The source records remain available in Sentry. No sample interpretation or substitute report is shown. Check worker status, source verification and the auto-trading OFF gate.</p></article>'
+        if value.get('narrative_evaluation'):
+            body += _narrative_evaluation(value['narrative_evaluation'], None)
     else:
         packet = report.get('context') or {}
         validation = report.get('validation')
@@ -149,6 +224,7 @@ def render(value):
             body += '<details class="card"><summary>Preserved parent attempt</summary><p>Parent report: <code>' + _text(validation.get('parent_report_id')) + '</code></p><p>Parent SHA-256: <code>' + _text(validation.get('parent_report_sha256')) + '</code></p><p>Purpose: ' + _text(validation.get('purpose')) + ' · Transport: ' + _text(validation.get('transport_schema_version')) + '</p></details>'
             if validation.get('scope'):
                 body += '<p class="muted">Validation scope: ' + _text(validation['scope']) + ' · explicit manual check; normal monitoring hours and frequency are unchanged.</p>'
+        body += _narrative_evaluation(value.get('narrative_evaluation'), report, citations)
         draft = report.get('draft')
         challenge = report.get('challenge')
         body += '<h2>Oracle · original interpretation</h2><p class="muted">Model-generated reasoning from the retained packet. Each implication remains an unverified interpretation.</p>'
@@ -201,4 +277,5 @@ def render(value):
         body += '</details>'
     return '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>BlackPod · Market brief</title><link rel="icon" href="data:,"><style>
 body{margin:0;background:#0c1721;color:#e5edf4;font:15px/1.5 system-ui}main{max-width:1100px;margin:auto;padding:28px}h1{font-size:36px;letter-spacing:-.05em;margin:8px 0}h2{margin-top:30px;font-size:24px}h3{font-size:20px;margin:8px 0}h4{margin:8px 0}p{overflow-wrap:anywhere}a{color:#c2e4f2;text-decoration:none}a:hover{text-decoration:underline}small,.muted,.eyebrow,.tile span{color:#a8bdcb}.eyebrow{font-size:12px;letter-spacing:.06em}.badges{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.badge{padding:4px 10px;border:1px solid #456478;border-radius:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.tile,.card{background:#142633;border:1px solid #294554;border-radius:12px;padding:16px}.card{margin:14px 0}.tile strong,.tile small{display:block}.tile strong{margin:6px 0;font-size:18px}.warning{background:#493a1a;color:#ffe1a1;padding:16px;border-radius:10px;margin:14px 0}.warning li{margin:7px 0}.dissent{border-left:4px solid #c596d8}.implication{border-top:1px solid #345466;margin-top:16px;padding-top:8px}.implication h4 small{font-weight:400;display:block}.alternative{border-left:3px solid #6a94aa;padding-left:12px;margin-top:12px}.citations{font-size:12px;color:#a8bdcb}summary{cursor:pointer;font-weight:650}code{overflow-wrap:anywhere;font-size:12px}dt{font-weight:600;overflow-wrap:anywhere}dd{margin:0 0 8px;color:#a8bdcb;overflow-wrap:anywhere}footer{color:#a8bdcb;border-top:1px solid #304854;padding-top:18px;margin-top:30px}nav{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0}.evidence{scroll-margin-top:20px}
+.quality-verdict{font-size:28px;font-weight:700;margin:6px 0}.quality-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}.quality-criterion{border:1px solid #456478;border-left:4px solid #8094a1;border-radius:8px;padding:10px}.quality-criterion b,.quality-criterion span{display:block}.quality-criterion b{font-size:13px}.quality-criterion span{font-size:12px;margin-top:4px}.quality-criterion.meets{border-left-color:#82c9a1}.quality-criterion.partial{border-left-color:#e5bd6b}.quality-criterion.needs-work{border-left-color:#eda1a1}.quality-detail{border-top:1px solid #345466;padding-top:12px;margin-top:12px}.quality-detail h3{font-size:16px}.quality-claim{border-bottom:1px solid #345466;padding-bottom:12px}blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #6a94aa;overflow-wrap:anywhere}
 </style><main><div class="eyebrow">BLACKPOD · ADVISORY OBSERVATION ONLY</div><h1>Sentry market brief</h1><p>What the saved headlines might mean. What remains uncertain.</p><nav><a href="/sentry">Sentry feed</a><a href="/sentry-audit">Feed quality audit</a><a href="/">Station status</a></nav>''' + body + '<footer>No trade recommendations, authorizations, orders, allocations or policy changes. The frozen reversal experiment is separate and unchanged. Refreshing this page reads saved records; it does not collect news or run models. All displayed source times use Los Angeles time.</footer></main></html>'

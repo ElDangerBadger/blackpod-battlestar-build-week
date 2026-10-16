@@ -80,7 +80,145 @@ class Tags(HTMLParser):
         self.attributes.append((tag, dict(attrs)))
 
 
+def evaluated_fixture():
+    """Authored projection only; rendering never reads a live evaluation."""
+    value = fixture()
+    value['report']['report_id'] = 'sentry-synthesis-' + 'a' * 64
+    criteria = ('evidence_support', 'economic_mechanism', 'alternatives', 'challenge',
+                'missing_evidence', 'boundaries', 'clarity')
+    value['narrative_evaluation'] = {'status': 'AVAILABLE', 'report': {
+        'schema_version': 'blackpod.sentry_narrative_evaluation.v1',
+        'evaluation_id': 'sentry-narrative-evaluation-' + 'e' * 64,
+        'source_report_id': value['report']['report_id'], 'source_report_sha256': 'b' * 64,
+        'packet_sha256': 'c' * 64, 'rubric_version': 'rubric-fixture-v1', 'rubric_sha256': 'd' * 64,
+        'review_id': 'review-fixture', 'reviewed_at': '2026-10-16T03:30:00Z',
+        'method': 'ASSISTANT_ADJUDICATION', 'reviewer': 'Assistant fixture',
+        'summary': {'status': 'NEEDS_REVISION',
+                    'criteria_counts': {'MEETS_RUBRIC': 1, 'PARTIAL': 4, 'NEEDS_WORK': 1, 'NOT_ASSESSED': 1},
+                    'reviewed_claim_count': 1, 'claim_count': 2, 'mechanical_finding_count': 1},
+        'criteria': [{'criterion_id': identity, 'assessment': assessment,
+                      'rationale': 'Citation support requires a source-grounding judgment.',
+                      'evidence_ids': ['headline-1']}
+                     for identity, assessment in zip(criteria,
+                         ('PARTIAL', 'NOT_ASSESSED', 'NEEDS_WORK', 'PARTIAL', 'PARTIAL', 'MEETS_RUBRIC', 'PARTIAL'))],
+        'claims': [{'claim_text': 'Demand could strengthen; evidence is incomplete.',
+                    'claim_path': '/draft/themes/0/interpretation', 'symbol': None, 'lens': 'THEME',
+                    'cited_evidence_ids': ['headline-1'], 'assessment': 'PARTIALLY_SUPPORTED',
+                    'rationale': 'The headline supports a reported agreement, not its economic size.',
+                    'packet_evidence_ids': ['headline-1'], 'needed_evidence': ['Agreement economics']}],
+        'mechanical': {'findings': [{'code': 'REPEATED_SENTENCE', 'paths': ['/draft/overview/text'],
+                                    'evidence_ids': [], 'detail': 'An exact normalized sentence repeats.'}],
+                       'coverage': {'watchlist': ['SPY', 'NVDA'], 'mentioned_symbols': ['NVDA'],
+                                    'unmentioned_symbols': ['SPY'], 'headline_count': 1,
+                                    'stale_context_count': 1, 'source_count': 1},
+                       'unspecified': {'trading_count': 0, 'investment_count': 0,
+                                       'horizon_count': 0, 'invalidation_count': 1},
+                       'limitations': ['Mechanical checks do not decide semantic meaning.']},
+        'limitations': ['Assistant assessment is not independent economic evidence.'],
+        'authority': {'authorization_enabled': False, 'execution_enabled': False,
+                      'capital_activation_enabled': False, 'allocation_enabled': False,
+                      'policy_changes_enabled': False},
+    }}
+    return value
+
+
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_narrative_evaluation_compact_grid_claims_and_original_dissent(self):
+        value = evaluated_fixture()
+        before = deepcopy(value)
+        html = render(value)
+        tags = Tags(html)
+        criteria = [attrs for tag, attrs in tags.attributes if tag == 'div'
+                    and 'quality-criterion' in attrs.get('class', '').split()]
+        self.assertEqual(len(criteria), 7)
+        for expected in ('Needs revision', 'Claims / citations', 'Economic connection', 'Alternatives',
+                         'Challenge', 'Missing evidence', 'Boundaries', 'Clarity', 'Meets rubric',
+                         'Not assessed', 'Claims reviewed: 1 / 2', 'Mechanical observations: 1',
+                         'Assistant adjudication of this saved brief', 'not verified truth',
+                         'not decide whether a market interpretation is true or false',
+                         'The headline supports a reported agreement', 'Agreement economics',
+                         'REPEATED_SENTENCE', 'An exact normalized sentence repeats.',
+                         'Symbols without a recorded implication: SPY', 'rubric-fixture-v1',
+                         'Oct 15 · 08:30:00 PM PDT', 'Original interpretation of the agreement.',
+                         'CONTESTED', 'This may be routine publicity.', 'Auto-trading OFF'):
+            self.assertIn(expected, html)
+        self.assertLess(html.index('Narrative quality'), html.index('Oracle · original interpretation'))
+        self.assertEqual(value, before)
+        self.assertFalse({'form', 'input', 'button', 'script', 'iframe', 'meter', 'progress'} & set(tags.tags))
+        details = [attrs for tag, attrs in tags.attributes if tag == 'details'
+                   and 'quality-detail' in attrs.get('class', '').split()]
+        self.assertEqual(len(details), 4)
+        self.assertTrue(all('open' not in attrs for attrs in details))
+
+    def test_narrative_evaluation_never_attaches_other_report_or_missing_identity(self):
+        for report_identity in ('sentry-synthesis-' + 'f' * 64, None, ''):
+            with self.subTest(report_identity=report_identity):
+                value = evaluated_fixture()
+                value['report']['report_id'] = report_identity
+                html = render(value)
+                self.assertIn('A saved review belongs to another brief', html)
+                self.assertNotIn('Claims reviewed:', html)
+                self.assertNotIn('Agreement economics', html)
+                self.assertIn('Original interpretation of the agreement.', html)
+        value = evaluated_fixture()
+        value['report'] = None
+        html = render(value)
+        self.assertIn('No verified synthesis to display', html)
+        self.assertNotIn('Claims reviewed:', html)
+
+    def test_narrative_evaluation_missing_unavailable_and_unknown_are_honest(self):
+        for projection, expected in (
+                (None, 'No narrative-quality review has been recorded'),
+                ({'status': 'NOT_RECORDED', 'report': None}, 'No narrative-quality review has been recorded'),
+                ({'status': 'UNAVAILABLE', 'report': None}, 'review could not be verified'),
+                ({'status': 'NO_MATCHING_REVIEW', 'report': None}, 'belongs to another brief'),
+                ({'status': 'AVAILABLE', 'report': None}, 'review could not be verified'),
+                ({'status': 'UNKNOWN', 'report': None}, 'review could not be verified')):
+            with self.subTest(projection=projection):
+                value = fixture()
+                value['narrative_evaluation'] = projection
+                html = render(value)
+                self.assertIn(expected, html)
+                self.assertNotIn('Claims reviewed:', html)
+                self.assertIn('Original interpretation of the agreement.', html)
+
+    def test_narrative_evaluation_all_review_text_escaped_and_css_classes_closed(self):
+        value = evaluated_fixture()
+        evaluation = value['narrative_evaluation']['report']
+        injection = '<script>alert("review")</script><img src=x onerror=alert(1)>'
+        for key in ('evaluation_id', 'review_id', 'rubric_version', 'reviewer'):
+            evaluation[key] = injection
+        evaluation['criteria'][0].update(criterion_id=injection, rationale=injection, evidence_ids=[injection])
+        evaluation['criteria'][1]['assessment'] = injection
+        claim = evaluation['claims'][0]
+        for key in ('claim_text', 'claim_path', 'symbol', 'lens', 'assessment', 'rationale'):
+            claim[key] = injection
+        for key in ('cited_evidence_ids', 'packet_evidence_ids', 'needed_evidence'):
+            claim[key] = [injection]
+        evaluation['mechanical']['findings'][0].update(code=injection, detail=injection,
+                                                     paths=[injection], evidence_ids=[injection])
+        evaluation['mechanical']['coverage']['unmentioned_symbols'] = [injection]
+        evaluation['mechanical']['limitations'] = [injection]
+        evaluation['limitations'] = [injection]
+        html = render(value)
+        self.assertNotIn(injection, html)
+        self.assertNotIn('<script', html)
+        self.assertNotIn('<img', html)
+        self.assertIn('&lt;script&gt;', html)
+        classes = [attrs['class'] for tag, attrs in Tags(html).attributes
+                   if 'quality-criterion' in attrs.get('class', '').split()]
+        self.assertTrue(all(set(value.split()) <= {'quality-criterion', 'meets', 'partial', 'needs-work', 'unassessed'}
+                            for value in classes))
+
+    def test_narrative_evaluation_rubric_success_is_not_approval_or_market_truth(self):
+        value = evaluated_fixture()
+        value['narrative_evaluation']['report']['summary']['status'] = 'MEETS_REVIEW_RUBRIC'
+        html = render(value)
+        self.assertIn('Meets review rubric', html)
+        self.assertIn('No recommendations, authorizations, orders, allocation changes or experiment changes follow', html)
+        self.assertIn('not verified truth, a market forecast, or evidence of a trading edge', html)
+        self.assertIn('NOT TRADE AUTHORITY', html)
+
     def test_text_validation_keeps_original_clock_dissent_and_authority(self):
         value=fixture()
         value['report']['validation']={'purpose':'EXPLICIT_TEXT_VALIDATION',

@@ -748,6 +748,10 @@ def status(config, now=None):
         _off(Path(config['runtime_root']))
     except ERRORS:
         value.update(status='UNAVAILABLE', report=None, auto_trading='UNVERIFIED')
+    # An additive read-only attachment. It cannot alter the original report,
+    # invoke generation, or make an evaluation failure look like approval.
+    from .sentry_narrative_evaluation import evaluation_status
+    value['narrative_evaluation'] = evaluation_status(config, value['report'])
     return value
 
 

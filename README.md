@@ -60,6 +60,11 @@ local synthesis and a separate challenge pass, with cited evidence and original
 dissent retained. Its read-only page separates watchlist implications by desk;
 it has no authorization, allocation or execution authority.
 
+The [narrative-quality evaluation](docs/SENTRY_NARRATIVE_QUALITY_EVALUATION.md)
+reviews the preserved brief against its exact headline packet. Its read-only
+card separates deterministic observations from attributed assistant judgments,
+retaining the original brief and challenge without new inference or trading.
+
 The separate [article-content entitlement probe](docs/SENTRY_CONTENT_ENTITLEMENT_PROBE.md)
 checks at most three Alpaca news items in one explicit request after review of
 an accepted brief and challenge. It reports availability metadata and leaves

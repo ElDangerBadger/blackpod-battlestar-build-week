@@ -399,6 +399,11 @@ what the current Alpaca entitlement can lawfully supply. This burst adds no
 subscription, direct Benzinga connector, article-body requests or paywall
 scraping; richer content would require separate bounded intake validation.
 
+The separate [narrative-quality evaluation](SENTRY_NARRATIVE_QUALITY_EVALUATION.md)
+links a versioned rubric and attributed offline claim review to the exact
+preserved headline packet. Its read-only card keeps the original Oracle and
+challenge intact; no generation, policy or trading authority changes.
+
 See also [Sentry collection](SENTRY_CATALYST_FEED.md),
 [feed latency and coverage](SENTRY_FEED_LATENCY_AUDIT.md), and the
 [standalone operating guide](BLACKPOD_STANDALONE_RESEARCH.md).
