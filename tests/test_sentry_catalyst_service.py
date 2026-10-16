@@ -1,4 +1,5 @@
 """Worker/HTTP integration with authored provider fixtures and no live calls."""
+from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 import json
@@ -147,6 +148,24 @@ class HTTPTests(_LocalHTTPMixin, unittest.TestCase):
         self.assertEqual(self.request('/sentry?collect=true')[0],404)
         self.assertEqual(self.request('/sentry',headers={'Origin':'https://evil.example'})[0],403)
         self.assertEqual(self.request('/sentry.json','HEAD')[2],b'')
+
+    def test_volume_labels_name_iex_scope_and_preserve_retained_numbers(self):
+        self.value['capture']['contexts'][0]['day_volume'] = '501362'
+        self.value['capture']['contexts'][0]['status'] = 'STALE'
+        self.value['capture']['contexts'][1]['day_volume'] = '0'
+        before = deepcopy(self.value)
+        with patch.object(service, 'market_get', side_effect=AssertionError('network forbidden')):
+            status, _, body = self.request('/sentry')
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(self.request('/sentry.json')[2]), before)
+        self.assertEqual(body.count(b'IEX-only volume <b>'), len(WATCH))
+        self.assertIn(b'IEX-only volume <b>501,362</b> shares', body)
+        self.assertIn(b'IEX-only volume <b>0</b> shares', body)
+        self.assertIn(b'shares from IEX only, not total market volume or relative volume', body)
+        self.assertIn(b'Saved bars may be stale or incomplete', body)
+        self.assertIn(b'STALE', body)
+        self.assertNotIn(b'Day volume', body)
+        self.assertEqual(self.value, before)
 
     def test_empty_stale_and_truncated_states_are_explicit(self):
         self.value['capture']['news_truncated'] = True

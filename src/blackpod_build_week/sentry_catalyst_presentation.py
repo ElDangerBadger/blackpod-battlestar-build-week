@@ -30,8 +30,8 @@ def render(status):
         fresh = row.get('status') in {'OBSERVED', 'STALE'}
         tiles.append('<article class="tile"><b>' + text(symbol) + '</b><strong>' +
             (text(number(row.get('change_from_previous_close_pct'), True)) if fresh else 'Unavailable') +
-            '</strong><span>vs previous daily close</span><p>Day volume <b>' + text(number(row.get('day_volume'))) +
-            '</b></p><small>' + text(row.get('status', 'UNAVAILABLE')) + ' · Bar: ' + text(when(row.get('minute_at'))) + '</small></article>')
+            '</strong><span>vs previous daily close</span><p>IEX-only volume <b>' + text(number(row.get('day_volume'))) +
+            '</b> shares</p><small>' + text(row.get('status', 'UNAVAILABLE')) + ' · Bar: ' + text(when(row.get('minute_at'))) + '</small></article>')
     cards = []
     for item in capture.get('articles', []):
         chips = ''.join('<b class="chip">' + text(s) + '</b>' for s in item['symbols'])
@@ -55,4 +55,4 @@ def render(status):
         '</span><span class="badge">IEX · partial-market context</span></div><p>Captured ' + text(when(capture.get('captured_at'))) + \
         ' · ' + text(label) + '</p><p><a href="/sentry-synthesis">Market brief + challenge →</a> · <a href="/sentry-audit">Feed quality audit →</a></p>' + warning + '<div class="grid">' + ''.join(tiles) + \
         '</div><h2>Latest retained headlines</h2>' + (''.join(cards) or '<p>No verified headlines recorded yet. This does not mean there is no news.</p>') + \
-        '<footer>Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles · maximum 10 symbols.<br>Day volume is not relative volume. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'
+        '<footer>Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles · maximum 10 symbols.<br>IEX-only volume counts shares from IEX only, not total market volume or relative volume. Saved bars may be stale or incomplete. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'

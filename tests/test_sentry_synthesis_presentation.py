@@ -379,8 +379,22 @@ class SynthesisPresentationTests(unittest.TestCase):
         self.assertIn('href="#evidence-0"', html)
         for expected in ('11:00:00 AM PDT', '11:05:00 AM PDT', '09:00:00 AM PDT', '10:00:00 AM PDT',
                          '10:05:00 AM PDT', '09:00:00 PM PDT', 'Minute bar:', 'Previous daily bar:',
-                         'First seen', 'Last seen', 'Day volume is not relative volume'):
+                         'First seen', 'Last seen', 'shares from IEX only, not total market volume or relative volume'):
             self.assertIn(expected, html)
+
+    def test_volume_scope_is_iex_only_without_rewriting_saved_evidence(self):
+        value = fixture()
+        value['report']['context']['evidence'][1]['data']['day_volume'] = '501362'
+        before = deepcopy(value)
+        html = render(value)
+        self.assertIn('IEX-only volume: 501362 shares', html)
+        self.assertIn('shares from IEX only, not total market volume or relative volume', html)
+        self.assertIn('Saved bars may be stale or incomplete', html)
+        self.assertIn('Price context · STALE', html)
+        self.assertIn('Minute bar:', html)
+        self.assertIn('Daily bar:', html)
+        self.assertNotIn('Day volume', html)
+        self.assertEqual(value, before)
 
     def test_unknown_naive_and_invalid_source_times_never_gain_a_timezone(self):
         value = fixture()

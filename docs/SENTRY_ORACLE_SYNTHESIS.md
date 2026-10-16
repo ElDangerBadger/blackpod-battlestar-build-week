@@ -73,8 +73,10 @@ Only headlines are read. Article bodies, primary filings, earnings estimates,
 analyst research and verified company fundamentals are absent. Price change
 means a retained minute close versus the provider's previous daily close. It is
 not a measured post-headline response, a matched SPY/QQQ excess return, a causal
-effect, an executable quote or realized trade P&L. Day volume is not
-time-matched relative volume.
+effect, an executable quote or realized trade P&L. Displayed **IEX-only volume**
+counts shares on that single exchange, not total market volume or time-matched
+relative volume. It is the retained daily-bar count and may be stale or
+incomplete. See the [volume definition and correction](SENTRY_CATALYST_FEED.md).
 
 The challenge is a separate role prompt and request bound to the original
 draft and evidence packet. That provides a separate review pass; it does not

@@ -15,7 +15,7 @@ remain distinct. This adds no provider requests or collection-policy changes.
 - **Headline cards:** provider source link, publication/update time, BlackPod's
   first-seen and last-observed times, and the number of observed revisions.
 - **Symbol tiles:** IEX minute close versus the provider's previous daily close,
-  day volume, and the actual minute-bar timestamp. These are USD price proxies,
+  IEX-only volume in shares, and the actual minute-bar timestamp. These are USD price proxies,
   not executable quotes or a trade simulation.
 - **Warnings:** stale prices, stale captures, unavailable symbols, failed
   collection, and incomplete news pages. A fresh download does not establish
@@ -33,12 +33,57 @@ time. First-seen means the first **complete, validated** observation in this
 store; a successful orphan transport response is not promoted to a complete
 observation after a failed cycle. Exact source bytes remain available for audit.
 
-Day volume is **not unusual/relative volume**: comparing an incomplete day with
-a full day would be misleading. Price movement does not prove headline
+**IEX-only volume is not total market volume.** The collector explicitly selects
+`feed=iex` for Alpaca snapshots, and the displayed count is the retained
+`dailyBar.v` without scaling. IEX is a single exchange; SIP is the consolidated
+feed. See [Alpaca's feed definitions](https://docs.alpaca.markets/us/docs/market-data-faq).
+This selection is fixed by this integration, not inferred from the account's
+subscription. No SIP entitlement has been tested or enabled by this correction.
+
+The count is also **not unusual/relative volume**: comparing an incomplete day with
+a full day would be misleading. A daily bar's timestamp identifies its interval
+start, not the last volume update. Use retained capture and freshness indicators;
+an old brief is not a live or necessarily complete end-of-day snapshot.
+Price movement does not prove headline
 causation or an opportunity remaining after detection. There are no sentiment,
 earnings-surprise, analyst-revision, insider-trade or legal-event classifiers.
 Those event-specific feeds and a testable predictive hypothesis remain future,
 separately authorized work. This feed is not another trading experiment.
+
+### October 15, 2026 volume-label correction
+
+The preserved Oracle packet showed GOOGL volume `501362`. That exactly matches
+the retained Alpaca snapshot's `dailyBar.v`, with SHA-256
+`55cf3a44655803a509bcfffd3b57b2340b211d4928020651f29a72cee058467c`.
+The packet was retained at 2:20:44 p.m. PDT and explicitly carried `feed: iex`;
+its minute bar was at 12:59 p.m. PDT and marked STALE. This verifies the source
+of the number, not GOOGL's total market volume or independent market accuracy.
+
+The feed and synthesis views now label each count **IEX-only volume**, with
+shares and an explicit single-exchange/stale-or-incomplete explanation. Source
+records, JSON fields, numbers, capture rules and forecast inputs are unchanged.
+No provider request, inference or feed-entitlement change was needed.
+
+Validation used the real retained GOOGL source bytes above and 181 offline
+regression tests, all passed. Tests cover preserved counts (including zero),
+unchanged JSON/evidence, stale-state visibility, both HTTP/rendering views, the
+capture projection and the separate narrative evaluation:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest test_sentry_catalyst test_sentry_catalyst_capture \
+  test_sentry_catalyst_service test_sentry_synthesis_core \
+  test_sentry_synthesis_presentation test_sentry_synthesis_http \
+  test_sentry_narrative_evaluation -q
+```
+
+The source data and market coverage are unchanged. Consolidated snapshot
+access would need an explicit SIP entitlement check and a separately governed
+intake change; changing a label does not acquire missing market data.
+The owned, idle standalone service was gracefully reloaded. Its local JSON API
+still returned the original report, GOOGL count and linked evaluation; all nine
+original synthesis capsules and the frozen pilot remained unchanged, with
+auto-trading OFF. Rendering and HTTP fixtures verify the new labels.
 
 ## Bounds and actual provider interfaces
 

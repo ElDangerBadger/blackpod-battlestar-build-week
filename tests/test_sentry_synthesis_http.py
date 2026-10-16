@@ -96,6 +96,20 @@ class SentrySynthesisHTTPTests(_LocalHTTPMixin, unittest.TestCase):
         self.assertIn('href="/sentry-audit"', html)
         self.assertNotIn('<form', html)
 
+    def test_retained_price_volume_is_labeled_iex_only_and_json_stays_original(self):
+        from test_sentry_synthesis_presentation import fixture
+        self.value = fixture()
+        self.value['report']['context']['evidence'][1]['data']['day_volume'] = '501362'
+        with patch('blackpod_build_week.sentry_synthesis_transport.generate_role', side_effect=AssertionError('inference forbidden')):
+            code, _, body = self.request('/sentry-synthesis')
+            self.assertEqual(code, 200)
+            self.assertIn(b'IEX-only volume: 501362 shares', body)
+            self.assertIn(b'not total market volume or relative volume', body)
+            self.assertNotIn(b'Day volume', body)
+            code, _, body = self.request('/sentry-synthesis.json')
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(body), self.value)
+
 
 if __name__ == '__main__':
     unittest.main()
