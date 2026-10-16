@@ -60,7 +60,7 @@ configuration or reuse the old mission candidate workflow.
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
 | Background schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between ordinary attempts; maximum four ordinary attempts per LA day |
 | Explicit manual diagnostics | Separate from background hours/daily/spacing limits after the user's October 15 authorization; one serialized, deadline-bound delivery per deterministic identity, with no automatic resends |
-| Timeout | Current v6 and retained v3/v4/v5 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
+| Timeout | Current v9 and retained v3–v8 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -144,8 +144,9 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
-The current background transport is **v6**, using the same v2 output contracts, prompts,
-2,500-token limit, model routing and evidence selection. It binds configuration
+The current background transport is **v9**, using the same strict v2 output
+contracts, model routing and evidence selection, with a 4,096-token ceiling and
+explicit compact/host-contract generation guidance. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
 honors this per-request timeout; its server default is a fallback, not a hard
@@ -166,8 +167,10 @@ an unavailable cause or retry an uncertain request. An optional
 `local-contract-error.json` on a new v8 rejection contains only a closed host
 reason category and exact request/receipt/self hashes. Unknown exception text,
 rejected content and failed provenance are never retained in that diagnostic.
-Historical failures are not backfilled. Ordinary background delivery stays at
-v6 until a real accepted pair and its evidence review justify promotion.
+Historical failures are not backfilled. Ordinary background delivery remained
+at v6 during validation; it was promoted to v9 only after the real accepted
+pair, dated manual review and completed one-request content check. This is a
+transport promotion, not endorsement of the narrative or new decision authority.
 
 `validate-text` permits one separately recorded v9 child only after that exact
 v8 rejection has a verified original `TEXT_FORMAT` observation. V9 adds compact

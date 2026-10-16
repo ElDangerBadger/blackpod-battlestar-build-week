@@ -49,8 +49,9 @@ CONTRACT_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v8'
 TEXT_VALIDATION_VERSION = 'blackpod.sentry_synthesis_validation.v9'
 TEXT_PURPOSE = 'EXPLICIT_TEXT_VALIDATION'
 TEXT_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v9'
-# The 4096-token trial is explicit manual scope until its retained result is reviewed.
-BACKGROUND_TRANSPORT_VERSION = MODEL_TRANSPORT_VERSION
+# V9 delivery passed both real roles and the dated evidence review/content check.
+# This promotes the transport only; analytical conclusions remain unverified.
+BACKGROUND_TRANSPORT_VERSION = TEXT_TRANSPORT_VERSION
 MANUAL_SCOPE = 'MANUAL_RETAINED_EVIDENCE'
 LA = ZoneInfo('America/Los_Angeles')
 MAX_RUNS = 256

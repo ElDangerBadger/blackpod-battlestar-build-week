@@ -12,7 +12,19 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
-**Latest, October 15 at 8:00 p.m. Los Angeles:** the v8 request was rejected
+**Completed, October 15 at 8:14 p.m. Los Angeles:** the first accepted Oracle
+brief and separate challenge both identify Gemma 4 E4B and native `stop`
+completions. The dated manual review preserves significant narrative weaknesses,
+the user's market-rotation context, original evidence and dissent. The one
+authorized Alpaca GET returned three articles with nonempty content in all
+three. Independent verification is VERIFIED with zero new provider calls and
+one original call. No article text was exposed or sent to a model; full-article
+completeness and licensing rights remain unverified. See the
+[completed review and metadata-only probe result](SENTRY_ACCEPTED_BRIEF_REVIEW_2026-10-15.md)
+and [full diagnostic/test chronology](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+The experiment remains frozen and auto-trading OFF.
+
+**Earlier, October 15 at 8:00 p.m. Los Angeles:** the v8 request was rejected
 with verified category `TEXT_FORMAT`; its exact failed field is unavailable.
 A separately recorded v9 concise-text validation is running on the same
 headlines, with the strict original response contract unchanged. All eight
@@ -62,11 +74,10 @@ verified. See [actual validation evidence and commands](SENTRY_V2_VALIDATION_STA
 The preparation and earlier continuation records below describe their
 original observation times.
 
-**Pending:** the first accepted Oracle/challenge pair has not yet been recorded
-in this runbook. No article-content probe result is claimed here. The report
-ID, review findings, actual command, response summary and integrity checks must
-be recorded after they exist. Do not substitute fixture results for a real
-accepted pair or a real content response.
+**Earlier preparation status:** no accepted pair or article-content probe
+existed at preparation time. The completion entry above and linked review now
+record the actual pair, commands, result and integrity checks. Fixture results
+remain separate from real inference and the real content sample.
 
 Preparation on October 15, 2026: the retained ledger had one failed Oracle
 attempt, no accepted draft and no challenge. The synthesis worker was healthy,

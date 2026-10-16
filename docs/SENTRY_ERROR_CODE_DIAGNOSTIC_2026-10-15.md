@@ -519,3 +519,108 @@ Static source/installed-runtime inspection also confirmed that profile
 the active model's runtime reference/provider; MLX prefers that context model.
 Path resolution has no Qwen fallback. This confirms routing behavior, not
 missing historical per-call provenance. Accepted receipts remain authoritative.
+
+## Actual completion: accepted roles, review and content sample
+
+V9 Oracle was accepted at `2026-10-16T03:06:11.746748Z`; challenge was reserved
+at `03:06:28.191245Z` and accepted at `03:11:23.899102Z`. Both identify Gemma
+4 E4B, MLX VLM, revision `cc3b666c01c20395e0dcebd53854504c7d9821f9`.
+Native completion counts are 2,185 and 1,376; both are `stop`, with requested
+and effective token limits 4,096. This establishes these actual deliveries;
+earlier failed-run model provenance remains unavailable.
+
+The first `CHALLENGED_INTERPRETATION` report completed at
+`2026-10-16T03:11:42.037644Z`:
+`sentry-synthesis-b1f2af33b230aaa6ba12a7bb1bec97592e77c8d8f26c36789c31fef08f4412d0`.
+Provider-free verification shows nine attempts/reports, six FAILED, two REJECTED,
+one challenged interpretation, zero incomplete/abandoned reservations. All
+eight older capsule fingerprints match; OFF and nine frozen source pins verify.
+
+The [dated manual review](SENTRY_ACCEPTED_BRIEF_REVIEW_2026-10-15.md) was saved
+before the single Alpaca content request. It identifies weak alternatives,
+repetitive prose, a generic challenge and already-present IDs mislabeled as
+missing evidence. The rotation finding concerns citation support and absent
+quantification, not a claim that the user's market reading is false. This is
+technical transport success, not verified economic reasoning or an edge.
+
+The fixed destination's one content GET completed at `03:14:27.204403Z`, with
+three sampled Benzinga articles and three nonempty content fields. Response
+size 31,973 bytes; SHA-256
+`1bebc76be6f4cecd0c3b7b77f57aec14fd74b6ee809bbf0e93c61b325c036735`.
+The separate verify command returns VERIFIED, zero new provider calls, one
+original call and the exact reviewed synthesis ID/hash. Full commands and
+metadata/hashes are in the dated review. Raw bodies remain private, unrendered
+and excluded from models/UI/Git. No completeness, broad entitlement or licensing
+attestation is inferred. No content adapter or body integration was added.
+
+Only after these actual gates completed was ordinary synthesis promoted from
+v6/2,500 to the demonstrated v9/4,096 transport. Background four/day, hourly and
+weekday bounds remain unchanged; manual diagnostic allowance stays separate.
+Trading authority remains zero and the frozen experiment is unchanged.
+
+Final promotion regression commands:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest \
+  test_sentry_synthesis_service.SentrySynthesisServiceTests.test_two_roles_real_client_fake_http_and_separate_immutable_dissent \
+  test_sentry_synthesis_service.SentrySynthesisServiceTests.test_status_verify_recover_are_provider_free_and_do_not_rewrite_report \
+  test_sentry_synthesis_transport -q
+# 85 passed, 1.658 seconds.
+
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest \
+  test_sentry_synthesis_service.ExplicitContractValidationTests.test_v8_preserves_seven_originals_4096_and_exact_evidence_without_resend \
+  test_sentry_synthesis_service.ExplicitTextValidationTests.test_v9_preserves_eight_originals_same_budget_and_evidence_without_resend -q
+# 2 passed, 51.410 seconds.
+```
+
+These are targeted repeats after changing the background transport constant
+and three expected-default assertions. They overlap the 506-test full Sentry
+coverage above and must not be added to the distinct test total.
+
+Final standalone deployment: the verified idle owned LaunchAgent was reloaded
+to v9 (PID 70462); ModelDock was not restarted. Runtime model and persistent
+startup override both verify as Gemma. All three inspected endpoints
+`/sentry-synthesis.json`, `/sentry-synthesis`, `/status.json` returned HTTP 200
+and `Cache-Control: no-store`. JSON has the exact accepted report ID; HTML shows
+its themes, UNTESTED challenge and Gemma model. Both status JSON projections
+show OFF. An initial inspection incorrectly expected the full report ID in the
+HTML; the corrected check uses the exact JSON identity and rendered contents.
+This was an inspection correction, not a production-code repair.
+
+Final provider-free synthesis verification is saved at
+`output/sentry-text-validation-2026-10-15-001/final-synthesis-verify.json`:
+VERIFIED, nine reports, no incomplete/abandoned reservations. All eight original
+failed capsule hashes remain unchanged; all nine experiment source pins and
+OFF verify. The legitimate nightly collector has four predictions and zero
+outcomes under its original frozen schedule. UI smoke metadata is retained at
+`output/sentry-text-validation-2026-10-15-001/ui-smoke.json`.
+
+## BlackPod files changed in this branch
+
+- `README.md`
+- `docs/SENTRY_ACCEPTED_BRIEF_REVIEW_2026-10-15.md`
+- `docs/SENTRY_CONTENT_CHECK_STATUS_2026-10-15.md`
+- `docs/SENTRY_CONTENT_ENTITLEMENT_PROBE.md`
+- `docs/SENTRY_DEADLINE_VALIDATION_REVIEW_2026-10-15.md`
+- `docs/SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md`
+- `docs/SENTRY_ORACLE_SYNTHESIS.md`
+- `docs/SENTRY_V2_VALIDATION_STATUS_2026-10-15.md`
+- `docs/patches/modeldock-structured-validation-diagnostics.patch`
+- `src/blackpod_build_week/sentry_content_probe.py`
+- `src/blackpod_build_week/sentry_synthesis.py`
+- `src/blackpod_build_week/sentry_synthesis_presentation.py`
+- `src/blackpod_build_week/sentry_synthesis_service.py`
+- `src/blackpod_build_week/sentry_synthesis_transport.py`
+- `tests/test_sentry_content_probe.py`
+- `tests/test_sentry_synthesis_core.py`
+- `tests/test_sentry_synthesis_presentation.py`
+- `tests/test_sentry_synthesis_service.py`
+- `tests/test_sentry_synthesis_transport.py`
+
+The separate ModelDock source changes and portable patch are recorded above.
+The one approved per-user startup change is outside Git. Private runtime
+evidence, credentials, article bodies and unrelated working-tree files are
+not included in this branch. No canonical mission, Navigator, trading-policy,
+ModelDock client/config module or frozen-source implementation file changed.

@@ -100,8 +100,8 @@ class SentrySynthesisServiceTests(unittest.TestCase):
         self.assertEqual(len(self.http.calls), 2)
         self.assertEqual(len(self.factories), 2)
         requests = [json.loads(call['body']) for call in self.http.calls]
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.MODEL_TRANSPORT_VERSION)
-        self.assertEqual([item['max_tokens'] for item in requests], [2500, 2500])
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
+        self.assertEqual([item['max_tokens'] for item in requests], [4096, 4096])
         first = requests[0]['metadata']['blackpod_correlation']['request_id']
         second = requests[1]['metadata']['blackpod_correlation']['request_id']
         self.assertNotEqual(first, second)
@@ -1499,7 +1499,7 @@ class ExplicitContractValidationTests(unittest.TestCase):
             self.assertEqual(intent['wire_request']['max_tokens'], 4096)
         modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
         self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.MODEL_TRANSPORT_VERSION)
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
         self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
         self.assertEqual(self.run_validation(), result)
         self.assertEqual(service.verify(self.config)['attempt_count'], 8)
@@ -1612,7 +1612,7 @@ class ExplicitTextValidationTests(unittest.TestCase):
             self.assertEqual(intent['wire_request']['max_tokens'], 4096)
         modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
         self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.MODEL_TRANSPORT_VERSION)
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
         self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
         self.assertEqual(self.run_validation(), result)
         self.assertEqual(service.verify(self.config)['attempt_count'], 9)
