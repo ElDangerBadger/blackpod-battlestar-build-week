@@ -29,7 +29,8 @@ from .modeldock_config import ModelDockConfig
 
 LEGACY_VERSION = 'blackpod.sentry_synthesis_transport.v1'
 V2_VERSION = 'blackpod.sentry_synthesis_transport.v2'
-VERSION = 'blackpod.sentry_synthesis_transport.v3'
+V3_VERSION = 'blackpod.sentry_synthesis_transport.v3'
+VERSION = 'blackpod.sentry_synthesis_transport.v4'
 MAX_TOKENS = 2500
 MAX_FILE_BYTES = 1024 * 1024
 ERROR_OBSERVATION_VERSION = 'blackpod.sentry_http_error_observation.v1'
@@ -186,14 +187,14 @@ def _contracts():
 
 
 def _configuration(config, *, version=VERSION):
-    timeout, grace = (900, 30) if version == VERSION else (120, 10)
+    timeout, grace = (900, 30) if version in {V3_VERSION, VERSION} else (120, 10)
     if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
         raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, V2_VERSION, VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, VERSION}:
         raise ValueError('unsupported synthesis transport version')
     configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
@@ -214,7 +215,7 @@ def _request(role, packet, config, draft, *, version=VERSION):
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
     if version != LEGACY_VERSION:
         bindings['transport_schema_version'] = version
-    if version == VERSION:
+    if version in {V3_VERSION, VERSION}:
         bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()

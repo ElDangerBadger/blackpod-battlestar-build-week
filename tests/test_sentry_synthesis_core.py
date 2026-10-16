@@ -367,6 +367,24 @@ class SynthesisCoreTests(unittest.TestCase):
             synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW),
                 validation={key:value for key,value in metadata.items() if key!='scope'})
 
+    def test_error_code_diagnostic_requires_manual_scope_and_v4_link(self):
+        self.store.append(*capture_packet())
+        packet = self.build(); oracle, challenge = self.model_results(packet)
+        metadata = {'purpose':'EXPLICIT_ERROR_CODE_DIAGNOSTIC',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v4',
+            'scope':'MANUAL_RETAINED_EVIDENCE'}
+        original = deepcopy(metadata)
+        report = synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW+timedelta(hours=4)), validation=metadata)
+        self.assertEqual(report['validation'], original)
+        self.assertEqual(report['context'], packet)
+        self.assertTrue(all(value is False for value in report['authority'].values()))
+        metadata['parent_report_sha256']='c'*64
+        self.assertEqual(report['validation'], original)
+        for key,value in [('scope','AUTOMATIC'),('transport_schema_version','blackpod.sentry_synthesis_transport.v3')]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                synthesis.compose_report(packet,oracle,challenge,catalyst.stamp(NOW),validation={**original,key:value})
+
 
 if __name__ == '__main__':
     unittest.main()

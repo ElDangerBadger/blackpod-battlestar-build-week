@@ -193,6 +193,24 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
         self.assertEqual(len(self.fixture.calls), 1)
 
+    def test_v3_long_deadline_replays_exactly_under_v4_default_without_resend(self):
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
+        first = self.generate(version=transport.V3_VERSION)
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        old = json.loads(before['intent.json'])
+        current, bindings, _ = transport._request('oracle', packet(), self.config, None)
+        self.assertEqual(old['schema_version'], transport.V3_VERSION)
+        self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
+        self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
+        self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
+        for key in ('messages','response_format','timeout','max_tokens','profile','capabilities'):
+            self.assertEqual(old['wire_request'][key], current[key])
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.generate(), first)
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(len(self.fixture.calls), 1)
+
     def test_configuration_changes_get_distinct_v3_request_id(self):
         one, _, _ = transport._request('oracle', packet(), self.config, None)
         two, _, _ = transport._request('oracle', packet(),

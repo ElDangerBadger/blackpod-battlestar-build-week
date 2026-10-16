@@ -59,7 +59,7 @@ configuration or reuse the old mission candidate workflow.
 | Feed quality | Retained-prefix audit and explicit unknown coverage; no fabricated missing-news count |
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
 | Schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between attempts; maximum four attempts per LA day |
-| Timeout | Current v3 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
+| Timeout | Current v4 and retained v3 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -143,13 +143,14 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
-The current transport is **v3**, using the same v2 output contracts, prompts,
+The current transport is **v4**, using the same v2 output contracts, prompts,
 2,500-token limit, model routing and evidence selection. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
 honors this per-request timeout; its server default is a fallback, not a hard
 90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
 request bytes, identities and version-specific deadline limits still replay.
+Retained v3 configuration hashes and 900/30 identities also replay exactly.
 
 ### Explicit compatibility validation of a failed v1 attempt
 
@@ -210,6 +211,29 @@ a reserved attempt from the previous completed report. A bounded processing
 health allowance reflects the configured delivery window; it does not claim
 native token progress or successful completion. Idle health retains its
 ordinary five-minute threshold.
+
+### Explicit error-code diagnostic
+
+The separately authorized `validate-error` command records one v4 child of
+the exact terminal **v3 deadline validation with `MODELDOCK_HTTP_500`**.
+It preserves the original evidence and all three failed capsules. It uses
+900/30, the same prompts/schema/token ceiling, and a fresh version-bound
+correlation identity. It cannot accept an uncertain, accepted, earlier-version
+or v4 parent. No further error-diagnostic child is admitted.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-error \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id 'sentry-synthesis-<terminal v3 HTTP 500 report SHA-256>'
+```
+
+As with deadline validation, only the manual monitoring-hours restriction is
+different; real-clock spacing, shared daily budget, storage, OFF, source pins
+and watchlist gates still apply. An existing reservation is never resent.
+The UI labels this as an explicit error-code diagnostic and separates the
+original evidence clock from its later processing clock. See the
+[October 15 diagnostic record](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
 
 ### Bounded HTTP-error metadata
 

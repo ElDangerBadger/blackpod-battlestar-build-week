@@ -31,6 +31,9 @@ VALIDATION_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v2'
 DEADLINE_VALIDATION_VERSION = 'blackpod.sentry_synthesis_validation.v3'
 DEADLINE_PURPOSE = 'EXPLICIT_DEADLINE_VALIDATION'
 DEADLINE_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v3'
+ERROR_VALIDATION_VERSION = 'blackpod.sentry_synthesis_validation.v4'
+ERROR_PURPOSE = 'EXPLICIT_ERROR_CODE_DIAGNOSTIC'
+ERROR_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v4'
 MANUAL_SCOPE = 'MANUAL_RETAINED_EVIDENCE'
 LA = ZoneInfo('America/Los_Angeles')
 MAX_RUNS = 256
@@ -104,13 +107,24 @@ def inventory(runs):
     return [runs / name for name in names]
 
 
-def validation_directory(parent_report_id, *, deadline=False):
+def validation_settings(*, deadline=False, error_diagnostic=False):
+    if deadline and error_diagnostic:
+        raise ValueError('validation purposes cannot be combined')
+    if error_diagnostic:
+        return ERROR_PURPOSE, ERROR_TRANSPORT_VERSION, ERROR_VALIDATION_VERSION, True
+    if deadline:
+        return DEADLINE_PURPOSE, DEADLINE_TRANSPORT_VERSION, DEADLINE_VALIDATION_VERSION, True
+    return VALIDATION_PURPOSE, VALIDATION_TRANSPORT_VERSION, VALIDATION_VERSION, False
+
+
+def validation_directory(parent_report_id, *, deadline=False, error_diagnostic=False):
     if not isinstance(parent_report_id, str) or re.fullmatch(r'sentry-synthesis-[0-9a-f]{64}', parent_report_id) is None:
         raise ValueError('invalid validation source report identity')
-    identity = {'purpose': DEADLINE_PURPOSE if deadline else VALIDATION_PURPOSE,
+    purpose, transport_version, _, manual = validation_settings(deadline=deadline, error_diagnostic=error_diagnostic)
+    identity = {'purpose': purpose,
         'parent_report_id': parent_report_id,
-        'transport_schema_version': DEADLINE_TRANSPORT_VERSION if deadline else VALIDATION_TRANSPORT_VERSION}
-    if deadline:
+        'transport_schema_version': transport_version}
+    if manual:
         identity['scope'] = MANUAL_SCOPE
     return sha256_bytes(canonical_json_bytes(identity))
 
@@ -119,15 +133,16 @@ def validation_metadata(value):
     if not isinstance(value, dict):
         raise ValueError('invalid explicit validation linkage')
     deadline = value.get('purpose') == DEADLINE_PURPOSE
-    fields = {'purpose', 'parent_report_id', 'parent_report_sha256', 'transport_schema_version'} | ({'scope'} if deadline else set())
+    error_diagnostic = value.get('purpose') == ERROR_PURPOSE
+    purpose, transport_version, _, manual = validation_settings(deadline=deadline, error_diagnostic=error_diagnostic)
+    fields = {'purpose', 'parent_report_id', 'parent_report_sha256', 'transport_schema_version'} | ({'scope'} if manual else set())
     if (set(value) != fields
-            or value['purpose'] != (DEADLINE_PURPOSE if deadline else VALIDATION_PURPOSE)
-            or value['transport_schema_version'] != (DEADLINE_TRANSPORT_VERSION if deadline else VALIDATION_TRANSPORT_VERSION)
-            or deadline and value['scope'] != MANUAL_SCOPE
+            or value['purpose'] != purpose or value['transport_schema_version'] != transport_version
+            or manual and value['scope'] != MANUAL_SCOPE
             or not isinstance(value['parent_report_sha256'], str)
             or re.fullmatch('[0-9a-f]{64}', value['parent_report_sha256']) is None):
         raise ValueError('invalid explicit validation linkage')
-    validation_directory(value['parent_report_id'], deadline=deadline)
+    validation_directory(value['parent_report_id'], deadline=deadline, error_diagnostic=error_diagnostic)
     return value
 
 
@@ -137,13 +152,14 @@ def load_attempt(directory):
     packet = immutable_read(directory, 'packet.json')
     intent = immutable_read(directory, 'run-intent.json')
     fields = {'schema_version', 'context_id', 'packet_sha256', 'evidence_signature', 'reserved_at', 'modeldock'}
-    if intent.get('schema_version') in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION}:
+    if intent.get('schema_version') in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION}:
         expected_fields = fields | {'validation'}
         metadata = validation_metadata(intent.get('validation'))
         deadline = intent['schema_version'] == DEADLINE_VALIDATION_VERSION
-        if (metadata['purpose'] == DEADLINE_PURPOSE) != deadline:
+        error_diagnostic = intent['schema_version'] == ERROR_VALIDATION_VERSION
+        if metadata['purpose'] != validation_settings(deadline=deadline, error_diagnostic=error_diagnostic)[0]:
             raise ValueError('validation schema and purpose differ')
-        expected_directory = validation_directory(metadata['parent_report_id'], deadline=deadline)
+        expected_directory = validation_directory(metadata['parent_report_id'], deadline=deadline, error_diagnostic=error_diagnostic)
     elif intent.get('schema_version') == VERSION:
         expected_fields, expected_directory = fields, packet['evidence_signature']
     else:
@@ -156,7 +172,7 @@ def load_attempt(directory):
     modeldock = configuration(intent['modeldock'])
     if intent['schema_version'] == VALIDATION_VERSION and (modeldock.timeout_seconds > 120 or modeldock.delivery_grace_seconds > 10):
         raise ValueError('legacy v2 validation deadline exceeds its bound')
-    if intent['schema_version'] == DEADLINE_VALIDATION_VERSION and (modeldock.timeout_seconds != 900 or modeldock.delivery_grace_seconds != 30):
+    if intent['schema_version'] in {DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION} and (modeldock.timeout_seconds != 900 or modeldock.delivery_grace_seconds != 30):
         raise ValueError('explicit deadline validation requires exactly 900 seconds plus 30 seconds grace')
     return packet, intent, modeldock
 
@@ -169,7 +185,8 @@ def abandoned_validation(directory, packet):
         report = immutable_read(candidate, 'report.json')
         identity = report.get('report_id')
         if (isinstance(identity, str) and re.fullmatch(r'sentry-synthesis-[0-9a-f]{64}', identity)
-                and directory.name in {validation_directory(identity), validation_directory(identity, deadline=True)}
+                and directory.name in {validation_directory(identity), validation_directory(identity, deadline=True),
+                                       validation_directory(identity, error_diagnostic=True)}
                 and report.get('context') == packet):
             return True
     return False
@@ -230,7 +247,7 @@ def retained_roles(directory, packet, modeldock):
     elif (directory / 'report.json').exists():
         original = immutable_read(directory, 'report.json')['provenance']['oracle']['request_id']
         candidates = []
-        for candidate in (LEGACY_TRANSPORT_VERSION, VALIDATION_TRANSPORT_VERSION, DEADLINE_TRANSPORT_VERSION):
+        for candidate in (LEGACY_TRANSPORT_VERSION, VALIDATION_TRANSPORT_VERSION, DEADLINE_TRANSPORT_VERSION, ERROR_TRANSPORT_VERSION):
             try:
                 result = read_role('oracle', packet, directory / 'oracle', modeldock, version=candidate)
                 if result['request_id'] == original:
@@ -292,7 +309,7 @@ def recover_attempt(directory, config, now=None):
     return read_report(directory, config)
 
 
-def validation_parent(config, parent_report_id, *, deadline=False):
+def validation_parent(config, parent_report_id, *, deadline=False, error_diagnostic=False):
     """Replay a terminal legacy failure; an accepted or uncertain role is ineligible."""
     validation_directory(parent_report_id)
     _, runs = paths(config)
@@ -305,7 +322,10 @@ def validation_parent(config, parent_report_id, *, deadline=False):
             continue
         if found is not None:
             raise ValueError('validation source identity is duplicated')
-        if deadline:
+        if error_diagnostic:
+            if intent['schema_version'] != DEADLINE_VALIDATION_VERSION or intent.get('validation', {}).get('purpose') != DEADLINE_PURPOSE:
+                raise ValueError('error diagnostic source must be the terminal v3 deadline validation')
+        elif deadline:
             if intent['schema_version'] != VALIDATION_VERSION or intent.get('validation', {}).get('purpose') != VALIDATION_PURPOSE:
                 raise ValueError('deadline validation source must be the terminal v2 validation')
         elif intent['schema_version'] != VERSION or 'validation' in intent:
@@ -317,12 +337,13 @@ def validation_parent(config, parent_report_id, *, deadline=False):
         role_intent = immutable_read(directory / 'oracle', 'intent.json')
         receipt = immutable_read(directory / 'oracle', 'receipt.json')
         if (report['status'] not in {'FAILED', 'REJECTED'} or oracle['status'] not in {'FAILED', 'REJECTED'}
-                or role_intent['schema_version'] != (VALIDATION_TRANSPORT_VERSION if deadline else LEGACY_TRANSPORT_VERSION)
+                or role_intent['schema_version'] != (DEADLINE_TRANSPORT_VERSION if error_diagnostic else VALIDATION_TRANSPORT_VERSION if deadline else LEGACY_TRANSPORT_VERSION)
                 or role_intent['wire_request']['response_format']['schema']['properties']['schema_version']['const']
-                    != ('blackpod.sentry_oracle_draft.v2' if deadline else 'blackpod.sentry_oracle_draft.v1')
+                    != ('blackpod.sentry_oracle_draft.v2' if deadline or error_diagnostic else 'blackpod.sentry_oracle_draft.v1')
                 or receipt['status'] != oracle['status'] or receipt['response'] is not None
                 or receipt['provenance'] is not None or not receipt['failure_code']
-                or deadline and receipt['failure_code'] != 'MODELDOCK_HTTP_504'):
+                or deadline and receipt['failure_code'] != 'MODELDOCK_HTTP_504'
+                or error_diagnostic and receipt['failure_code'] != 'MODELDOCK_HTTP_500'):
             raise ValueError('validation source is not the required terminal failed delivery')
         found = directory, packet, report
     if found is None:
@@ -331,11 +352,12 @@ def validation_parent(config, parent_report_id, *, deadline=False):
 
 
 def verify_validation_link(directory, packet, intent, config):
-    if intent['schema_version'] not in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION}:
+    if intent['schema_version'] not in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION}:
         return None
     metadata = validation_metadata(intent['validation'])
     deadline = intent['schema_version'] == DEADLINE_VALIDATION_VERSION
-    parent, original, report = validation_parent(config, metadata['parent_report_id'], deadline=deadline)
+    error_diagnostic = intent['schema_version'] == ERROR_VALIDATION_VERSION
+    parent, original, report = validation_parent(config, metadata['parent_report_id'], deadline=deadline, error_diagnostic=error_diagnostic)
     if (sha256_bytes(canonical_json_bytes(report)) != metadata['parent_report_sha256']
             or original != packet or immutable_read(parent, 'packet.json') != immutable_read(directory, 'packet.json')):
         raise ValueError('validation differs from exact original evidence or parent')
@@ -365,34 +387,36 @@ def capsule_hashes(directory):
 def validation_chain_hashes(directory, config):
     result = {}
     while True:
-        if directory in result or len(result) >= 3:
+        if directory in result or len(result) >= 4:
             raise ValueError('invalid validation ancestry')
         result[directory] = capsule_hashes(directory)
         _, intent, _ = load_attempt(directory)
-        if intent['schema_version'] not in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION}:
+        if intent['schema_version'] not in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION}:
             return result
         directory, _, _ = validation_parent(config, intent['validation']['parent_report_id'],
-            deadline=intent['schema_version'] == DEADLINE_VALIDATION_VERSION)
+            deadline=intent['schema_version'] == DEADLINE_VALIDATION_VERSION,
+            error_diagnostic=intent['schema_version'] == ERROR_VALIDATION_VERSION)
 
 
-def _validate(config, source_report_id, *, now=None, client_factory=None, deadline=False):
+def _validate(config, source_report_id, *, now=None, client_factory=None, deadline=False, error_diagnostic=False):
     """Explicit single child validation of the exact retained legacy evidence.
 
     This is not ordinary source admission, an automatic retry, or an escape
     from the shared hourly/daily budget. A reserved child is never resent.
     """
     root, runs = paths(config)
+    purpose, transport_version, intent_version, manual = validation_settings(deadline=deadline, error_diagnostic=error_diagnostic)
     with service_lock(root):
         _off(Path(config['runtime_root']))
         verify(config)
-        parent, packet, parent_report = validation_parent(config, source_report_id, deadline=deadline)
+        parent, packet, parent_report = validation_parent(config, source_report_id, deadline=deadline, error_diagnostic=error_diagnostic)
         original_hashes = validation_chain_hashes(parent, config)
-        metadata = {'purpose': DEADLINE_PURPOSE if deadline else VALIDATION_PURPOSE, 'parent_report_id': source_report_id,
+        metadata = {'purpose': purpose, 'parent_report_id': source_report_id,
             'parent_report_sha256': sha256_bytes(canonical_json_bytes(parent_report)),
-            'transport_schema_version': DEADLINE_TRANSPORT_VERSION if deadline else VALIDATION_TRANSPORT_VERSION}
-        if deadline:
+            'transport_schema_version': transport_version}
+        if manual:
             metadata['scope'] = MANUAL_SCOPE
-        directory = runs / validation_directory(source_report_id, deadline=deadline)
+        directory = runs / validation_directory(source_report_id, deadline=deadline, error_diagnostic=error_diagnostic)
 
         def gates():
             _off(Path(config['runtime_root']))
@@ -401,7 +425,7 @@ def _validate(config, source_report_id, *, now=None, client_factory=None, deadli
             current = catalyst_control(read_state(catalyst_paths(config)[0] / 'control.json'))
             if current['symbols'] != packet['watchlist'] or validation_chain_hashes(parent, config) != original_hashes:
                 raise ValueError('validation source, watchlist or original capsule changed')
-            checked_parent, checked_packet, checked_report = validation_parent(config, source_report_id, deadline=deadline)
+            checked_parent, checked_packet, checked_report = validation_parent(config, source_report_id, deadline=deadline, error_diagnostic=error_diagnostic)
             if checked_parent != parent or checked_packet != packet or checked_report != parent_report:
                 raise ValueError('validation parent changed')
 
@@ -416,22 +440,20 @@ def _validate(config, source_report_id, *, now=None, client_factory=None, deadli
         selected = control(read_state(root / 'control.json'))
         entries = ledger(runs)
         now = now or utc_now()
-        admitted, reason = due(now, entries, selected['enabled'], manual_retained=deadline)
+        admitted, reason = due(now, entries, selected['enabled'], manual_retained=manual)
         if not admitted:
             return {'status': reason, 'report_id': None, 'validation': metadata, 'authority': dict(AUTHORITY)}
-        if deadline and TRANSPORT_VERSION != DEADLINE_TRANSPORT_VERSION:
-            raise ValueError('explicit deadline validation requires the fixed v3 transport')
         if len(inventory(runs)) >= MAX_RUNS or sum(p.stat().st_size for p in runs.rglob('*') if p.is_file()) > MAX_BYTES - 8 * 1024 * 1024:
             return {'status': 'ARCHIVE_REVIEW_REQUIRED', 'report_id': None, 'validation': metadata, 'authority': dict(AUTHORITY)}
         modeldock = configuration(selected['modeldock'])
-        if not deadline and (modeldock.timeout_seconds > 120 or modeldock.delivery_grace_seconds > 10):
+        if not manual and (modeldock.timeout_seconds > 120 or modeldock.delivery_grace_seconds > 10):
             raise ValueError('legacy v2 validation requires its original bounded deadline')
-        if deadline and (modeldock.timeout_seconds != 900 or modeldock.delivery_grace_seconds != 30):
+        if manual and (modeldock.timeout_seconds != 900 or modeldock.delivery_grace_seconds != 30):
             raise ValueError('explicit deadline validation requires exactly 900 seconds plus 30 seconds grace')
         # Both originals are canonical; this publishes the identical retained
         # packet bytes and preserves its historical as_of, without a new view.
         write_json_once(directory, 'packet.json', packet)
-        write_json_once(directory, 'run-intent.json', {'schema_version': DEADLINE_VALIDATION_VERSION if deadline else VALIDATION_VERSION,
+        write_json_once(directory, 'run-intent.json', {'schema_version': intent_version,
             'context_id': packet['context_id'], 'packet_sha256': sha256_bytes(canonical_json_bytes(packet)),
             'evidence_signature': packet['evidence_signature'], 'reserved_at': stamp(now),
             'modeldock': selected['modeldock'], 'validation': metadata})
@@ -463,6 +485,10 @@ def validate_v2(config, source_report_id, *, now=None, client_factory=None):
 
 def validate_deadline(config, source_report_id, *, now=None, client_factory=None):
     return _validate(config, source_report_id, now=now, client_factory=client_factory, deadline=True)
+
+
+def validate_error(config, source_report_id, *, now=None, client_factory=None):
+    return _validate(config, source_report_id, now=now, client_factory=client_factory, error_diagnostic=True)
 
 
 def cycle(config, *, now=None, client_factory=None):
@@ -610,7 +636,7 @@ def start_worker(config, stop):
 def main(argv=None):
     from .shadow_station import load_config
     parser = argparse.ArgumentParser(description='Observation-only local Sentry → Oracle synthesis')
-    parser.add_argument('command', choices=['configure', 'generate', 'recover', 'status', 'verify', 'validate-v2', 'validate-deadline'])
+    parser.add_argument('command', choices=['configure', 'generate', 'recover', 'status', 'verify', 'validate-v2', 'validate-deadline', 'validate-error'])
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--enabled', action='store_true')
     parser.add_argument('--modeldock-base-url')
@@ -619,9 +645,9 @@ def main(argv=None):
     parser.add_argument('--modeldock-profile', default='default')
     parser.add_argument('--source-report-id')
     args = parser.parse_args(argv)
-    if args.command in {'validate-v2', 'validate-deadline'} and not args.source_report_id:
+    if args.command in {'validate-v2', 'validate-deadline', 'validate-error'} and not args.source_report_id:
         parser.error('explicit validation requires --source-report-id identifying its terminal failed source')
-    if args.command not in {'validate-v2', 'validate-deadline'} and args.source_report_id is not None:
+    if args.command not in {'validate-v2', 'validate-deadline', 'validate-error'} and args.source_report_id is not None:
         parser.error('--source-report-id is only valid for explicit validation')
     try:
         config = load_config(args.config)
@@ -642,6 +668,8 @@ def main(argv=None):
             result = validate_v2(config, args.source_report_id)
         elif args.command == 'validate-deadline':
             result = validate_deadline(config, args.source_report_id)
+        elif args.command == 'validate-error':
+            result = validate_error(config, args.source_report_id)
         elif args.command == 'recover':
             with service_lock(root):
                 reports = [recover_attempt(row[0], config)['report_id'] for row in ledger(runs)]

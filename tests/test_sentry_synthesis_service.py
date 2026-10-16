@@ -4,12 +4,13 @@ ModelDockClient is real; its HTTP transport is an authored response fixture.
 No broker, news service, inference server, credentials, or live runtime is used.
 """
 from datetime import timedelta
-from io import StringIO
+from io import StringIO, BytesIO
 from pathlib import Path
 import json
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from blackpod_build_week import sentry_catalyst as catalyst
 from blackpod_build_week import sentry_synthesis_service as service
@@ -676,7 +677,7 @@ class ExplicitDeadlineValidationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
         self.assertEqual(result['validation']['purpose'], 'EXPLICIT_DEADLINE_VALIDATION')
         self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
-        self.assertEqual(result['validation']['transport_schema_version'], transport.VERSION)
+        self.assertEqual(result['validation']['transport_schema_version'], service.DEADLINE_TRANSPORT_VERSION)
         self.assertEqual(result['validation']['parent_report_id'], self.source_id)
         self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
         self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
@@ -889,6 +890,144 @@ class HistoricalMissingRoleReplayTests(unittest.TestCase):
         self.assertEqual(expected['status'], 'DRAFT_ONLY')
         self.assertEqual(service.capsule_hashes(directory), before)
         self.assertEqual(len(helper.http.calls), 1)
+
+
+class ExplicitErrorDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ExplicitDeadlineValidationTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.helper, self.config = self.fixture.helper, self.fixture.config
+        old = self.helper.http
+        def error_500(**kwargs):
+            old.calls.append(kwargs)
+            return HttpResponse(500, {'Content-Length': '2'}, b'{}')
+        old.request = error_500
+        self.parent_report = self.fixture.run_validation()
+        self.assertEqual(self.parent_report['provenance']['oracle']['failure_code'], 'MODELDOCK_HTTP_500')
+        self.parent = self.fixture.child()
+        self.source_id = self.parent_report['report_id']
+        self.originals = service.validation_chain_hashes(self.parent, self.config)
+        self.assertEqual(len(self.originals), 3)
+        self.helper.http = BoundFixtureTransport()
+        self.helper.now += timedelta(hours=1)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_error(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id, error_diagnostic=True)
+
+    def test_fourth_manual_child_uses_same_packet_preserves_all_three_failures_and_exhausts_daily_budget(self):
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(result['validation']['purpose'], 'EXPLICIT_ERROR_CODE_DIAGNOSTIC')
+        self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
+        self.assertEqual(result['validation']['transport_schema_version'], service.ERROR_TRANSPORT_VERSION)
+        self.assertEqual(result['validation']['parent_report_id'], self.source_id)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        entries = service.ledger(self.helper.runs)
+        self.assertEqual(len(entries), 4)
+        self.assertEqual(service.due(self.helper.now + timedelta(hours=1), entries, True, manual_retained=True)[1],
+                         'DAILY_BUDGET_EXHAUSTED')
+        self.assertEqual(service.verify(self.config)['report_dispositions'],
+                         {'FAILED': 3, 'CHALLENGED_INTERPRETATION': 1})
+        self.assertEqual(self.run_validation(), result)
+        self.assertEqual(self.fixture.run_validation(), self.parent_report)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_safe_correlated_error_observation_is_read_without_a_second_generation(self):
+        from unittest.mock import Mock
+        calls = []
+        def opened(request, timeout):
+            calls.append(request)
+            identity = json.loads(request.data)['metadata']['blackpod_correlation']['request_id']
+            raw = canonical_json_bytes({'error': {'code': 'INFERENCE_FAILURE', 'request_id': identity,
+                'message': 'PRIVATE_MODEL_ERROR', 'details': [{'path': '/PRIVATE_MODEL_PATH'}]}})
+            raise HTTPError(request.full_url, 500, 'private', {'Content-Length': str(len(raw))}, BytesIO(raw))
+        with patch('blackpod_build_week.modeldock_client.urllib.request.build_opener', return_value=Mock(open=opened)):
+            result = self.run_validation(client_factory=lambda config: ModelDockClient(config,
+                transport=transport._NamedSentryTransport(), now=lambda: self.helper.now))
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertEqual(result['provenance']['oracle']['failure_code'], 'MODELDOCK_HTTP_500')
+        packet, _, config = service.load_attempt(self.child())
+        with patch.object(ModelDockClient, 'generate_text', side_effect=AssertionError('no replay generation')):
+            error = transport.read_error_observation('oracle', packet, self.child() / 'oracle', config)
+            self.assertEqual(error['code'], 'INFERENCE_FAILURE')
+            self.assertEqual(error['request_id'], result['provenance']['oracle']['request_id'])
+            self.assertEqual(self.run_validation(), result)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn('PRIVATE_MODEL', json.dumps(error))
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_shared_hourly_gate_applies_before_error_diagnostic(self):
+        result = self.run_validation(now=self.helper.now - timedelta(seconds=1))
+        self.assertEqual(result['status'], 'WAITING_FOR_NEXT_SLOT')
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_interrupted_fourth_attempt_is_never_resent_or_reset(self):
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(len(service.ledger(self.helper.runs)), 4)
+        with self.assertRaises(ValueError):
+            service.validate_error(self.config, result['report_id'], now=self.helper.now,
+                                   client_factory=self.helper.factory)
+
+    def test_only_terminal_v3_http500_is_eligible_not_unknown_status_or_earlier_parent(self):
+        with self.assertRaises(ValueError):
+            service.validate_error(self.config, self.fixture.source_id, now=self.helper.now,
+                                   client_factory=self.helper.factory)
+        receipt_path = self.parent / 'oracle/receipt.json'
+        receipt = json.loads(receipt_path.read_bytes())
+        receipt['failure_code'] = 'MODELDOCK_HTTP_STATUS'
+        receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes({k: v for k, v in receipt.items() if k != 'receipt_sha256'}))
+        receipt_path.chmod(0o600)
+        receipt_path.write_bytes(canonical_json_bytes(receipt))
+        packet, intent, dock = service.load_attempt(self.parent)
+        oracle, challenge = service.retained_roles(self.parent, packet, dock)
+        report = service.compose_report(packet, oracle, challenge, self.parent_report['completed_at'],
+                                        validation=intent['validation'])
+        path = self.parent / 'report.json'
+        path.chmod(0o600)
+        path.write_bytes(canonical_json_bytes(report))
+        self.source_id = report['report_id']
+        with self.assertRaises(ValueError):
+            self.run_validation()
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_accepted_v4_cannot_be_used_to_create_another_error_diagnostic(self):
+        result = self.run_validation()
+        with self.assertRaises(ValueError):
+            service.validate_error(self.config, result['report_id'], now=self.helper.now + timedelta(hours=1),
+                                   client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_off_or_pin_failure_prevents_fourth_reservation(self):
+        for gate in (self.helper.off, self.fixture.fixture.pins):
+            gate.side_effect = ValueError('blocked')
+            with self.assertRaises(ValueError):
+                self.run_validation()
+            gate.side_effect = None
+        self.assertFalse(self.child().exists())
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_cli_error_diagnostic_is_explicit_and_does_not_add_reset_flags(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_error', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-error', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
 
 
 if __name__ == '__main__':

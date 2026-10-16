@@ -81,6 +81,18 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_error_code_diagnostic_is_historical_and_not_a_new_forecast(self):
+        value = fixture()
+        value['report']['validation'] = {'purpose':'EXPLICIT_ERROR_CODE_DIAGNOSTIC',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v4','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html = render(value)
+        for expected in ('Explicit error-code diagnostic','MANUAL_RETAINED_EVIDENCE',
+                         'Retained inputs from Oct 15 · 11:00:00 AM PDT',
+                         'not a fresh market assessment or a new forecast','CONTESTED','Auto-trading OFF'):
+            self.assertIn(expected,html)
+        self.assertNotIn('Explicit deadline validation',html)
+
     def test_deadline_validation_is_manual_historical_and_preserves_dissent(self):
         value = fixture()
         value['report']['validation'] = {'purpose':'EXPLICIT_DEADLINE_VALIDATION',
