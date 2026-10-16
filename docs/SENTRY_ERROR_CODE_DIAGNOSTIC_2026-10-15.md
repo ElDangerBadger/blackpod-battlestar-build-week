@@ -300,3 +300,135 @@ and cannot be resent or used as another output-validation parent.
 During this targeted validation, ordinary background synthesis remains pinned
 to v6/2,500. Promotion of the normal path is gated on the real validation;
 no 4,096-token background call is claimed here.
+
+Actual explicit command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-output-budget \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id sentry-synthesis-353d720e03c83183ca276ccec3f794fa33344aea9f5dd4c974f2b1197baa6487 \
+  > output/sentry-output-budget-validation-2026-10-15-001/validation-result.json
+```
+
+Reserved `2026-10-16T02:25:43.025973Z`, October 15, **7:25:43 p.m. PDT**.
+Capsule `cd405da6e46bd0e0574e15e850ad1d08e59e48366bd78efd8bac980d4d354516`.
+Oracle request:
+`sentry-oracle-d56e81a286e427ad40d24a532b75c27a1dc449b21b827d1021ea7ce985a08579`.
+The actual wire has `max_tokens: 4096`, `timeout: 900`. Gemma was verified active
+and idle immediately before this validation. All six failed capsules were
+fingerprinted and verified; only the owned idle BlackPod reader was reloaded.
+ModelDock was not restarted or switched again.
+
+The final pre-delivery offline Sentry coverage was split to avoid duplicate
+expensive service checks:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest test_sentry_synthesis_service -q
+# 87 passed, 165.711 seconds.
+
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 - <<'PY'
+from pathlib import Path
+import unittest
+names = [p.stem for p in sorted(Path('tests').glob('test_sentry*.py'))
+         if p.stem != 'test_sentry_synthesis_service']
+suite = unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(name)
+                           for name in names)
+result = unittest.TextTestRunner(verbosity=1).run(suite)
+raise SystemExit(not result.wasSuccessful())
+PY
+# 387 run, 385 passed, two optional skips, 8.308 seconds.
+```
+
+Combined Sentry: **474 run, 472 passed, two skipped**. Together with the earlier
+184 station/pilot/baseline/delivery regressions, BlackPod has **656 passing
+offline checks, two skipped**. ModelDock's 256 fixture checks are separate.
+An initial focused integration run saw three missing v7-composition-map errors
+while parallel implementation was still in progress; the completed suites above
+passed after the map was added. No malformed model result was repaired.
+
+### Actual v7 result
+
+The Oracle receipt ended at `2026-10-16T02:34:18.756029Z` (October 15,
+**7:34:18 p.m. PDT**). ModelDock returned a response that passed its JSON gate,
+but BlackPod's stricter callback rejected it with
+`MODELDOCK_NARRATIVE_SCHEMA_INVALID`. This is a host contract rejection,
+**not another HTTP 500**. The rejected content and callback exception were
+not retained, so the precise violated rule, native completion count and actual
+execution-model provenance are unavailable. The preflight Gemma selection is
+an observation, not a replacement for missing execution provenance. No
+challenge request was made and no original response was repaired.
+
+Report: `sentry-synthesis-5356b1491600c9b3d883c8c357c04d066927ad7aa1de877681ab780f7a472d78`.
+Completion: `2026-10-16T02:34:30.350319Z`.
+Oracle receipt SHA-256:
+`7bbf6d2ab3bedcd051bd0e3e5f2d41438ba7490a6e449ff6bed0dccf008ba7ad`.
+Provider-free verification reports seven attempts/reports, six FAILED and one
+REJECTED, with no incomplete reservations. OFF and all nine source pins verify.
+The article-content destination is still absent and its request has not run.
+
+The next correction is bounded to this integration: explicitly communicate
+the existing host contract's uniqueness, citation/linkage, text-format and
+challenge-coverage rules, and retain only a closed local rejection category
+for new deliveries. It must not loosen validation, recover rejected text,
+rewrite old receipts, change the experiment, or promote background synthesis
+before a real accepted pair is obtained. Gemma's inspected structured path
+already uses `enable_thinking=False`; no reasoning-mode change is supported
+by this evidence.
+
+### Separately recorded host-contract validation
+
+V8 preserves the exact retained packet, v2 response contracts, 4,096-token
+ceiling, ModelDock routing and 900/30 deadline. Its added request guidance
+states already-enforced host rules; none are relaxed. An optional new-delivery
+diagnostic contains only a closed rejection category and request/receipt/self
+hashes, never rejected model text, exception strings, failed provenance or
+unverified completion counters. It cannot be attached to v1–v7 roles.
+
+The new manual path requires the exact verified terminal v7 host rejection.
+It reserves one deterministic child and preserves the full original chain.
+An uncertain or already-reserved child cannot be resent. Background delivery
+remains at v6/2,500 while this integration is validated.
+
+Actual command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-contract \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id sentry-synthesis-5356b1491600c9b3d883c8c357c04d066927ad7aa1de877681ab780f7a472d78 \
+  > output/sentry-contract-validation-2026-10-15-001/validation-result.json
+```
+
+Reserved `2026-10-16T02:44:54.174239Z` (October 15, **7:44:54 p.m. PDT**).
+Capsule `25926407479fb1b6a4aa52c048a178810f1132060018fe82c0ca037685a4b2af`.
+Oracle delivery reserved `2026-10-16T02:45:09.563121Z`, request
+`sentry-oracle-5b2935e25236df264e59591fb7c3aeccdafcf3e09747f97af7d4b9984c650376`.
+The actual wire retains `max_tokens: 4096` and `timeout: 900`.
+
+Before delivery, all seven reports and original capsule hashes verified,
+the content destination was absent, OFF/nine source pins verified, and Gemma
+was selected. Only the verified idle BlackPod reader was gracefully reloaded;
+ModelDock was not restarted. Original fingerprints and metadata are retained
+privately under `output/sentry-contract-validation-2026-10-15-001/`.
+An initial ad hoc v7 fingerprint comparison used full Path/string identities
+against basename keys; it was corrected to compare each retained capsule by
+its actual basename. All six older capsules match their original fingerprints.
+No source-history repair was performed.
+
+Pre-delivery offline checks: **77 transport tests passed**; **61 core/UI tests
+passed**; **six focused service tests passed**. The complete non-service Sentry
+suite ran **401 tests, 399 passed, two optional skips**, in 11.074 seconds.
+These overlapping checks are authored fixtures, not additional real model
+deliveries. The separate full service command completed:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest test_sentry_synthesis_service -q
+# 92 passed, 262.496 seconds.
+```
+
+The disjoint full Sentry suites total **493 run, 491 passed, two skipped**.
+Including the earlier 184 station/pilot/baseline/delivery checks gives **675
+passing BlackPod checks, two skipped**. ModelDock's 256 tests remain separate.

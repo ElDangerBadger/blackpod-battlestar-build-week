@@ -17,7 +17,7 @@ import re
 import stat
 from urllib.error import HTTPError
 
-from .contracts.mission_request import parse_rfc3339, parse_strict_json_object_bytes
+from .contracts.mission_request import ContractValidationError, parse_rfc3339, parse_strict_json_object_bytes
 from .decision_journal_store import (
     _absolute_path, _open_root, _open_child_directory, _publish_immutable,
     _read_regular, JournalConflictError,
@@ -33,7 +33,8 @@ V3_VERSION = 'blackpod.sentry_synthesis_transport.v3'
 V4_VERSION = 'blackpod.sentry_synthesis_transport.v4'
 V5_VERSION = 'blackpod.sentry_synthesis_transport.v5'
 V6_VERSION = 'blackpod.sentry_synthesis_transport.v6'
-VERSION = 'blackpod.sentry_synthesis_transport.v7'
+V7_VERSION = 'blackpod.sentry_synthesis_transport.v7'
+VERSION = 'blackpod.sentry_synthesis_transport.v8'
 LEGACY_MAX_TOKENS = 2500
 MAX_TOKENS = 4096
 MAX_FILE_BYTES = 1024 * 1024
@@ -41,6 +42,13 @@ ERROR_OBSERVATION_VERSION = 'blackpod.sentry_http_error_observation.v1'
 ERROR_DETAIL_OBSERVATION_VERSION = 'blackpod.sentry_http_error_observation.v2'
 VALIDATION_DIAGNOSTIC_VERSION = 'modeldock.structured-validation-diagnostic.v1'
 MAX_ERROR_BYTES = 8192
+LOCAL_CONTRACT_OBSERVATION_VERSION = 'blackpod.sentry_local_contract_observation.v1'
+LOCAL_CONTRACT_TRANSPORT_VERSIONS = frozenset({'blackpod.sentry_synthesis_transport.v8'})
+MAX_LOCAL_CONTRACT_BYTES = 1024
+LOCAL_CONTRACT_REASONS = frozenset({'DUPLICATE_CITATIONS', 'DUPLICATE_THEME_ID', 'DUPLICATE_SYMBOL',
+    'DUPLICATE_TEXT', 'DIRECT_MENTION_CITATION_MISSING', 'INVALID_UNSPECIFIED_TEXT', 'TEXT_FORMAT',
+    'THEME_COVERAGE', 'CONTRACT_REJECTED', 'VALUE_REJECTED', 'TYPE_REJECTED',
+    'REQUIRED_VALUE_MISSING', 'VALIDATOR_FAILURE'})
 ERROR_CODES = frozenset({'STRUCTURED_OUTPUT_INVALID', 'STRUCTURED_GENERATION_FAILED', 'INFERENCE_FAILURE',
     'INTERNAL_ERROR', 'TIMEOUT', 'STRUCTURED_OUTPUT_UNSUPPORTED', 'INVALID_REQUEST',
     'MODEL_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'UNKNOWN_PROFILE'})
@@ -64,6 +72,19 @@ ROLE_INSTRUCTIONS = {
     'oracle': 'Synthesize the supplied evidence into a cautious watchlist market interpretation. Separate trading and investment implications. Do not manufacture a theme if evidence is insufficient.',
     'challenge': 'Independently challenge the ORIGINAL ORACLE DRAFT against the same evidence. Preserve the original draft and dissent. Identify unsupported inferences, alternatives and absent evidence. This is a separate analytical role, not proof of independent model, provider or data consensus.',
 }
+CONTRACT_GUIDANCE = (
+    ' Host contract requirements: use each theme_id at most once. Every evidence_ids array must contain '
+    'unique known IDs, and each theme must list each implication symbol at most once. DIRECT_MENTION '
+    'requires at least one HEADLINE in that same theme evidence_ids whose symbols include the exact symbol; '
+    'price context or a headline cited only by the overview is insufficient. Use HYPOTHETICAL_READ_THROUGH '
+    'for explicitly conditional implications without that direct headline relationship. All text must be '
+    'nonblank, without leading or trailing whitespace, control characters, Unicode formatting characters '
+    'or line separators; the sole empty-text exception is UNSPECIFIED proposed_invalidation.text. '
+    'Do not duplicate unresolved_questions, overall_limitations or missing_evidence strings. '
+    'For challenge, use the exact original draft_sha256 required by the schema and exactly one review '
+    'for each original draft theme_id, without duplicates, additions or omissions; use reviews=[] if '
+    'the draft has no themes. Respect all schema field and array bounds. '
+)
 
 
 class _NamedSentryTransport:
@@ -236,14 +257,14 @@ def _contracts():
 
 
 def _configuration(config, *, version=VERSION):
-    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, VERSION} else (120, 10)
+    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, VERSION} else (120, 10)
     if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
         raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, VERSION}:
         raise ValueError('unsupported synthesis transport version')
     configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
@@ -264,7 +285,7 @@ def _request(role, packet, config, draft, *, version=VERSION):
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
     if version != LEGACY_VERSION:
         bindings['transport_schema_version'] = version
-    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, VERSION}:
+    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, VERSION}:
         bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()
@@ -278,10 +299,12 @@ def _request(role, packet, config, draft, *, version=VERSION):
         system += (' For proposed_invalidation, explicitly use {"status":"UNSPECIFIED","text":""} '
                    'when no condition is proposed, or {"status":"PROPOSED","text":"a nonblank condition"}. '
                    'UNSPECIFIED must have empty text; PROPOSED must have nonblank text. Never invent a missing historical condition.')
+    if version == VERSION:
+        system += CONTRACT_GUIDANCE
     wire = {'profile': config.profile, 'capabilities': ['text'],
         'response_format': {'type': 'json_schema', 'schema': schema_builder(role, packet, draft=draft, version='v1' if version == LEGACY_VERSION else 'v2')},
         'timeout': max(1, math.ceil(config.timeout_seconds)),
-        'max_tokens': MAX_TOKENS if version == VERSION else LEGACY_MAX_TOKENS,
+        'max_tokens': MAX_TOKENS if version in {V7_VERSION, VERSION} else LEGACY_MAX_TOKENS,
         'messages': [{'role': 'system', 'content': system},
                      {'role': 'user', 'content': canonical_json_bytes(evidence).decode('utf-8')}],
         'metadata': {'blackpod_correlation': {'mission_id': context, 'request_id': request_id, 'symbol': 'WATCHLIST', 'run_mode': 'LIVE'}}}
@@ -301,7 +324,7 @@ def _directory(role_root, *, create, locked):
     lock = staging = None
     try:
         names = set(os.listdir(root))
-        if names - {'intent.json', 'receipt.json', 'http-error.json', 'staging', '.role.lock'}:
+        if names - {'intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json', 'staging', '.role.lock'}:
             raise ValueError('unexpected synthesis attempt file')
         if locked:
             lock = os.open('.role.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=root)
@@ -458,6 +481,48 @@ def _validate_response(role, content, packet, draft, wire):
     return response
 
 
+def _local_contract_reason(error):
+    """Map known host rules in memory to closed labels, never retain messages.
+
+    Unknown messages (including hostile values or paths) cannot become labels.
+    This observes a rejected callback; it does not inspect or retain its output.
+    """
+    if isinstance(error, ContractValidationError):
+        message = error.args[0] if len(error.args) == 1 and isinstance(error.args[0], str) else None
+        fixed = {
+            'duplicate theme_id': 'DUPLICATE_THEME_ID',
+            'duplicate implication symbol': 'DUPLICATE_SYMBOL',
+            'DIRECT_MENTION requires cited headline evidence for that symbol': 'DIRECT_MENTION_CITATION_MISSING',
+            'UNSPECIFIED invalidation requires explicitly empty text': 'INVALID_UNSPECIFIED_TEXT',
+            'duplicate theme review': 'THEME_COVERAGE',
+            'challenge must cover every draft theme exactly once': 'THEME_COVERAGE',
+        }
+        for name in ('overview.evidence_ids', 'theme.evidence_ids', 'review.evidence_ids'):
+            fixed[name + ' contains duplicate evidence IDs'] = 'DUPLICATE_CITATIONS'
+        for name in ('unresolved_questions', 'missing_evidence', 'overall_limitations'):
+            fixed[name + ' contains duplicate text'] = 'DUPLICATE_TEXT'
+        for count in range(4):
+            fixed[f'reviews must contain {count} to {count} entries'] = 'THEME_COVERAGE'
+        text_fields = {'overview.text': 600, 'theme.title': 120, 'theme.interpretation': 600,
+            'theme.alternative': 400, 'implication.trading': 300, 'implication.investment': 300,
+            'proposed_invalidation.text': 400, 'review.reason': 500, 'review.alternative': 400,
+            'unresolved_questions': 250, 'missing_evidence': 250, 'overall_limitations': 250}
+        for name, maximum in text_fields.items():
+            for suffix in (' must be a nonblank string without surrounding whitespace',
+                           f' contains unsupported characters or exceeds {maximum} characters',
+                           ' must contain valid Unicode text',
+                           ' contains unsupported control or line-separator characters'):
+                fixed[name + suffix] = 'TEXT_FORMAT'
+        return fixed.get(message, 'CONTRACT_REJECTED')
+    if isinstance(error, KeyError):
+        return 'REQUIRED_VALUE_MISSING'
+    if isinstance(error, TypeError):
+        return 'TYPE_REJECTED'
+    if isinstance(error, ValueError):
+        return 'VALUE_REJECTED'
+    return 'VALIDATOR_FAILURE'
+
+
 def _result(status, wire, *, response=None, provenance=None, failure_code=None, receipt_sha256=None):
     # UI receives only the accepted structured response and small provenance.
     public = None if provenance is None else {key: provenance[key] for key in
@@ -513,10 +578,40 @@ def _read_http_observation(root, wire, receipt, receipt_bytes):
     return _verify_http_observation(value, wire, receipt, receipt_bytes)
 
 
+def _verify_local_contract_observation(value, wire, receipt, receipt_bytes):
+    fields = {'schema_version', 'stage', 'reason', 'request_sha256', 'request_id',
+              'receipt_sha256', 'observation_sha256'}
+    if (not isinstance(value, dict) or set(value) != fields
+            or len(canonical_json_bytes(value)) > MAX_LOCAL_CONTRACT_BYTES
+            or value['schema_version'] != LOCAL_CONTRACT_OBSERVATION_VERSION
+            or value['stage'] != 'HOST_RESPONSE_CONTRACT'
+            or not isinstance(value['reason'], str) or value['reason'] not in LOCAL_CONTRACT_REASONS
+            or receipt['schema_version'] not in LOCAL_CONTRACT_TRANSPORT_VERSIONS
+            or receipt['status'] != 'REJECTED'
+            or receipt['failure_code'] != 'MODELDOCK_NARRATIVE_SCHEMA_INVALID'
+            or receipt['response'] is not None or receipt['provenance'] is not None
+            or value['request_sha256'] != sha256_bytes(canonical_json_bytes(wire))
+            or value['request_id'] != wire['metadata']['blackpod_correlation']['request_id']
+            or value['receipt_sha256'] != sha256_bytes(receipt_bytes)
+            or value['observation_sha256'] != sha256_bytes(canonical_json_bytes(
+                {k:v for k,v in value.items() if k != 'observation_sha256'}))):
+        raise ValueError('local contract observation binding differs')
+    return value
+
+
+def _read_local_contract_observation(root, wire, receipt, receipt_bytes):
+    if 'local-contract-error.json' not in os.listdir(root):
+        return None
+    value, raw = _read(root, 'local-contract-error.json')
+    if raw != canonical_json_bytes(value):
+        raise ValueError('noncanonical local contract observation')
+    return _verify_local_contract_observation(value, wire, receipt, receipt_bytes)
+
+
 def _read_role(role, packet, root, config, draft, wire, bindings, configuration):
     names = os.listdir(root)
     if 'intent.json' not in names:
-        if 'receipt.json' in names or 'http-error.json' in names:
+        if 'receipt.json' in names or 'http-error.json' in names or 'local-contract-error.json' in names:
             raise ValueError('synthesis receipt lacks intent')
         return _result('UNCERTAIN', wire, failure_code='NOT_RESERVED')
     intent, intent_bytes = _read(root, 'intent.json')
@@ -532,8 +627,8 @@ def _read_role(role, packet, root, config, draft, wire, bindings, configuration)
     if reserved < parse_rfc3339(packet['as_of'], 'packet as_of'):
         raise ValueError('synthesis attempt precedes evidence packet')
     if 'receipt.json' not in names:
-        if 'http-error.json' in names:
-            raise ValueError('HTTP observation lacks terminal receipt')
+        if 'http-error.json' in names or 'local-contract-error.json' in names:
+            raise ValueError('failure observation lacks terminal receipt')
         return _result('UNCERTAIN', wire, failure_code='INTERRUPTED_OR_IN_PROGRESS')
     receipt, receipt_bytes = _read(root, 'receipt.json')
     fields = {'schema_version', 'bindings', 'intent_sha256', 'status', 'finished_at', 'response', 'provenance', 'failure_code', 'receipt_sha256'}
@@ -556,6 +651,7 @@ def _read_role(role, packet, root, config, draft, wire, bindings, configuration)
           or not isinstance(receipt['failure_code'], str) or re.fullmatch(r'[A-Z][A-Z0-9_]{0,90}', receipt['failure_code']) is None):
         raise ValueError('invalid failed synthesis receipt')
     _read_http_observation(root, wire, receipt, receipt_bytes)
+    _read_local_contract_observation(root, wire, receipt, receipt_bytes)
     return _result(receipt['status'], wire, response=receipt['response'], provenance=receipt['provenance'],
                    failure_code=receipt['failure_code'], receipt_sha256=sha256_bytes(receipt_bytes))
 
@@ -597,6 +693,25 @@ def read_error_observation(role, packet, role_root, config, *, draft=None, versi
         return _read_http_observation(root, wire, receipt, raw)
 
 
+def read_local_contract_observation(role, packet, role_root, config, *, draft=None, version=VERSION):
+    """Read a closed host-validation category without models or old rewrites."""
+    path = _absolute_path(Path(role_root))
+    if not os.path.lexists(path):
+        return None
+    with _directory(path, create=False, locked=False) as (root, _):
+        if 'intent.json' not in os.listdir(root):
+            if 'local-contract-error.json' in os.listdir(root):
+                raise ValueError('local contract observation lacks intent')
+            return None
+        intent, _ = _read(root, 'intent.json')
+        wire, bindings, configuration = _request(role, packet, config, draft, version=intent['schema_version'])
+        _read_role(role, packet, root, config, draft, wire, bindings, configuration)
+        if 'local-contract-error.json' not in os.listdir(root):
+            return None
+        receipt, raw = _read(root, 'receipt.json')
+        return _read_local_contract_observation(root, wire, receipt, raw)
+
+
 def _gates(off_check, verify_source):
     if off_check() is False or verify_source() is False:
         raise ValueError('synthesis source or OFF gate blocked')
@@ -608,7 +723,7 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
     wire, bindings, configuration = _request(role, packet, config, draft, version=version)
     _gates(off_check, verify_source)
     with _directory(role_root, create=True, locked=True) as (root, staging):
-        if any(name in os.listdir(root) for name in ('intent.json', 'receipt.json', 'http-error.json')):
+        if any(name in os.listdir(root) for name in ('intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json')):
             return _read_role(role, packet, root, config, draft, wire, bindings, configuration)
         reserved_at = _stamp(now())
         if parse_rfc3339(reserved_at, 'reserved_at') < parse_rfc3339(packet['as_of'], 'packet as_of'):
@@ -618,12 +733,20 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
         _publish(root, staging, 'intent.json', intent)
         status, response, provenance, failure_code = 'FAILED', None, None, None
         client = None
+        callback_reason = None
+        def validate_content(value):
+            nonlocal callback_reason
+            try:
+                return _validate_response(role, value, packet, draft, wire)
+            except Exception as error:
+                callback_reason = _local_contract_reason(error)
+                raise
         try:
             factory = client_factory or _default_client
             client = factory(config)
             result = client.generate_text(wire, mission_id=packet['context_id'],
                 request_id=wire['metadata']['blackpod_correlation']['request_id'], symbol='WATCHLIST', run_mode='LIVE',
-                content_validator=lambda value: _validate_response(role, value, packet, draft, wire), content_requires_correlation=False)
+                content_validator=validate_content, content_requires_correlation=False)
             if not isinstance(result, ModelDockCallResult) or result.request_bytes != canonical_json_bytes(wire):
                 raise ValueError('unsupported synthesis client result')
             if result.safe_response_bytes != canonical_json_bytes(dict(result.safe_response)):
@@ -659,6 +782,21 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
                    'status': status, 'finished_at': finished, 'response': response, 'provenance': provenance, 'failure_code': failure_code}
         receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes(receipt))
         _publish(root, staging, 'receipt.json', receipt)
+        if (version in LOCAL_CONTRACT_TRANSPORT_VERSIONS and callback_reason is not None
+                and failure_code == 'MODELDOCK_NARRATIVE_SCHEMA_INVALID'):
+            try:
+                local_observation = {'schema_version': LOCAL_CONTRACT_OBSERVATION_VERSION,
+                    'stage': 'HOST_RESPONSE_CONTRACT', 'reason': callback_reason,
+                    'request_sha256': sha256_bytes(canonical_json_bytes(wire)),
+                    'request_id': wire['metadata']['blackpod_correlation']['request_id'],
+                    'receipt_sha256': sha256_bytes(canonical_json_bytes(receipt))}
+                local_observation['observation_sha256'] = sha256_bytes(canonical_json_bytes(local_observation))
+                _verify_local_contract_observation(local_observation, wire, receipt, canonical_json_bytes(receipt))
+                _publish(root, staging, 'local-contract-error.json', local_observation)
+            except (ValueError, TypeError, KeyError, OSError, RuntimeError):
+                # Optional diagnostics never erase a terminal rejection, infer
+                # missing telemetry, or send the request again.
+                pass
         try:
             observation = getattr(getattr(client, 'transport', None), 'error_observation', None)
             if observation is not None and failure_code == 'MODELDOCK_HTTP_' + str(observation.get('http_status')):

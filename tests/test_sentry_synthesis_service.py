@@ -1453,5 +1453,108 @@ class ExplicitOutputBudgetValidationTests(unittest.TestCase):
             service.main(['validate-output-budget', '--config', '/private/tmp/config.json'])
 
 
+class ExplicitContractValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ExplicitOutputBudgetValidationTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.helper, self.config = self.fixture.helper, self.fixture.config
+        def host_rejection(envelope):
+            value = json.loads(envelope['content'])
+            value['themes'][0]['evidence_ids'] = ['not-supplied-evidence']
+            envelope['content'] = json.dumps(value)
+        self.helper.http = BoundFixtureTransport(mutate=host_rejection)
+        self.parent_report = self.fixture.run_validation()
+        self.parent = self.fixture.child()
+        self.source_id = self.parent_report['report_id']
+        self.originals = service.validation_chain_hashes(self.parent, self.config)
+        self.assertEqual(len(self.originals), 7)
+        self.assertEqual(self.parent_report['status'], 'REJECTED')
+        self.assertEqual(self.parent_report['provenance']['oracle']['failure_code'], 'MODELDOCK_NARRATIVE_SCHEMA_INVALID')
+        self.assertFalse((self.parent / 'oracle/http-error.json').exists())
+        self.helper.http = BoundFixtureTransport()
+        self.helper.now += timedelta(seconds=1)
+
+    def run_validation(self, **changes):
+        options = {'now': self.helper.now, 'client_factory': self.helper.factory}
+        options.update(changes)
+        return service.validate_contract(self.config, self.source_id, **options)
+
+    def child(self):
+        return self.helper.runs / service.validation_directory(self.source_id, contract_validation=True)
+
+    def test_v8_preserves_seven_originals_4096_and_exact_evidence_without_resend(self):
+        result = self.run_validation()
+        self.assertEqual(result['status'], 'CHALLENGED_INTERPRETATION')
+        self.assertEqual(result['validation']['purpose'], 'EXPLICIT_CONTRACT_VALIDATION')
+        self.assertEqual(result['validation']['scope'], 'MANUAL_RETAINED_EVIDENCE')
+        self.assertEqual(result['validation']['transport_schema_version'], service.CONTRACT_TRANSPORT_VERSION)
+        self.assertEqual((self.child() / 'packet.json').read_bytes(), (self.parent / 'packet.json').read_bytes())
+        self.assertEqual(result['context']['as_of'], catalyst.stamp(NOW))
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+        self.assertEqual(len(service.validation_chain_hashes(self.child(), self.config)), 8)
+        for role in ('oracle', 'challenge'):
+            intent = service.immutable_read(self.child() / role, 'intent.json')
+            self.assertEqual(intent['schema_version'], service.CONTRACT_TRANSPORT_VERSION)
+            self.assertEqual(intent['wire_request']['max_tokens'], 4096)
+        modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
+        self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.MODEL_TRANSPORT_VERSION)
+        self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
+        self.assertEqual(self.run_validation(), result)
+        self.assertEqual(service.verify(self.config)['attempt_count'], 8)
+        self.assertEqual(len(self.helper.http.calls), 2)
+        self.assertTrue(all(item is False for item in result['authority'].values()))
+        with self.assertRaises(ValueError):
+            service.validate_contract(self.config, result['report_id'], now=self.helper.now,
+                                      client_factory=self.helper.factory)
+        self.assertEqual(len(self.helper.http.calls), 2)
+
+    def test_only_exact_v7_host_rejection_is_eligible_not_http_or_json_failures(self):
+        with self.assertRaises(ValueError):
+            service.validate_contract(self.config, self.fixture.parent_report['report_id'],
+                                      now=self.helper.now, client_factory=self.helper.factory)
+        receipt_path = self.parent / 'oracle/receipt.json'
+        original = json.loads(receipt_path.read_bytes())
+        for failure, status in [('MODELDOCK_HTTP_500', 'FAILED'), ('MODELDOCK_NARRATIVE_JSON_INVALID', 'REJECTED')]:
+            with self.subTest(failure=failure):
+                value = {**original, 'failure_code': failure, 'status': status}
+                value['receipt_sha256'] = sha256_bytes(canonical_json_bytes(
+                    {key: item for key, item in value.items() if key != 'receipt_sha256'}))
+                receipt_path.chmod(0o600)
+                receipt_path.write_bytes(canonical_json_bytes(value))
+                (self.parent / 'report.json').unlink()
+                changed = service.recover_attempt(self.parent, self.config)
+                with self.assertRaises(ValueError):
+                    service.validate_contract(self.config, changed['report_id'], now=self.helper.now,
+                                              client_factory=self.helper.factory)
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_contract_interruption_stays_uncertain_without_resending(self):
+        self.helper.http.exception = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_validation()
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(len(self.helper.http.calls), 1)
+        self.assertEqual(service.validation_chain_hashes(self.parent, self.config), self.originals)
+
+    def test_packet_only_contract_child_stays_uncertain_without_generating(self):
+        service.write_json_once(self.child(), 'packet.json', self.parent_report['context'])
+        self.assertEqual(self.run_validation()['status'], 'UNCERTAIN')
+        self.assertEqual(service.verify(self.config)['abandoned_pre_reservation_count'], 1)
+        self.assertEqual(self.helper.http.calls, [])
+
+    def test_contract_cli_requires_explicit_source_and_exposes_no_force(self):
+        with patch('blackpod_build_week.shadow_station.load_config', return_value=self.config), \
+                patch.object(service, 'validate_contract', return_value={'status': 'FIXTURE_ONLY'}) as call, \
+                patch('sys.stdout', new_callable=StringIO):
+            self.assertEqual(service.main(['validate-contract', '--config', '/private/tmp/config.json',
+                                           '--source-report-id', self.source_id]), 0)
+        call.assert_called_once_with(self.config, self.source_id)
+        for extra in ([], ['--source-report-id', self.source_id, '--force']):
+            with patch('sys.stderr', new_callable=StringIO), self.assertRaises(SystemExit):
+                service.main(['validate-contract', '--config', '/private/tmp/config.json', *extra])
+
+
 if __name__ == '__main__':
     unittest.main()

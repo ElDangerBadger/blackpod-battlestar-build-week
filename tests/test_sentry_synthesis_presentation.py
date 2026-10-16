@@ -81,6 +81,27 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_contract_validation_keeps_original_clock_dissent_and_authority(self):
+        value=fixture()
+        value['report']['validation']={'purpose':'EXPLICIT_CONTRACT_VALIDATION',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v8','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html=render(value)
+        for expected in ('Explicit contract validation','MANUAL_RETAINED_EVIDENCE',
+                         'not a fresh market assessment or a new forecast','CONTESTED','Auto-trading OFF'):
+            self.assertIn(expected,html)
+
+    def test_host_rejection_is_explicit_without_an_accepted_draft(self):
+        value=fixture()
+        value['status']='REJECTED'
+        value['report'].update(status='REJECTED',draft=None,challenge=None)
+        value['report']['provenance']['oracle']={'status':'REJECTED',
+            'failure_code':'MODELDOCK_NARRATIVE_SCHEMA_INVALID','response':None,'provenance':None}
+        html=render(value)
+        for expected in ('Synthesis response rejected','Oracle draft unavailable','MODELDOCK_NARRATIVE_SCHEMA_INVALID'):
+            self.assertIn(expected,html)
+        self.assertNotIn('Original interpretation of the agreement.',html)
+
     def test_output_budget_validation_keeps_original_clock_and_dissent(self):
         value=fixture()
         value['report']['validation']={'purpose':'EXPLICIT_OUTPUT_BUDGET_VALIDATION',

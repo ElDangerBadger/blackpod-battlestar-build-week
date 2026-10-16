@@ -12,7 +12,25 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
-**Latest, October 15 at 6:27 p.m. Los Angeles:** the separately authorized
+**Latest, October 15 at 7:45 p.m. Los Angeles:** one separately recorded v8
+contract validation is running on the same headlines. It adds explicit
+instructions for existing host rules without loosening them; all seven older
+capsules remain unchanged. No accepted pair or content request is claimed.
+The completed offline Sentry suites have 491 passes and two optional skips;
+these fixtures do not establish real model success. See the
+[chronological diagnostic evidence](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+
+**Earlier, October 15 at 7:34 p.m. Los Angeles:** the explicit 4,096-token
+validation passed ModelDock's JSON gate but was rejected by BlackPod's
+stricter response contract (`MODELDOCK_NARRATIVE_SCHEMA_INVALID`). Its exact
+violated rule and execution provenance were not retained; no challenge ran.
+All seven attempts remain retained. Gemma is now the user-approved persistent
+startup default. Manual diagnostic allowance is separate from the unchanged
+background schedule; no old ledger was reset. No accepted pair or
+article-content result is claimed yet. See the
+[chronological diagnostic evidence](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+
+**Earlier, October 15 at 6:27 p.m. Los Angeles:** the separately authorized
 error-code diagnostic returned HTTP 500 with verified code
 `STRUCTURED_OUTPUT_INVALID`. This identifies final JSON/schema rejection but
 does not distinguish truncation from other validation failures. Four failed

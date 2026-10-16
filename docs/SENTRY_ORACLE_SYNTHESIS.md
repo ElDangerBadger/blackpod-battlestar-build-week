@@ -144,7 +144,7 @@ local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
 converted to v2 or resent during migration.
 
-The current transport is **v6**, using the same v2 output contracts, prompts,
+The current background transport is **v6**, using the same v2 output contracts, prompts,
 2,500-token limit, model routing and evidence selection. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
@@ -152,6 +152,28 @@ honors this per-request timeout; its server default is a fallback, not a hard
 90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
 request bytes, identities and version-specific deadline limits still replay.
 Retained v3/v4/v5 configuration hashes and 900/30 identities also replay exactly.
+
+Separately recorded manual validations retain v6's original 2,500-token trial,
+v7's 4,096-token trial, and v8's explicit instructions for the existing strict
+host contract. V8 changes only request guidance: unique theme IDs/citations/
+symbols, direct-mention citation linkage, text formatting, and exact challenge
+coverage. It retains v2 response schemas, the same evidence, 4,096-token ceiling
+and 900/30 deadline. V1–v7 request bytes remain replayable unchanged.
+
+`validate-contract` admits only one deterministic v8 child of a verified,
+terminal v7 `MODELDOCK_NARRATIVE_SCHEMA_INVALID` rejection. It does not assume
+an unavailable cause or retry an uncertain request. An optional
+`local-contract-error.json` on a new v8 rejection contains only a closed host
+reason category and exact request/receipt/self hashes. Unknown exception text,
+rejected content and failed provenance are never retained in that diagnostic.
+Historical failures are not backfilled. Ordinary background delivery stays at
+v6 until a real accepted pair and its evidence review justify promotion.
+
+The user separately approved saving Gemma 4 E4B in ModelDock's per-user startup
+override. Model routing remains owned by ModelDock; BlackPod does not insert
+a model name into its generation requests. See the
+[dated diagnostic and deployment record](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md)
+for actual attempts, fixture coverage, startup evidence and remaining gates.
 
 ### Explicit compatibility validation of a failed v1 attempt
 

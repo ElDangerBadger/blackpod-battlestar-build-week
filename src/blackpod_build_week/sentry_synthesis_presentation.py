@@ -54,7 +54,7 @@ def render(value):
     status = value.get('status', 'UNAVAILABLE')
     labels = {'CHALLENGED_INTERPRETATION': 'Draft and challenge retained', 'DRAFT_ONLY': 'Draft only · challenge missing',
               'NOT_GENERATED': 'No synthesis generated', 'UNAVAILABLE': 'Synthesis unavailable',
-              'FAILED': 'Synthesis attempt failed', 'UNCERTAIN': 'Synthesis state uncertain'}
+              'FAILED': 'Synthesis attempt failed', 'REJECTED': 'Synthesis response rejected', 'UNCERTAIN': 'Synthesis state uncertain'}
     operational = value.get('operational') or {}
     report = value.get('report')
     auto = 'OFF' if value.get('auto_trading') == 'OFF' else 'UNVERIFIED'
@@ -80,7 +80,8 @@ def render(value):
                 'EXPLICIT_ERROR_CODE_DIAGNOSTIC':'Explicit error-code diagnostic',
                 'EXPLICIT_RUNTIME_DIAGNOSTIC':'Explicit runtime diagnostic',
                 'EXPLICIT_MODEL_SELECTION_VALIDATION':'Explicit model-selection validation',
-                'EXPLICIT_OUTPUT_BUDGET_VALIDATION':'Explicit output-budget validation'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
+                'EXPLICIT_OUTPUT_BUDGET_VALIDATION':'Explicit output-budget validation',
+                'EXPLICIT_CONTRACT_VALIDATION':'Explicit contract validation'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
             body += '<article class="warning validation"><h2>' + label + '</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}
