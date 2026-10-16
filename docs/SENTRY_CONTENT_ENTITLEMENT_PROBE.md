@@ -12,7 +12,15 @@ draft, draft-only report or unverified challenge does not satisfy the gate.
 
 ## Validation record
 
-**Latest, October 15 at 7:45 p.m. Los Angeles:** one separately recorded v8
+**Latest, October 15 at 8:00 p.m. Los Angeles:** the v8 request was rejected
+with verified category `TEXT_FORMAT`; its exact failed field is unavailable.
+A separately recorded v9 concise-text validation is running on the same
+headlines, with the strict original response contract unchanged. All eight
+earlier attempts are preserved. No challenge or content result is claimed.
+Gemma remains the saved startup default and selected local model. See the
+[chronological diagnostic evidence](SENTRY_ERROR_CODE_DIAGNOSTIC_2026-10-15.md).
+
+**Earlier, October 15 at 7:45 p.m. Los Angeles:** one separately recorded v8
 contract validation is running on the same headlines. It adds explicit
 instructions for existing host rules without loosening them; all seven older
 capsules remain unchanged. No accepted pair or content request is claimed.

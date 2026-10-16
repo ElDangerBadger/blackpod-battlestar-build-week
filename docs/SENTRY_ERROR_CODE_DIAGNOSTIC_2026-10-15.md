@@ -432,3 +432,90 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
 The disjoint full Sentry suites total **493 run, 491 passed, two skipped**.
 Including the earlier 184 station/pilot/baseline/delivery checks gives **675
 passing BlackPod checks, two skipped**. ModelDock's 256 tests remain separate.
+
+### Actual v8 result
+
+Oracle again ended `REJECTED / MODELDOCK_NARRATIVE_SCHEMA_INVALID` at
+`2026-10-16T02:50:44.281852Z` (October 15, **7:50:44 p.m. PDT**).
+The verified closed diagnostic is **`TEXT_FORMAT`**, stage
+`HOST_RESPONSE_CONTRACT`. It narrows the issue to the existing text checks but
+does not establish which field failed, whether whitespace/control/length was
+responsible, the failed text, native completion counters, or execution-model
+provenance. None are reconstructed. Challenge was not called.
+
+Report: `sentry-synthesis-4177a7278ea1d1d05e460c62264797217d8362947034401cf5eec8b2e13bf5e0`.
+Completion: `2026-10-16T02:50:57.284928Z`.
+Receipt file SHA-256:
+`762f732c1fffbf44860cd7841ce486efe9b0e96fbf02fb6fab75385c6bede1f8`.
+Observation SHA-256:
+`04aea7a75ce6f5035d35ad7bd221644e0c6eb39547abbf53f4de412361901552`.
+All eight attempts/reports verify (six FAILED, two REJECTED), with no
+incomplete or abandoned reservations. All seven ancestor fingerprints match;
+OFF and nine source pins verify. The content destination remains absent.
+
+One further bounded formatting validation is being prepared: request concise,
+single-sentence plain-text fields and retain a closed rule/field refinement
+only for a new rejection. It must preserve the original v2 host contract,
+headlines, token/deadline limits, every failed record, and the content gate.
+This changes news-summary generation instructions, not frozen experiment
+rules, trading policies or execution authority. No accepted brief, successful
+challenge or content result is asserted by this preparation.
+
+### Separately recorded concise-text validation
+
+V9 adds only compact generation instructions: at most two themes and two
+implications per theme, short single-sentence prose, printable ASCII with
+straight quotes/hyphens, and no list formatting or escaped line breaks/tabs.
+These are **instructions, not schema guarantees**. The original strict v2
+host contract, evidence, 4,096-token ceiling and 900/30 deadline are unchanged.
+The new path requires the exact terminal v8 rejection and its verified original
+`TEXT_FORMAT` observation. V8's seven-field diagnostic stays v1. Only new v9
+callback failures may retain diagnostic v2, with closed rule/field values;
+unknown errors remain `OTHER / UNCLASSIFIED`. There is no output repair.
+
+Actual command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python3.11 \
+  -m blackpod_build_week.sentry_synthesis_service validate-text \
+  --config output/blackpod-shadow-station/config.json \
+  --source-report-id sentry-synthesis-4177a7278ea1d1d05e460c62264797217d8362947034401cf5eec8b2e13bf5e0 \
+  > output/sentry-text-validation-2026-10-15-001/validation-result.json
+```
+
+Reserved `2026-10-16T02:59:58.734137Z` (October 15, **7:59:58 p.m. PDT**).
+Capsule `e46384ee963a2d12226170f2c4669da4992c71fbfb7791b260356a4060d9f3db`.
+Oracle delivery reserved `2026-10-16T03:00:16.468347Z`, request
+`sentry-oracle-8cc78860a9d89410604f962475c90e4d976dde0a798ff78d992a8796db00d226`.
+Before delivery, all eight original capsule fingerprints, the v8 sidecar,
+OFF and nine source pins verified. The content destination remained absent.
+Gemma was selected with zero active requests/compute. Only the verified idle
+BlackPod reader was gracefully reloaded; ModelDock was not restarted.
+Private fingerprints/metadata are under
+`output/sentry-text-validation-2026-10-15-001/`.
+
+Pre-delivery offline coverage: **83 transport tests**, **63 core/UI tests**
+and **six focused service tests** passed. The complete non-service Sentry suite
+ran **409 tests, 407 passed, two optional skips**, in 11.176 seconds. These
+overlap and must not be added together. The full service run is recorded below
+only once completed. Independent read-only audit found no blocker and replayed
+the real v8 rejected role/sidecar unchanged under v9. `git diff --check` passed.
+
+The complete service command then passed **97 tests in 366.435 seconds**:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:tests .venv/bin/python3.11 \
+  -m unittest test_sentry_synthesis_service -q
+```
+
+Disjoint full Sentry suites: **506 run, 504 passed, two optional skips**.
+With the earlier 184 station/pilot/baseline/delivery regressions, **688 BlackPod
+checks passed, two skipped**. ModelDock's 256 tests are separate. These are
+offline fixtures, not real inference, article entitlement, or research results.
+
+Static source/installed-runtime inspection also confirmed that profile
+`default` does not override the active model with Qwen or override explicit
+`max_tokens: 4096` with its own default. `RequestRouter._build_context` binds
+the active model's runtime reference/provider; MLX prefers that context model.
+Path resolution has no Qwen fallback. This confirms routing behavior, not
+missing historical per-call provenance. Accepted receipts remain authoritative.

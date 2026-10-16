@@ -169,6 +169,16 @@ rejected content and failed provenance are never retained in that diagnostic.
 Historical failures are not backfilled. Ordinary background delivery stays at
 v6 until a real accepted pair and its evidence review justify promotion.
 
+`validate-text` permits one separately recorded v9 child only after that exact
+v8 rejection has a verified original `TEXT_FORMAT` observation. V9 adds compact
+generation instructions: short, plain-character sentences and fewer themes/
+implications. These are instructions, not new schema guarantees. The strict
+v2 host contract, 4,096-token ceiling and 900/30 deadline stay unchanged.
+Only new v9 rejections may retain diagnostic v2, with a closed rule/field pair;
+the original v8 diagnostic v1 shape and bytes stay unchanged. Unknown fields
+and rules remain explicitly unclassified. No model output is trimmed,
+rewritten, coerced, repaired or accepted after a failed validation.
+
 The user separately approved saving Gemma 4 E4B in ModelDock's per-user startup
 override. Model routing remains owned by ModelDock; BlackPod does not insert
 a model name into its generation requests. See the

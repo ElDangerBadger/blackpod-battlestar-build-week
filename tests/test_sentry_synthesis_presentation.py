@@ -81,6 +81,16 @@ class Tags(HTMLParser):
 
 
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_text_validation_keeps_original_clock_dissent_and_authority(self):
+        value=fixture()
+        value['report']['validation']={'purpose':'EXPLICIT_TEXT_VALIDATION',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v9','scope':'MANUAL_RETAINED_EVIDENCE'}
+        html=render(value)
+        for expected in ('Explicit text-format validation','MANUAL_RETAINED_EVIDENCE',
+                         'not a fresh market assessment or a new forecast','CONTESTED','Auto-trading OFF'):
+            self.assertIn(expected,html)
+
     def test_contract_validation_keeps_original_clock_dissent_and_authority(self):
         value=fixture()
         value['report']['validation']={'purpose':'EXPLICIT_CONTRACT_VALIDATION',

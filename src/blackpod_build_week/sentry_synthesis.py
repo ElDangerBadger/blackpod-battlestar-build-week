@@ -137,10 +137,11 @@ def compose_report(packet,oracle,challenge,completed_at,*,validation=None):
             'EXPLICIT_RUNTIME_DIAGNOSTIC':'blackpod.sentry_synthesis_transport.v5',
             'EXPLICIT_MODEL_SELECTION_VALIDATION':'blackpod.sentry_synthesis_transport.v6',
             'EXPLICIT_OUTPUT_BUDGET_VALIDATION':'blackpod.sentry_synthesis_transport.v7',
-            'EXPLICIT_CONTRACT_VALIDATION':'blackpod.sentry_synthesis_transport.v8'}
+            'EXPLICIT_CONTRACT_VALIDATION':'blackpod.sentry_synthesis_transport.v8',
+            'EXPLICIT_TEXT_VALIDATION':'blackpod.sentry_synthesis_transport.v9'}
         purpose=validation.get('purpose') if isinstance(validation,dict) else None
         manual=purpose in {'EXPLICIT_DEADLINE_VALIDATION','EXPLICIT_ERROR_CODE_DIAGNOSTIC',
-            'EXPLICIT_RUNTIME_DIAGNOSTIC','EXPLICIT_MODEL_SELECTION_VALIDATION','EXPLICIT_OUTPUT_BUDGET_VALIDATION','EXPLICIT_CONTRACT_VALIDATION'}
+            'EXPLICIT_RUNTIME_DIAGNOSTIC','EXPLICIT_MODEL_SELECTION_VALIDATION','EXPLICIT_OUTPUT_BUDGET_VALIDATION','EXPLICIT_CONTRACT_VALIDATION','EXPLICIT_TEXT_VALIDATION'}
         fields={'purpose','parent_report_id','parent_report_sha256','transport_schema_version'}
         if manual:fields.add('scope')
         if (not isinstance(validation,dict)

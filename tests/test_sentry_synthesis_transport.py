@@ -213,7 +213,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
         for key in ('response_format','timeout','profile','capabilities'):
             self.assertEqual(old['wire_request'][key], current[key])
-        self.assertEqual(current['messages'][0]['content'], old['wire_request']['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
+        self.assertEqual(current['messages'][0]['content'], old['wire_request']['messages'][0]['content'] + transport.CONTRACT_GUIDANCE + transport.COMPACT_GUIDANCE)
         self.assertEqual(current['messages'][1:], old['wire_request']['messages'][1:])
         self.assertEqual(old['wire_request']['max_tokens'], 2500)
         self.assertEqual(current['max_tokens'], 4096)
@@ -230,14 +230,14 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         old = json.loads(before['intent.json'])
         current, bindings, configuration = transport._request('oracle', packet(), self.config, None)
         self.assertEqual(old['schema_version'], transport.V4_VERSION)
-        self.assertEqual(transport.VERSION, 'blackpod.sentry_synthesis_transport.v8')
+        self.assertEqual(transport.VERSION, 'blackpod.sentry_synthesis_transport.v9')
         self.assertEqual(old['bindings']['configuration_sha256'], bindings['configuration_sha256'])
         self.assertNotEqual(old['bindings']['transport_schema_version'], bindings['transport_schema_version'])
         self.assertNotEqual(old['wire_request']['metadata'], current['metadata'])
         self.assertEqual(old['configuration'], configuration)
         for key in ('response_format', 'timeout', 'profile', 'capabilities'):
             self.assertEqual(old['wire_request'][key], current[key])
-        self.assertEqual(current['messages'][0]['content'], old['wire_request']['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
+        self.assertEqual(current['messages'][0]['content'], old['wire_request']['messages'][0]['content'] + transport.CONTRACT_GUIDANCE + transport.COMPACT_GUIDANCE)
         self.assertEqual(current['messages'][1:], old['wire_request']['messages'][1:])
         self.assertEqual(old['wire_request']['max_tokens'], 2500)
         self.assertEqual(current['max_tokens'], 4096)
@@ -271,7 +271,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertNotEqual(wire['metadata'], current['metadata'])
         self.assertEqual({k:v for k,v in wire.items() if k not in {'max_tokens', 'metadata', 'messages'}},
                          {k:v for k,v in current.items() if k not in {'max_tokens', 'metadata', 'messages'}})
-        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
+        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE + transport.COMPACT_GUIDANCE)
         self.assertEqual(current['messages'][1:], wire['messages'][1:])
         with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
             self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
@@ -280,13 +280,13 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
         self.assertEqual(len(self.fixture.calls), 1)
 
-    def test_v7_v8_use_4096_and_earlier_versions_keep_2500(self):
+    def test_v7_v8_v9_use_4096_and_earlier_versions_keep_2500(self):
         for version in (transport.LEGACY_VERSION, transport.V2_VERSION, transport.V3_VERSION,
                         transport.V4_VERSION, transport.V5_VERSION, transport.V6_VERSION,
-                        transport.V7_VERSION, transport.VERSION):
+                        transport.V7_VERSION, transport.V8_VERSION, transport.VERSION):
             wire, _, _ = transport._request('oracle', packet(), self.config, None, version=version)
             with self.subTest(version=version):
-                self.assertEqual(wire['max_tokens'], 4096 if version in {transport.V7_VERSION, transport.VERSION} else 2500)
+                self.assertEqual(wire['max_tokens'], 4096 if version in {transport.V7_VERSION, transport.V8_VERSION, transport.VERSION} else 2500)
 
     def test_v6_golden_wire_and_receipt_replay_under_v7_without_resend(self):
         self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
@@ -310,7 +310,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertNotEqual(wire['metadata'], current['metadata'])
         self.assertEqual({k:v for k,v in wire.items() if k not in {'max_tokens', 'metadata', 'messages'}},
                          {k:v for k,v in current.items() if k not in {'max_tokens', 'metadata', 'messages'}})
-        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
+        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE + transport.COMPACT_GUIDANCE)
         self.assertEqual(current['messages'][1:], wire['messages'][1:])
         with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
             self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
@@ -347,7 +347,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
                          'sentry-oracle-4b8b8337dfc9ee7de078dd99559542e6c6251f6ce012aa719cf28cd39b64324a')
         current, bindings, _ = transport._request('oracle', packet(), self.config, None)
         self.assertEqual(current['max_tokens'], wire['max_tokens'])
-        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
+        self.assertEqual(current['messages'][0]['content'], wire['messages'][0]['content'] + transport.CONTRACT_GUIDANCE + transport.COMPACT_GUIDANCE)
         self.assertEqual(current['messages'][1:], wire['messages'][1:])
         self.assertEqual({k:v for k,v in current.items() if k not in {'metadata', 'messages'}},
                          {k:v for k,v in wire.items() if k not in {'metadata', 'messages'}})
@@ -362,7 +362,7 @@ class SentrySynthesisTransportTests(unittest.TestCase):
 
     def test_v8_explicit_guidance_matches_existing_strict_rules_for_both_roles(self):
         for role, original in (('oracle', None), ('challenge', draft())):
-            wire, _, _ = transport._request(role, packet(), self.config, original)
+            wire, _, _ = transport._request(role, packet(), self.config, original, version=transport.V8_VERSION)
             old, _, _ = transport._request(role, packet(), self.config, original, version=transport.V7_VERSION)
             self.assertEqual(wire['messages'][0]['content'], old['messages'][0]['content'] + transport.CONTRACT_GUIDANCE)
             self.assertEqual(wire['response_format'], old['response_format'])
@@ -370,6 +370,58 @@ class SentrySynthesisTransportTests(unittest.TestCase):
                          'HEADLINE in that same theme evidence_ids', 'leading or trailing whitespace',
                          'Unicode formatting characters', 'exactly one review', 'reviews=[]'):
                 self.assertIn(text, wire['messages'][0]['content'])
+
+    def test_v8_golden_wire_failed_receipt_and_v1_sidecar_replay_unchanged_under_v9(self):
+        self.config = ModelDockConfig('http://127.0.0.1:8000', 900, delivery_grace_seconds=30)
+        invalid = draft(); invalid['overview']['text'] = ' leading whitespace'
+        self.fixture = FixtureTransport(invalid)
+        first = self.generate(version=transport.V8_VERSION)
+        self.assertEqual(first['failure_code'], 'MODELDOCK_NARRATIVE_SCHEMA_INVALID')
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        old = json.loads(before['intent.json'])['wire_request']
+        self.assertEqual(sha256_bytes(canonical_json_bytes(old)),
+                         '93d54270542fda0ddcfbef24645695b4a9fd6b7c78fcae13c90e961a6a20afd9')
+        self.assertEqual(first['request_id'],
+                         'sentry-oracle-9b02393a0a0c7bd164f066f7b67cc2aa3f700d624b427af1b27f0ea49c5f5539')
+        self.assertEqual(sha256_bytes(before['receipt.json']),
+                         '3fa2e86903238ddb11dda5d9536bda7cf79abe8b42d9bb4d2290eaa7b4e56ad2')
+        self.assertEqual(sha256_bytes(before['local-contract-error.json']),
+                         '9ace64b1af91d3130178bc7d113de067cf5720dea894827ee76b5eb9b8a65da2')
+        observed = transport.read_local_contract_observation('oracle', packet(), self.root, self.config)
+        self.assertEqual(observed['schema_version'], transport.LOCAL_CONTRACT_OBSERVATION_VERSION)
+        self.assertEqual(observed['reason'], 'TEXT_FORMAT')
+        self.assertNotIn('rule', observed)
+        self.assertNotIn('field', observed)
+        current, _, _ = transport._request('oracle', packet(), self.config, None)
+        self.assertEqual(current['messages'][0]['content'], old['messages'][0]['content'] + transport.COMPACT_GUIDANCE)
+        self.assertEqual(current['messages'][1:], old['messages'][1:])
+        self.assertEqual({k:v for k,v in current.items() if k not in {'metadata', 'messages'}},
+                         {k:v for k,v in old.items() if k not in {'metadata', 'messages'}})
+        with patch.object(transport, '_default_client', side_effect=AssertionError('no replay network')):
+            self.assertEqual(transport.read_role('oracle', packet(), self.root, self.config), first)
+            self.assertEqual(self.generate(), first)
+        self.assertEqual(before, {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_v9_compact_guidance_is_generation_only_with_original_v2_schema_and_budget(self):
+        for role, original in (('oracle', None), ('challenge', draft())):
+            wire, _, _ = transport._request(role, packet(), self.config, original)
+            old, _, _ = transport._request(role, packet(), self.config, original, version=transport.V8_VERSION)
+            self.assertEqual(wire['messages'][0]['content'], old['messages'][0]['content'] + transport.COMPACT_GUIDANCE)
+            self.assertEqual(wire['response_format'], old['response_format'])
+            self.assertEqual(wire['max_tokens'], 4096)
+            for text in ('one short plain-English sentence', 'printable ASCII only', 'straight quotes and hyphens',
+                         'at most two implications', 'most two themes', '300', '80', '180',
+                         'smaller original schema bounds', 'do not repair failed outputs'):
+                self.assertIn(text, wire['messages'][0]['content'])
+            self.assertNotIn(transport.COMPACT_GUIDANCE, old['messages'][0]['content'])
+        # Instruction-only conciseness does not silently change the historical
+        # host contract: valid v2 text remains accepted without rewriting it.
+        value = draft(); value['overview']['text'] = 'Café ' + 'a' * 350
+        self.fixture = FixtureTransport(value)
+        result = self.generate()
+        self.assertEqual(result['status'], 'ACCEPTED')
+        self.assertEqual(result['response']['overview']['text'], value['overview']['text'])
 
     def test_budget_provenance_must_match_exact_reserved_wire_for_current_v5_and_v6(self):
         for version, wrong in ((transport.VERSION, 2500), (transport.V5_VERSION, 4096),
@@ -805,8 +857,8 @@ class SentryLocalContractObservationTests(unittest.TestCase):
                 observed = self.observe()
                 self.assertEqual(observed['reason'], expected)
                 self.assertEqual(observed['stage'], 'HOST_RESPONSE_CONTRACT')
-                self.assertEqual(set(observed), {'schema_version', 'stage', 'reason', 'request_sha256',
-                    'request_id', 'receipt_sha256', 'observation_sha256'})
+                self.assertEqual(set(observed), {'schema_version', 'stage', 'reason', 'rule', 'field',
+                    'request_sha256', 'request_id', 'receipt_sha256', 'observation_sha256'})
                 self.assertLessEqual((self.root / 'local-contract-error.json').stat().st_size,
                                      transport.MAX_LOCAL_CONTRACT_BYTES)
                 self.assertIsNone(result['response'])
@@ -824,6 +876,76 @@ class SentryLocalContractObservationTests(unittest.TestCase):
         observed = transport.read_local_contract_observation('challenge', packet(), self.root, self.config, draft=original)
         self.assertEqual(observed['reason'], 'THEME_COVERAGE')
         self.assertEqual(canonical_json_bytes(original), before)
+
+    def test_v9_exact_static_text_rules_record_closed_field_and_rule_only(self):
+        cases = [(' leading', 'WHITESPACE_OR_BLANK'), ('a' * 601, 'CONTROL_OR_LENGTH'),
+                 ('escaped\nnewline', 'CONTROL_OR_LENGTH'), ('format\u200dcharacter', 'UNICODE_FORMAT'),
+                 ('bad\ud800encoding', 'UNICODE_ENCODING')]
+        for index, (text, rule) in enumerate(cases):
+            self.root = Path(self.tmp.name) / str(index)
+            value = draft(); value['overview']['text'] = text
+            self.fixture = FixtureTransport(value)
+            with self.subTest(rule=rule):
+                self.assertEqual(self.generate()['status'], 'REJECTED')
+                observed = self.observe()
+                self.assertEqual(observed['schema_version'], transport.LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION)
+                self.assertEqual(observed['reason'], 'TEXT_FORMAT')
+                self.assertEqual(observed['rule'], rule)
+                self.assertEqual(observed['field'], 'overview.text')
+                self.assertNotIn(text, (self.root / 'local-contract-error.json').read_text())
+
+    def test_finer_classifier_has_closed_fields_and_unknown_messages_are_unclassified(self):
+        suffixes = [(' must be a nonblank string without surrounding whitespace', 'WHITESPACE_OR_BLANK'),
+                    (' contains unsupported control or line-separator characters', 'UNICODE_FORMAT'),
+                    (' must contain valid Unicode text', 'UNICODE_ENCODING')]
+        for field, maximum in transport.LOCAL_TEXT_FIELDS.items():
+            for suffix, rule in suffixes + [(f' contains unsupported characters or exceeds {maximum} characters',
+                                             'CONTROL_OR_LENGTH')]:
+                message = field + suffix
+                details = transport._local_contract_details(ContractValidationError(message))
+                self.assertEqual(details, {'reason':'TEXT_FORMAT', 'field':field, 'rule':rule})
+                self.assertEqual(transport._local_contract_details(ContractValidationError(message + ' /PRIVATE_VALUE')),
+                                 {'reason':'CONTRACT_REJECTED', 'field':'UNCLASSIFIED', 'rule':'OTHER'})
+        self.assertEqual(transport._local_contract_details(ContractValidationError('duplicate theme_id')),
+                         {'reason':'DUPLICATE_THEME_ID', 'field':'UNCLASSIFIED', 'rule':'OTHER'})
+
+    def test_v2_rule_field_tampering_and_version_downgrade_fail_closed(self):
+        value = draft(); value['overview']['text'] = ' leading'
+        self.fixture = FixtureTransport(value)
+        self.generate()
+        path = self.root / 'local-contract-error.json'
+        original = json.loads(path.read_bytes())
+        cases = []
+        for field, changed_value in (('rule', 'PRIVATE_VALUE'), ('rule', []), ('rule', 'OTHER'),
+                                     ('field', 'overview[0].text'), ('field', 'UNCLASSIFIED'),
+                                     ('field', {}), ('reason', 'CONTRACT_REJECTED'),
+                                     ('schema_version', transport.LOCAL_CONTRACT_OBSERVATION_VERSION)):
+            changed = copy.deepcopy(original); changed[field] = changed_value; cases.append(changed)
+        changed = copy.deepcopy(original); changed.pop('rule'); cases.append(changed)
+        changed = copy.deepcopy(original); changed['message'] = '/PRIVATE_PATH'; cases.append(changed)
+        for changed in cases:
+            changed['observation_sha256'] = sha256_bytes(canonical_json_bytes(
+                {k:v for k,v in changed.items() if k != 'observation_sha256'}))
+            path.chmod(0o600); path.write_bytes(canonical_json_bytes(changed))
+            with self.assertRaises(ValueError):
+                self.observe()
+        self.assertEqual(len(self.fixture.calls), 1)
+
+    def test_v8_v1_observation_rejects_added_detail_fields_or_v2_upgrade(self):
+        value = draft(); value['overview']['text'] = ' leading'
+        self.fixture = FixtureTransport(value)
+        self.generate(version=transport.V8_VERSION)
+        path = self.root / 'local-contract-error.json'
+        original = json.loads(path.read_bytes())
+        changed = dict(original, rule='WHITESPACE_OR_BLANK', field='overview.text')
+        cases = [changed, dict(changed, schema_version=transport.LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION)]
+        for data in cases:
+            data['observation_sha256'] = sha256_bytes(canonical_json_bytes(
+                {k:v for k,v in data.items() if k != 'observation_sha256'}))
+            path.chmod(0o600); path.write_bytes(canonical_json_bytes(data))
+            with self.assertRaises(ValueError):
+                self.observe()
+        self.assertEqual(len(self.fixture.calls), 1)
 
     def test_callback_classifier_never_retains_unknown_or_hostile_exception_strings(self):
         secret = '/PRIVATE_PATH PRIVATE_MODEL_TEXT API_KEY=secret'
@@ -1153,7 +1275,8 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
                 return HttpResponse(500, {}, b'', complete=False)
         for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION,
                                          transport.V3_VERSION, transport.V4_VERSION, transport.V5_VERSION,
-                                         transport.V6_VERSION, transport.V7_VERSION, transport.VERSION)):
+                                         transport.V6_VERSION, transport.V7_VERSION, transport.V8_VERSION,
+                                         transport.VERSION)):
             self.root = Path(self.tmp.name) / str(index)
             result = self.generate(version=version, client_factory=lambda config:
                 ModelDockClient(config, transport=EmptyHttpFailure(), now=lambda: NOW))

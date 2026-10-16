@@ -367,6 +367,20 @@ class SynthesisCoreTests(unittest.TestCase):
             synthesis.compose_report(packet, oracle, challenge, catalyst.stamp(NOW),
                 validation={key:value for key,value in metadata.items() if key!='scope'})
 
+    def test_text_validation_requires_manual_scope_and_v9_link(self):
+        self.store.append(*capture_packet())
+        packet=self.build();oracle,challenge=self.model_results(packet)
+        metadata={'purpose':'EXPLICIT_TEXT_VALIDATION',
+            'parent_report_id':'sentry-synthesis-'+'a'*64,'parent_report_sha256':'b'*64,
+            'transport_schema_version':'blackpod.sentry_synthesis_transport.v9',
+            'scope':'MANUAL_RETAINED_EVIDENCE'}
+        report=synthesis.compose_report(packet,oracle,challenge,catalyst.stamp(NOW),validation=metadata)
+        self.assertEqual(report['context'],packet)
+        self.assertEqual(report['validation'],metadata)
+        for key,value in [('scope','AUTOMATIC'),('transport_schema_version','blackpod.sentry_synthesis_transport.v8')]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                synthesis.compose_report(packet,oracle,challenge,catalyst.stamp(NOW),validation={**metadata,key:value})
+
     def test_contract_validation_requires_manual_scope_and_v8_link(self):
         self.store.append(*capture_packet())
         packet=self.build();oracle,challenge=self.model_results(packet)
