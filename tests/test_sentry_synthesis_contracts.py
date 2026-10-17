@@ -53,6 +53,17 @@ def challenge(original=None):
             "overall_limitations": ["One publisher and incomplete coverage do not establish independent corroboration."]}
 
 
+def keyed_draft():
+    """Authored v3 fixture; production never converts or repairs old output."""
+    original = draft()
+    original['schema_version'] = contracts.KEYED_ORACLE_SCHEMA_VERSION
+    for theme in original['themes']:
+        theme['implications_by_symbol'] = {
+            row['symbol']: {key:value for key,value in row.items() if key != 'symbol'}
+            for row in theme.pop('implications')}
+    return original
+
+
 class SynthesisContractTests(unittest.TestCase):
     def oracle(self, value=None, source=None):
         return contracts.validate_response("oracle", draft() if value is None else value,
@@ -351,18 +362,133 @@ class SynthesisContractTests(unittest.TestCase):
                 self.assertIs(node['additionalProperties'], False)
                 for child in node.get('properties', {}).values(): inspect(child, depth + 1)
             if node['type'] == 'array': inspect(node['items'], depth + 1)
-        for role in ('oracle', 'challenge'):
-            for empty in (False, True):
-                original = draft()
-                if empty: original['themes'] = []
-                schema = contracts.response_schema(role, packet(), original if role == 'challenge' else None)
-                with self.subTest(role=role, empty=empty):
-                    inspect(schema)
-                    self.assertLessEqual(len(json.dumps(schema, ensure_ascii=False).encode('utf-8')), 65536)
-                    for unsupported in ('anyOf', 'oneOf', 'allOf', '$ref', 'pattern', 'format', 'default'):
-                        self.assertNotIn('"' + unsupported + '"', json.dumps(schema))
+        for version in ('v2', 'v3'):
+            for role in ('oracle', 'challenge'):
+                for empty in (False, True):
+                    original = keyed_draft() if version == 'v3' else draft()
+                    if empty: original['themes'] = []
+                    schema = contracts.response_schema(role, packet(), original if role == 'challenge' else None,version=version)
+                    with self.subTest(version=version,role=role,empty=empty):
+                        inspect(schema)
+                        self.assertLessEqual(len(json.dumps(schema, ensure_ascii=False).encode('utf-8')), 65536)
+                        for unsupported in ('anyOf', 'oneOf', 'allOf', '$ref', 'pattern', 'format', 'default',
+                                            'minProperties', 'maxProperties'):
+                            self.assertNotIn('"' + unsupported + '"', json.dumps(schema))
         with self.assertRaises(ContractValidationError):
             contracts.response_schema('oracle', packet(), version='future')
+
+
+class KeyedSynthesisContractTests(unittest.TestCase):
+    def oracle(self, original):
+        return contracts.validate_response('oracle', original, packet())
+
+    def test_v3_original_map_round_trips_without_array_conversion_or_new_symbols(self):
+        original = keyed_draft()
+        del original['themes'][0]['implications_by_symbol']['QQQ']
+        raw = canonical_json_bytes(original)
+        for value in (original, raw, raw.decode()):
+            with self.subTest(kind=type(value).__name__):
+                result = self.oracle(value)
+                self.assertEqual(result, original)
+                self.assertEqual(canonical_json_bytes(result), raw)
+                self.assertNotIn('implications', result['themes'][0])
+                self.assertEqual(set(result['themes'][0]['implications_by_symbol']), {'NVDA'})
+                self.assertNotIn('symbol', result['themes'][0]['implications_by_symbol']['NVDA'])
+
+    def test_v3_values_are_detached_and_display_adapter_preserves_original_paths(self):
+        original = keyed_draft()
+        before = canonical_json_bytes(original)
+        result = self.oracle(original)
+        result['themes'][0]['implications_by_symbol']['NVDA']['trading'] = 'Caller change'
+        self.assertEqual(canonical_json_bytes(original), before)
+        items = list(contracts.implication_items(original['themes'][0]))
+        self.assertEqual([path for path,row in items],
+                         ['implications_by_symbol/NVDA','implications_by_symbol/QQQ'])
+        self.assertEqual([row['symbol'] for path,row in items],['NVDA','QQQ'])
+        items[0][1]['investment'] = 'Display-only change'
+        self.assertEqual(canonical_json_bytes(original), before)
+        old = draft()
+        self.assertEqual(list(contracts.implication_items(old['themes'][0])),
+                         [('implications/0',old['themes'][0]['implications'][0]),
+                          ('implications/1',old['themes'][0]['implications'][1])])
+
+    def test_v3_empty_unknown_lowercase_and_array_maps_fail_without_repair(self):
+        for value in ({}, [], {'AAPL': {}}, {'nvda': {}}, {'NVDA/QQQ': {}}, {True: {}}, None):
+            original = keyed_draft()
+            original['themes'][0]['implications_by_symbol'] = value
+            with self.subTest(value=value), self.assertRaises(ContractValidationError):
+                self.oracle(original)
+
+    def test_v3_map_values_have_exact_fields_and_original_text_bounds(self):
+        for mutation in ('symbol','orders','missing','blank','oversized','invalid-linkage'):
+            original = keyed_draft()
+            row = original['themes'][0]['implications_by_symbol']['NVDA']
+            if mutation == 'symbol': row['symbol'] = 'NVDA'
+            if mutation == 'orders': row['orders'] = []
+            if mutation == 'missing': del row['trading']
+            if mutation == 'blank': row['trading'] = ''
+            if mutation == 'oversized': row['investment'] = 'x'*301
+            if mutation == 'invalid-linkage': row['linkage'] = 'CONFIRMED'
+            with self.subTest(mutation=mutation), self.assertRaises(ContractValidationError):
+                self.oracle(original)
+
+    def test_v3_direct_mention_still_requires_same_theme_symbol_headline(self):
+        for ids,symbol in ((['price-1'],'NVDA'),(['headline-2'],'NVDA'),(['headline-1'],'QQQ')):
+            original = keyed_draft()
+            original['themes'][0]['evidence_ids'] = ids
+            row = original['themes'][0]['implications_by_symbol']['NVDA']
+            original['themes'][0]['implications_by_symbol'] = {symbol: row}
+            with self.subTest(ids=ids,symbol=symbol), self.assertRaises(ContractValidationError):
+                self.oracle(original)
+
+    def test_v3_raw_duplicate_symbol_keys_literal_or_unicode_escape_are_rejected(self):
+        original = keyed_draft()
+        entry = json.dumps(original['themes'][0]['implications_by_symbol']['NVDA'])
+        fragment = '"NVDA": ' + entry
+        for key in ('"NVDA"','"\\u004eVDA"'):
+            raw = json.dumps(original).replace(fragment, fragment+', '+key+': '+entry,1).encode()
+            with self.subTest(key=key), self.assertRaisesRegex(ContractValidationError,'duplicate JSON field'):
+                self.oracle(raw)
+
+    def test_v3_cannot_cross_label_legacy_array_or_mix_representations(self):
+        candidates = []
+        for version in (contracts.LEGACY_ORACLE_SCHEMA_VERSION,contracts.ORACLE_SCHEMA_VERSION):
+            original = keyed_draft();original['schema_version'] = version;candidates.append(original)
+        original = draft();original['schema_version'] = contracts.KEYED_ORACLE_SCHEMA_VERSION;candidates.append(original)
+        original = keyed_draft();original['themes'][0]['implications'] = draft()['themes'][0]['implications'];candidates.append(original)
+        for original in candidates:
+            with self.subTest(version=original['schema_version']), self.assertRaises(ContractValidationError):
+                self.oracle(original)
+
+    def test_v3_schema_has_only_optional_watchlist_keys_with_nonempty_host_gate(self):
+        schema = contracts.response_schema('oracle',packet(),version='v3')
+        self.assertEqual(schema['properties']['schema_version']['const'],contracts.KEYED_ORACLE_SCHEMA_VERSION)
+        theme = schema['properties']['themes']['items']
+        self.assertNotIn('implications', theme['properties'])
+        mapping = theme['properties']['implications_by_symbol']
+        self.assertEqual(set(mapping),{'type','properties','required','additionalProperties'})
+        self.assertEqual(set(mapping['properties']),set(packet()['watchlist']))
+        self.assertEqual(mapping['required'],[])
+        self.assertIs(mapping['additionalProperties'],False)
+        for row in mapping['properties'].values():
+            self.assertEqual(set(row['properties']),{'linkage','trading','investment'})
+            self.assertEqual(set(row['required']),{'linkage','trading','investment'})
+        original = keyed_draft();original['themes'] = []
+        self.assertEqual(self.oracle(original),original)
+
+    def test_v2_challenge_binds_original_v3_map_hash_and_preserves_dissent(self):
+        original = keyed_draft()
+        response = challenge(original)
+        response['reviews'][0]['status'] = 'CONTESTED'
+        validated = contracts.validate_response('challenge',response,packet(),original)
+        self.assertEqual(validated,response)
+        schema = contracts.response_schema('challenge',packet(),original,version='v3')
+        self.assertEqual(schema['properties']['schema_version']['const'],contracts.CHALLENGE_SCHEMA_VERSION)
+        self.assertEqual(schema['properties']['draft_sha256']['const'],sha256_bytes(canonical_json_bytes(original)))
+        self.assertNotEqual(schema['properties']['draft_sha256']['const'],sha256_bytes(canonical_json_bytes(draft())))
+        response['draft_sha256'] = sha256_bytes(canonical_json_bytes(draft()))
+        with self.assertRaises(ContractValidationError):
+            contracts.validate_response('challenge',response,packet(),original)
 
 
 if __name__ == "__main__":

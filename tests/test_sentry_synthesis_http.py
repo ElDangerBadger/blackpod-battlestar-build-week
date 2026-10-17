@@ -1,5 +1,6 @@
 """Actual local HTTP handlers over in-memory connections; no ports or inference."""
 import json
+from copy import deepcopy
 import unittest
 from unittest.mock import patch
 
@@ -133,6 +134,45 @@ class SentrySynthesisHTTPTests(_LocalHTTPMixin, unittest.TestCase):
             code, _, body = self.request('/sentry-synthesis.json')
             self.assertEqual(code, 200)
             self.assertEqual(json.loads(body), self.value)
+
+    def test_keyed_draft_renders_and_json_preserves_original_map_and_dissent(self):
+        from test_sentry_synthesis_presentation import keyed_fixture
+        self.value = keyed_fixture()
+        before = deepcopy(self.value)
+        with patch('blackpod_build_week.sentry_synthesis_transport.generate_role', side_effect=AssertionError('inference forbidden')):
+            code, headers, body = self.request('/sentry-synthesis')
+            self.assertEqual(code, 200)
+            self.assertIn(b'Business impact requires contract details.', body)
+            self.assertIn(b'CONTESTED', body)
+            self.assertEqual(headers['Cache-Control'], 'no-store')
+            code, _, body = self.request('/sentry-synthesis.json')
+            self.assertEqual(code, 200)
+            retained = json.loads(body)
+            self.assertIn('implications_by_symbol', retained['report']['draft']['themes'][0])
+            self.assertNotIn('implications', retained['report']['draft']['themes'][0])
+            self.assertEqual(retained, before)
+        self.assertEqual(self.value, before)
+
+    def test_known_block_label_never_rewrites_original_uncertain_challenge(self):
+        from test_sentry_synthesis_presentation import fixture
+        self.value = fixture()
+        self.value['status'] = 'REJECTED'
+        self.value['report'].update(status='REJECTED', draft=None, challenge=None)
+        self.value['report']['provenance']['oracle'] = {'status': 'REJECTED',
+            'response': None, 'failure_code': 'MODELDOCK_NARRATIVE_SCHEMA_INVALID'}
+        self.value['report']['provenance']['challenge'] = {'status': 'UNCERTAIN',
+            'response': None, 'failure_code': 'ORACLE_NOT_ACCEPTED'}
+        self.value['role_diagnostics'] = {'oracle': {
+            'reason': 'DUPLICATE_SYMBOL', 'rule': 'OTHER', 'field': 'UNCLASSIFIED'}}
+        before = deepcopy(self.value)
+        with patch('blackpod_build_week.sentry_synthesis_transport.generate_role', side_effect=AssertionError('inference forbidden')):
+            code, _, body = self.request('/sentry-synthesis')
+            self.assertEqual(code, 200)
+            self.assertIn('Not run — Oracle draft was rejected/failed'.encode(), body)
+            self.assertIn(b'Duplicate symbol in Oracle implications', body)
+            self.assertIn(b'<dd>UNCERTAIN</dd>', body)
+            self.assertEqual(json.loads(self.request('/sentry-synthesis.json')[2]), before)
+        self.assertEqual(self.value, before)
 
 
 if __name__ == '__main__':

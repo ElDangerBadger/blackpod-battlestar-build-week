@@ -8,6 +8,7 @@ from html import escape
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from .contracts.sentry_synthesis import implication_items
 from .sentry_catalyst_presentation import market_feed_scope, market_tiles, volume_scope
 
 
@@ -49,6 +50,37 @@ def _invalidation(value):
     if isinstance(value, dict):
         return value.get('text') if value.get('status') == 'PROPOSED' else 'Not specified; not invented.'
     return value or 'Not specified; not invented.'
+
+
+def _role_diagnostic(value, role):
+    """Render only the service's separately verified local failure projection."""
+    diagnostics = value.get('role_diagnostics') or {}
+    diagnostic = diagnostics.get(role) if isinstance(diagnostics, dict) else None
+    if not isinstance(diagnostic, dict) or not diagnostic.get('reason'):
+        return ''
+    reason = diagnostic['reason']
+    if reason == 'DUPLICATE_SYMBOL':
+        label = 'Duplicate symbol in Oracle implications' if role == 'oracle' else 'Duplicate symbol in challenge response'
+    else:
+        label = 'Host validation rejected the response'
+    body = '<div class="role-diagnostic"><p><b>' + _text(label) + '</b></p><dl>'
+    for key, title in (('reason', 'Retained reason'), ('rule', 'Validation rule'), ('field', 'Diagnostic field')):
+        if diagnostic.get(key) is not None:
+            body += '<dt>' + title + '</dt><dd>' + _text(diagnostic[key]) + '</dd>'
+    return body + '</dl><p class="muted">This diagnostic describes response validation, not market truth. No missing symbol or model identity is inferred.</p></div>'
+
+
+def _blocked_challenge(report):
+    """Known non-delivery is distinct from an uncertain challenge request."""
+    provenance = report.get('provenance') or {}
+    oracle, challenge = provenance.get('oracle') or {}, provenance.get('challenge') or {}
+    if (report.get('challenge') is None and report.get('draft') is None
+            and challenge.get('failure_code') == 'ORACLE_NOT_ACCEPTED'):
+        if oracle.get('status') in {'REJECTED', 'FAILED'}:
+            return 'Not run — Oracle draft was rejected/failed'
+        if oracle.get('status') == 'UNCERTAIN':
+            return 'Not run — Oracle draft was not accepted'
+    return None
 
 
 def _current_market_context(projection):
@@ -176,7 +208,8 @@ def render(value):
                 'EXPLICIT_MODEL_SELECTION_VALIDATION':'Explicit model-selection validation',
                 'EXPLICIT_OUTPUT_BUDGET_VALIDATION':'Explicit output-budget validation',
                 'EXPLICIT_CONTRACT_VALIDATION':'Explicit contract validation',
-                'EXPLICIT_TEXT_VALIDATION':'Explicit text-format validation'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
+                'EXPLICIT_TEXT_VALIDATION':'Explicit text-format validation',
+                'EXPLICIT_SYMBOL_VALIDATION':'Explicit symbol-keyed validation'}.get(validation.get('purpose'),'Explicit v2 compatibility validation')
             body += '<article class="warning validation"><h2>' + label + '</h2><p>Retained inputs from ' + _text(_when(packet.get('as_of'))) + '. This separately recorded check uses the original saved headlines. It is not a fresh market assessment or a new forecast.</p><p>The failed parent attempt is preserved. Validation completion time is shown separately below.</p></article>'
         quality = packet.get('quality') or {}
         source = packet.get('source') or {}
@@ -249,7 +282,7 @@ def render(value):
         body += '<h2>Oracle · original interpretation</h2><p class="muted">Model-generated reasoning from the retained packet. Each implication remains an unverified interpretation.</p>'
         if not draft:
             failure = ((report.get('provenance') or {}).get('oracle') or {}).get('failure_code')
-            body += '<article class="card warning"><h3>Oracle draft unavailable</h3><p>No interpretation is substituted. A failed or missing response cannot authorize action.</p><p>Processing result: ' + _text(failure) + '</p></article>'
+            body += '<article class="card warning"><h3>Oracle draft unavailable</h3><p>No interpretation is substituted. A failed or missing response cannot authorize action.</p><p>Processing result: ' + _text(failure) + '</p>' + _role_diagnostic(value, 'oracle') + '</article>'
         else:
             overview = draft.get('overview') or {}
             body += '<article class="card"><h3>What picture is emerging?</h3><p>' + _text(overview.get('text')) + '</p>' + citations(overview.get('evidence_ids')) + '</article>'
@@ -258,14 +291,18 @@ def render(value):
                 body += '<p>No themes were supported in the model draft. This does not establish an absence of market events.</p>'
             for theme in themes:
                 body += '<article class="card"><span class="eyebrow">' + _text(theme.get('theme_id')) + ' · ORIGINAL DRAFT</span><h3>' + _text(theme.get('title')) + '</h3><p>' + _text(theme.get('interpretation')) + '</p>' + citations(theme.get('evidence_ids'))
-                for implication in theme.get('implications') or []:
+                for _, implication in implication_items(theme):
                     linkage = {'DIRECT_MENTION': 'Provider symbol tag · textual connection unverified', 'HYPOTHETICAL_READ_THROUGH': 'Hypothetical read-through · not established'}.get(implication.get('linkage'), 'Linkage unavailable')
                     body += '<div class="implication"><h4>' + _text(implication.get('symbol')) + ' <small>' + _text(linkage) + '</small></h4><div class="grid"><section><b>Trading lens</b><p>' + _text(implication.get('trading')) + '</p></section><section><b>Investment lens</b><p>' + _text(implication.get('investment')) + '</p></section></div></div>'
                 body += '<div class="alternative"><b>Original alternative explanation</b><p>' + _text(theme.get('alternative')) + '</p></div><p><b>Proposed invalidation:</b> ' + _text(_invalidation(theme.get('proposed_invalidation'))) + '</p><p><b>Proposed review horizon:</b> ' + _text(theme.get('proposed_review_horizon', 'UNSPECIFIED')) + ' · not an approved investment horizon</p></article>'
             body += '<details class="card" open><summary>Unresolved questions</summary>' + _list(draft.get('unresolved_questions') or [], 'No questions recorded in the draft; this does not mean the evidence is complete.') + '</details>'
-        body += '<h2>Separate challenge · dissent retained</h2><p class="muted">A separate review pass of the same evidence and original draft. This is not independent-source or independent-model consensus. EVIDENCE_BOUND means a reviewer assessment, not verified truth or approval.</p>'
+        blocked = _blocked_challenge(report)
+        body += '<h2>Separate challenge · dissent retained</h2><p class="muted">' + ('The Oracle acceptance gate blocked this role before a challenge request. ' if blocked else 'A separate review pass of the same evidence and original draft. ') + 'This is not independent-source or independent-model consensus. EVIDENCE_BOUND means a reviewer assessment, not verified truth or approval.</p>'
         if not challenge:
-            body += '<article class="card warning"><h3>Challenge unavailable · review incomplete</h3><p>The original draft remains visible as a draft. No approval, consensus or substitute challenge is inferred.</p></article>'
+            if blocked:
+                body += '<article class="card warning"><h3>' + _text(blocked) + '</h3><p>The challenge request was blocked because Oracle did not produce an accepted draft. No challenge review pass took place. Original processing status and failure code remain in model provenance.</p></article>'
+            else:
+                body += '<article class="card warning"><h3>Challenge unavailable · review incomplete</h3><p>No approval, consensus or substitute challenge is inferred. Any uncertain request remains uncertain; check retained model provenance.</p>' + _role_diagnostic(value, 'challenge') + '</article>'
         else:
             for review in challenge.get('reviews') or []:
                 body += '<article class="card dissent"><span class="eyebrow">' + _text(review.get('theme_id')) + ' · REVIEWER ASSESSMENT</span><h3>' + _text(review.get('status')) + '</h3><p>' + _text(review.get('reason')) + '</p>' + citations(review.get('evidence_ids')) + '<b>Reviewer alternative</b><p>' + _text(review.get('alternative')) + '</p><b>Missing evidence</b>' + _list(review.get('missing_evidence') or [], 'No additional evidence recorded by this reviewer; completeness is not established.') + '</article>'

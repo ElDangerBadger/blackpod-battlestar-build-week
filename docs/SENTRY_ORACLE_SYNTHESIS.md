@@ -36,6 +36,11 @@ new autonomous decision agents.
   connection is explicitly labeled hypothetical read-through.
 - **Challenge:** one review per theme, preserving disagreement, alternatives,
   missing evidence and unresolved assumptions. It cannot approve an action.
+  If Oracle is rejected or fails, a known `ORACLE_NOT_ACCEPTED` placeholder is
+  displayed as **Not run**, with the original status/code retained in provenance.
+  A genuinely uncertain challenge request remains uncertain. Verified local
+  rejection diagnostics explain known format failures without inventing a ticker
+  or missing model identity.
 - **Review horizon and invalidation:** proposed research questions, not a new
   registered experiment. Unknown horizons remain unspecified; absent
   invalidation conditions remain absent.
@@ -65,7 +70,7 @@ configuration or reuse the old mission candidate workflow.
 | Model work | At most two calls: Oracle draft, then challenge if the draft passes validation |
 | Background schedule | Weekdays, 05:00–17:00 America/Los_Angeles; at least sixty minutes between ordinary attempts; maximum four ordinary attempts per LA day |
 | Explicit manual diagnostics | Separate from background hours/daily/spacing limits after the user's October 15 authorization; one serialized, deadline-bound delivery per deterministic identity, with no automatic resends |
-| Timeout | Current v9 and retained v3–v8 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
+| Timeout | Current v10 and retained v3–v9 per-call bound: at most 900 seconds plus 30 seconds delivery grace; historical v1/v2 retain their original 120/10 bounds |
 | Activation | Separate synthesis control; disabled until explicitly enabled after validation |
 | Archive | At most 256 retained attempt/abandoned capsules and 64 MiB; stop for review, never auto-delete |
 
@@ -150,22 +155,32 @@ mentions, mismatched draft hashes and missing or duplicate theme reviews.
 Strings and arrays are bounded. Strict validation establishes structure and
 provenance bindings; it cannot verify semantic truth or factual entailment.
 
-Current model response contracts are **v2**. An unspecified invalidation is an
+Ordinary background responses use **Oracle v3** and **challenge v2**. An unspecified invalidation is an
 explicit `{"status":"UNSPECIFIED","text":""}`; a proposed condition requires
 `PROPOSED` and nonblank text. This avoids nullable unions unsupported by the
 local ModelDock schema dialect. Historical v1 attempts replay with their
 original wire schema, response shape and identities. No retained record is
-converted to v2 or resent during migration.
+converted or resent during migration.
 
-The current background transport is **v9**, using the same strict v2 output
-contracts, model routing and evidence selection, with a 4,096-token ceiling and
+The separately authorized `validate-symbols` diagnostic requests **Oracle v3**
+through transport **v10**, using a watchlist-keyed `implications_by_symbol` map
+per theme. Empty maps, unknown symbols and duplicate raw JSON keys remain
+rejections; no output repair is introduced. The original accepted map is retained,
+and the v2 challenge hashes that original draft. Future background work also uses
+v10; historical attempts retain their reserved versions. The real saved-packet
+check ended with a connection failure after ModelDock went offline, so real-model
+contract acceptance remains unverified. See the [October 17 symbol-validation record](SENTRY_SYMBOL_VALIDATION_2026-10-17.md)
+for the exact failed parent, command, preserved-history checks and actual results.
+
+The current background transport is **v10**, using the symbol-keyed Oracle contract
+with unchanged model routing and evidence selection, a 4,096-token ceiling and
 explicit compact/host-contract generation guidance. It binds configuration
 into its correlation identity and permits a 900-second request budget with
 30 seconds of delivery grace for slower local hardware. ModelDock already
 honors this per-request timeout; its server default is a fallback, not a hard
 90-second cap. No ModelDock appliance modification is needed. Retained v1/v2
 request bytes, identities and version-specific deadline limits still replay.
-Retained v3/v4/v5 configuration hashes and 900/30 identities also replay exactly.
+Retained v3–v9 configuration hashes and 900/30 identities also replay exactly.
 
 Separately recorded manual validations retain v6's original 2,500-token trial,
 v7's 4,096-token trial, and v8's explicit instructions for the existing strict
@@ -190,7 +205,7 @@ v8 rejection has a verified original `TEXT_FORMAT` observation. V9 adds compact
 generation instructions: short, plain-character sentences and fewer themes/
 implications. These are instructions, not new schema guarantees. The strict
 v2 host contract, 4,096-token ceiling and 900/30 deadline stay unchanged.
-Only new v9 rejections may retain diagnostic v2, with a closed rule/field pair;
+New v9/v10 rejections may retain diagnostic v2, with a closed rule/field pair;
 the original v8 diagnostic v1 shape and bytes stay unchanged. Unknown fields
 and rules remain explicitly unclassified. No model output is trimmed,
 rewritten, coerced, repaired or accepted after a failed validation.

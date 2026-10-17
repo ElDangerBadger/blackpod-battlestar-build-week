@@ -18,6 +18,7 @@ from .mission_request import ContractValidationError, parse_strict_json_object_b
 LEGACY_ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v1"
 LEGACY_CHALLENGE_SCHEMA_VERSION = "blackpod.sentry_challenge.v1"
 ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v2"
+KEYED_ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v3"
 CHALLENGE_SCHEMA_VERSION = "blackpod.sentry_challenge.v2"
 MAX_RESPONSE_BYTES = 64 * 1024
 ROLES = frozenset({"oracle", "challenge"})
@@ -102,14 +103,16 @@ def _parse(value):
 
 def _oracle(value, watchlist, evidence):
     result = _object(value, {"schema_version", "overview", "themes", "unresolved_questions"}, "Oracle draft")
-    if result["schema_version"] not in {ORACLE_SCHEMA_VERSION, LEGACY_ORACLE_SCHEMA_VERSION}:
+    if result["schema_version"] not in {ORACLE_SCHEMA_VERSION, LEGACY_ORACLE_SCHEMA_VERSION, KEYED_ORACLE_SCHEMA_VERSION}:
         raise ContractValidationError("unsupported Oracle draft schema_version")
+    keyed = result["schema_version"] == KEYED_ORACLE_SCHEMA_VERSION
     overview = _object(result["overview"], {"text", "evidence_ids"}, "overview")
     result["overview"] = {"text": _text(overview["text"], "overview.text", 600),
                           "evidence_ids": _citations(overview["evidence_ids"], evidence, "overview.evidence_ids")}
     themes, seen = [], set()
     for row in _array(result["themes"], "themes", 0, 3):
-        theme = _object(row, {"theme_id", "title", "interpretation", "evidence_ids", "implications",
+        implication_field = "implications_by_symbol" if keyed else "implications"
+        theme = _object(row, {"theme_id", "title", "interpretation", "evidence_ids", implication_field,
                               "alternative", "proposed_invalidation", "proposed_review_horizon"}, "theme")
         identity = _enum(theme["theme_id"], THEME_IDS, "theme_id")
         if identity in seen:
@@ -118,10 +121,19 @@ def _oracle(value, watchlist, evidence):
         for field, maximum in (("title", 120), ("interpretation", 600), ("alternative", 400)):
             theme[field] = _text(theme[field], "theme." + field, maximum)
         theme["evidence_ids"] = _citations(theme["evidence_ids"], evidence, "theme.evidence_ids", 6)
-        implications, symbols = [], set()
-        for entry in _array(theme["implications"], "implications", 1, 10):
-            implication = _object(entry, {"symbol", "linkage", "trading", "investment"}, "implication")
-            symbol = _enum(implication["symbol"], set(watchlist), "implication.symbol")
+        implications, symbols = ({} if keyed else []), set()
+        if keyed:
+            mapping = theme[implication_field]
+            if not isinstance(mapping, Mapping) or not 1 <= len(mapping) <= len(watchlist):
+                raise ContractValidationError("implications_by_symbol must contain one or more watchlist symbols")
+            entries = mapping.items()
+        else:
+            entries = ((entry.get("symbol") if isinstance(entry, Mapping) else None, entry)
+                       for entry in _array(theme[implication_field], "implications", 1, 10))
+        for symbol, entry in entries:
+            implication = _object(entry, {"linkage", "trading", "investment"} if keyed else
+                                  {"symbol", "linkage", "trading", "investment"}, "implication")
+            symbol = _enum(symbol, set(watchlist), "implication.symbol")
             if symbol in symbols:
                 raise ContractValidationError("duplicate implication symbol")
             symbols.add(symbol)
@@ -132,8 +144,11 @@ def _oracle(value, watchlist, evidence):
                 raise ContractValidationError("DIRECT_MENTION requires cited headline evidence for that symbol")
             implication["trading"] = _text(implication["trading"], "implication.trading", 300)
             implication["investment"] = _text(implication["investment"], "implication.investment", 300)
-            implications.append(implication)
-        theme["implications"] = implications
+            if keyed:
+                implications[symbol] = implication
+            else:
+                implications.append(implication)
+        theme[implication_field] = implications
         if result["schema_version"] == LEGACY_ORACLE_SCHEMA_VERSION:
             if theme["proposed_invalidation"] is not None:
                 theme["proposed_invalidation"] = _text(theme["proposed_invalidation"], "proposed_invalidation", 400)
@@ -151,6 +166,30 @@ def _oracle(value, watchlist, evidence):
     result["themes"] = themes
     result["unresolved_questions"] = _texts(result["unresolved_questions"], "unresolved_questions", 5, 250)
     return result
+
+
+def implication_items(theme):
+    """Yield detached display rows and original relative JSON-pointer segments.
+
+    Call only with a validated theme. This adapter never changes or persists
+    the original draft: v3 maps remain maps and their original hash is retained.
+    Symbol syntax excludes JSON-pointer escape characters. Map display order is
+    canonical so reparsing retained JSON cannot change a catalog's ordering.
+    """
+    if not isinstance(theme, Mapping) or ("implications" in theme) == ("implications_by_symbol" in theme):
+        raise ContractValidationError("theme must contain exactly one implication representation")
+    if "implications_by_symbol" in theme:
+        mapping = theme["implications_by_symbol"]
+        if (not isinstance(mapping, Mapping) or not 1 <= len(mapping) <= 10
+                or any(not isinstance(symbol, str) or not _SYMBOL.fullmatch(symbol) for symbol in mapping)):
+            raise ContractValidationError("invalid keyed implication display source")
+        for symbol in sorted(mapping):
+            row = _object(mapping[symbol], {"linkage", "trading", "investment"}, "implication")
+            yield "implications_by_symbol/" + symbol, {"symbol": symbol, **row}
+    else:
+        for index, entry in enumerate(_array(theme["implications"], "implications", 1, 10)):
+            row = _object(entry, {"symbol", "linkage", "trading", "investment"}, "implication")
+            yield "implications/" + str(index), row
 
 
 def _challenge(value, evidence, draft):
@@ -213,13 +252,17 @@ def _array_schema(items, maximum, minimum=0):
 
 
 def response_schema(role, packet, draft=None, *, version="v2"):
-    """ModelDock-compatible v2 schema; v1 remains frozen for historical replay.
+    """Versioned ModelDock-compatible schemas; v1/v2 remain frozen for replay.
 
     V2 uses an explicit status/text object instead of a nullable union, because
     the local appliance's documented schema subset rejects combinators.
-    No defaults or missing values are inserted by either version.
+    V3 keys implications by optional watchlist symbols. ModelDock's subset has
+    no minProperties, so the host enforces at least one key per theme. Neither
+    layer synthesizes absent symbols or repairs rejected output. Raw JSON must
+    reach a duplicate-key-rejecting parser; a previously collapsed mapping
+    cannot prove that its upstream serialization contained no repeated keys.
     """
-    _enum(version, {"v1", "v2"}, "response schema version")
+    _enum(version, {"v1", "v2", "v3"}, "response schema version")
     _enum(role, ROLES, "role")
     watchlist, evidence = _packet(packet)
     citations = lambda maximum=None: _array_schema(
@@ -227,18 +270,27 @@ def response_schema(role, packet, draft=None, *, version="v2"):
     if role == "oracle":
         if draft is not None:
             raise ContractValidationError("Oracle response must not receive another draft")
+        if version == "v3":
+            implications = {"type": "object", "additionalProperties": False,
+                "properties": {symbol: _object_schema({
+                    "linkage": {"type": "string", "enum": sorted(LINKAGES)},
+                    "trading": _text_schema(300), "investment": _text_schema(300),
+                }) for symbol in watchlist}, "required": []}
+        else:
+            implications = _array_schema(_object_schema({
+                "symbol": {"type": "string", "enum": watchlist},
+                "linkage": {"type": "string", "enum": sorted(LINKAGES)},
+                "trading": _text_schema(300), "investment": _text_schema(300),
+            }), 10, 1)
         return _object_schema({
-            "schema_version": {"type": "string", "const": LEGACY_ORACLE_SCHEMA_VERSION if version == "v1" else ORACLE_SCHEMA_VERSION},
+            "schema_version": {"type": "string", "const": LEGACY_ORACLE_SCHEMA_VERSION if version == "v1" else
+                               KEYED_ORACLE_SCHEMA_VERSION if version == "v3" else ORACLE_SCHEMA_VERSION},
             "overview": _object_schema({"text": _text_schema(600), "evidence_ids": citations()}),
             "themes": _array_schema(_object_schema({
                 "theme_id": {"type": "string", "enum": sorted(THEME_IDS)},
                 "title": _text_schema(120), "interpretation": _text_schema(600),
                 "evidence_ids": citations(6),
-                "implications": _array_schema(_object_schema({
-                    "symbol": {"type": "string", "enum": watchlist},
-                    "linkage": {"type": "string", "enum": sorted(LINKAGES)},
-                    "trading": _text_schema(300), "investment": _text_schema(300),
-                }), 10, 1),
+                "implications_by_symbol" if version == "v3" else "implications": implications,
                 "alternative": _text_schema(400),
                 "proposed_invalidation": ({"anyOf": [{"type": "null"}, _text_schema(400)]} if version == "v1" else
                     _object_schema({"status": {"type": "string", "enum": ["UNSPECIFIED", "PROPOSED"]},

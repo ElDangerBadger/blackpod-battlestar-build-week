@@ -33,6 +33,17 @@ def recompose(report, *, draft=None, challenge=None):
                                     report['completed_at'])
 
 
+def keyed_report(report):
+    draft = deepcopy(report['draft'])
+    draft['schema_version'] = 'blackpod.sentry_oracle_draft.v3'
+    for theme in draft['themes']:
+        rows = theme.pop('implications')
+        theme['implications_by_symbol'] = {
+            row['symbol']: {key: value for key, value in row.items() if key != 'symbol'}
+            for row in rows}
+    return recompose(report, draft=draft)
+
+
 def review_fixture(report, **changes):
     evidence = [row['evidence_id'] for row in report['context']['evidence']
                 if row['kind'] == 'HEADLINE']
@@ -80,6 +91,47 @@ class NarrativeFixture(unittest.TestCase):
 
 
 class SentryNarrativeContractTests(NarrativeFixture):
+    def test_legacy_catalog_mechanical_and_evaluation_bytes_match_v1_baseline(self):
+        # Recorded against the previous HEAD implementation before this v3
+        # adapter. Existing immutable evaluations must keep their exact bytes.
+        projections = [(narrative.claim_catalog(self.report),
+                        'eced277314913083b1b410c7c17952325a29334fb76a723973cbb27b35f3292b'),
+                       (narrative.mechanical_review(self.report),
+                        '9d5975e586cb5e9d948eb1a9c6cf63405f0259b014122bcae4fbc4cdcc47d670'),
+                       (narrative.build_evaluation(self.report, self.review),
+                        'e924bb44b25316ffed3bfcc64d7ce55fba9acde637cd60b02ca6538cdaa50da0')]
+        for value, expected in projections:
+            self.assertEqual(sha256_bytes(canonical_json_bytes(value)), expected)
+        self.assertEqual(narrative.evaluation_id(self.review),
+            'narrative-eval-5c95e5bd903bb9df874d91e32e2b43180802b493eeb8cb033eaf776c6cca987d')
+
+    def test_keyed_claim_catalog_uses_exact_original_symbol_paths_and_prose(self):
+        report = keyed_report(self.report)
+        before = canonical_json_bytes(report)
+        claims = narrative.claim_catalog(report)
+        expected_paths = {f'/draft/themes/0/implications_by_symbol/SPY/{lens}'
+                          for lens in ('trading', 'investment')}
+        self.assertEqual({row['claim_path'] for row in claims}, expected_paths)
+        for row in claims:
+            self.assertEqual(row['symbol'], 'SPY')
+            self.assertEqual(row['claim_text'],
+                report['draft']['themes'][0]['implications_by_symbol']['SPY'][row['lens']])
+        self.assertEqual(canonical_json_bytes(report), before)
+        self.assertNotIn('implications', report['draft']['themes'][0])
+
+    def test_keyed_review_binds_original_source_and_rejects_normalized_array_paths(self):
+        report = keyed_report(self.report)
+        before = deepcopy(report)
+        review = review_fixture(report)
+        result = narrative.build_evaluation(report, review)
+        self.assertEqual(report, before)
+        self.assertEqual(result['source_report_sha256'], sha256_bytes(canonical_json_bytes(before)))
+        self.assertTrue(all('/implications_by_symbol/SPY/' in row['claim_path']
+                            for row in result['claims']))
+        review['claims'][0]['claim_path'] = '/draft/themes/0/implications/0/trading'
+        with self.assertRaises(ValueError):
+            narrative.validate_review(review, report)
+
     def test_review_is_strict_detached_and_deterministic(self):
         before = deepcopy((self.review, self.report))
         validated = narrative.validate_review(self.review, self.report)
@@ -260,6 +312,22 @@ class SentryNarrativeContractTests(NarrativeFixture):
 
 
 class SentryNarrativeMechanicalTests(NarrativeFixture):
+    def test_keyed_mechanical_observations_retain_symbol_pointer_and_dissent(self):
+        report = keyed_report(self.report)
+        draft = deepcopy(report['draft'])
+        row = draft['themes'][0]['implications_by_symbol']['SPY']
+        row['trading'] = 'Materiality remains unknown. Materiality remains unknown.'
+        row['investment'] = 'UNSPECIFIED'
+        report = recompose(report, draft=draft)
+        before = deepcopy(report)
+        result = narrative.mechanical_review(report)
+        repeated = [row for row in result['findings'] if row['code'] == 'REPEATED_SENTENCE']
+        self.assertEqual(repeated[0]['paths'], ['/draft/themes/0/implications_by_symbol/SPY/trading'])
+        self.assertEqual(result['unspecified']['investment_count'], 1)
+        self.assertEqual(result['coverage']['mentioned_symbols'], ['SPY'])
+        self.assertEqual(report['challenge'], before['challenge'])
+        self.assertEqual(report, before)
+
     def test_coverage_is_observed_input_metadata_without_truth_judgments(self):
         result = narrative.mechanical_review(self.report)
         self.assertEqual(result['coverage'], {

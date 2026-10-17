@@ -36,6 +36,8 @@ V6_VERSION = 'blackpod.sentry_synthesis_transport.v6'
 V7_VERSION = 'blackpod.sentry_synthesis_transport.v7'
 V8_VERSION = 'blackpod.sentry_synthesis_transport.v8'
 VERSION = 'blackpod.sentry_synthesis_transport.v9'
+V9_VERSION = VERSION
+SYMBOL_VERSION = 'blackpod.sentry_synthesis_transport.v10'
 LEGACY_MAX_TOKENS = 2500
 MAX_TOKENS = 4096
 MAX_FILE_BYTES = 1024 * 1024
@@ -46,7 +48,7 @@ MAX_ERROR_BYTES = 8192
 LOCAL_CONTRACT_OBSERVATION_VERSION = 'blackpod.sentry_local_contract_observation.v1'
 LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION = 'blackpod.sentry_local_contract_observation.v2'
 LOCAL_CONTRACT_V1_TRANSPORT_VERSIONS = frozenset({'blackpod.sentry_synthesis_transport.v8'})
-LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS = frozenset({'blackpod.sentry_synthesis_transport.v9'})
+LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS = frozenset({V9_VERSION, SYMBOL_VERSION})
 LOCAL_CONTRACT_TRANSPORT_VERSIONS = LOCAL_CONTRACT_V1_TRANSPORT_VERSIONS | LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS
 MAX_LOCAL_CONTRACT_BYTES = 1024
 LOCAL_CONTRACT_REASONS = frozenset({'DUPLICATE_CITATIONS', 'DUPLICATE_THEME_ID', 'DUPLICATE_SYMBOL',
@@ -104,6 +106,15 @@ COMPACT_GUIDANCE = (
     'characters, titles at most 80 characters, and all other prose strings at most 180 characters. '
     'Respect any smaller original schema bounds. These are generation instructions only: '
     'do not repair failed outputs or invent missing facts. '
+)
+KEYED_SYMBOL_GUIDANCE = (
+    ' Oracle v3 structure: each theme must use implications_by_symbol, an object keyed only by '
+    'the exact supplied watchlist symbols. Include at least one relevant symbol per theme and '
+    'at most two; omit symbols without a supported or explicitly hypothetical implication. '
+    'Each symbol value has exactly linkage, trading and investment; do not repeat a symbol key '
+    'or include a symbol field inside its value. Do not emit the legacy implications array, '
+    'placeholder symbols or duplicate JSON keys. If no theme can meet these rules, use themes=[]. '
+    'The challenge must review and hash the unchanged original Oracle v3 map, not an array conversion. '
 )
 
 
@@ -277,14 +288,14 @@ def _contracts():
 
 
 def _configuration(config, *, version=VERSION):
-    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION} else (120, 10)
+    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION} else (120, 10)
     if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
         raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION}:
         raise ValueError('unsupported synthesis transport version')
     configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
@@ -305,7 +316,7 @@ def _request(role, packet, config, draft, *, version=VERSION):
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
     if version != LEGACY_VERSION:
         bindings['transport_schema_version'] = version
-    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION}:
+    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION}:
         bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()
@@ -319,14 +330,17 @@ def _request(role, packet, config, draft, *, version=VERSION):
         system += (' For proposed_invalidation, explicitly use {"status":"UNSPECIFIED","text":""} '
                    'when no condition is proposed, or {"status":"PROPOSED","text":"a nonblank condition"}. '
                    'UNSPECIFIED must have empty text; PROPOSED must have nonblank text. Never invent a missing historical condition.')
-    if version in {V8_VERSION, VERSION}:
+    if version in {V8_VERSION, VERSION, SYMBOL_VERSION}:
         system += CONTRACT_GUIDANCE
-    if version == VERSION:
+    if version in {VERSION, SYMBOL_VERSION}:
         system += COMPACT_GUIDANCE
+    if version == SYMBOL_VERSION:
+        system += KEYED_SYMBOL_GUIDANCE
     wire = {'profile': config.profile, 'capabilities': ['text'],
-        'response_format': {'type': 'json_schema', 'schema': schema_builder(role, packet, draft=draft, version='v1' if version == LEGACY_VERSION else 'v2')},
+        'response_format': {'type': 'json_schema', 'schema': schema_builder(role, packet, draft=draft,
+            version='v1' if version == LEGACY_VERSION else 'v3' if version == SYMBOL_VERSION else 'v2')},
         'timeout': max(1, math.ceil(config.timeout_seconds)),
-        'max_tokens': MAX_TOKENS if version in {V7_VERSION, V8_VERSION, VERSION} else LEGACY_MAX_TOKENS,
+        'max_tokens': MAX_TOKENS if version in {V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION} else LEGACY_MAX_TOKENS,
         'messages': [{'role': 'system', 'content': system},
                      {'role': 'user', 'content': canonical_json_bytes(evidence).decode('utf-8')}],
         'metadata': {'blackpod_correlation': {'mission_id': context, 'request_id': request_id, 'symbol': 'WATCHLIST', 'run_mode': 'LIVE'}}}

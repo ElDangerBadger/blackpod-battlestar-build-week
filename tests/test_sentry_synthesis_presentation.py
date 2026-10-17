@@ -122,7 +122,113 @@ def evaluated_fixture():
     return value
 
 
+def keyed_fixture():
+    """Authored v3 response remains symbol keyed in the displayed source."""
+    value = fixture()
+    draft = value['report']['draft']
+    draft['schema_version'] = 'blackpod.sentry_oracle_draft.v3'
+    for theme in draft['themes']:
+        rows = theme.pop('implications')
+        theme['implications_by_symbol'] = {
+            row['symbol']: {key: content for key, content in row.items() if key != 'symbol'}
+            for row in rows}
+        theme['proposed_invalidation'] = {'status': 'UNSPECIFIED', 'text': ''}
+    return value
+
+
 class SynthesisPresentationTests(unittest.TestCase):
+    def test_symbol_keyed_source_renders_original_lenses_and_dissent_unchanged(self):
+        value = keyed_fixture()
+        before = deepcopy(value)
+        html = render(value)
+        for expected in ('NVDA', 'SPY', 'A short-lived catalyst may be possible.',
+                         'Broad read-through is speculative.', 'CONTESTED',
+                         'The headline supplies no revenue figure.', 'This may be routine publicity.'):
+            self.assertIn(expected, html)
+        self.assertEqual(html.count('class="implication"'), 2)
+        self.assertNotIn('implications', value['report']['draft']['themes'][0])
+        self.assertEqual(value, before)
+
+    def test_symbol_validation_label_preserves_historical_packet_and_parent(self):
+        value = keyed_fixture()
+        value['report']['validation'] = {'purpose': 'EXPLICIT_SYMBOL_VALIDATION',
+            'parent_report_id': 'sentry-synthesis-' + 'a' * 64,
+            'parent_report_sha256': 'b' * 64,
+            'transport_schema_version': 'blackpod.sentry_synthesis_transport.v10',
+            'scope': 'MANUAL_RETAINED_EVIDENCE'}
+        before = deepcopy(value)
+        html = render(value)
+        for expected in ('Explicit symbol-keyed validation', 'original saved headlines',
+                         'not a fresh market assessment or a new forecast',
+                         'failed parent attempt is preserved', 'Preserved parent attempt',
+                         'EXPLICIT_SYMBOL_VALIDATION', 'CONTESTED', 'Auto-trading OFF'):
+            self.assertIn(expected, html)
+        self.assertEqual(value, before)
+
+    def test_known_oracle_rejection_marks_challenge_not_run_and_keeps_raw_status(self):
+        for status in ('REJECTED', 'FAILED'):
+            with self.subTest(status=status):
+                value = fixture()
+                value['status'] = status
+                value['report'].update(status=status, draft=None, challenge=None)
+                value['report']['provenance']['oracle'] = {
+                    'status': status, 'response': None, 'failure_code': 'MODELDOCK_NARRATIVE_SCHEMA_INVALID'}
+                value['report']['provenance']['challenge'] = {
+                    'status': 'UNCERTAIN', 'response': None, 'failure_code': 'ORACLE_NOT_ACCEPTED'}
+                value['role_diagnostics'] = {'oracle': {
+                    'reason': 'DUPLICATE_SYMBOL', 'rule': 'OTHER', 'field': 'UNCLASSIFIED'}}
+                before = deepcopy(value)
+                html = render(value)
+                for expected in ('Not run — Oracle draft was rejected/failed',
+                                 'Duplicate symbol in Oracle implications', 'DUPLICATE_SYMBOL',
+                                 'No challenge review pass took place', 'ORACLE_NOT_ACCEPTED',
+                                 '<dd>UNCERTAIN</dd>', 'Auto-trading OFF'):
+                    self.assertIn(expected, html)
+                self.assertNotIn('A separate review pass of the same evidence', html)
+                self.assertNotIn('Original interpretation of the agreement.', html)
+                self.assertEqual(value, before)
+
+    def test_genuine_uncertain_challenge_is_not_labeled_not_run(self):
+        value = fixture()
+        value['status'] = 'DRAFT_ONLY'
+        value['report']['challenge'] = None
+        value['report']['provenance']['challenge'] = {
+            'status': 'UNCERTAIN', 'response': None, 'failure_code': 'MODELDOCK_REQUEST_TIMEOUT'}
+        html = render(value)
+        self.assertIn('Challenge unavailable · review incomplete', html)
+        self.assertIn('Any uncertain request remains uncertain', html)
+        self.assertIn('MODELDOCK_REQUEST_TIMEOUT', html)
+        self.assertIn('<dd>UNCERTAIN</dd>', html)
+        self.assertNotIn('Not run', html)
+
+    def test_uncertain_oracle_with_known_block_retains_oracle_uncertainty(self):
+        value = fixture()
+        value['status'] = 'UNCERTAIN'
+        value['report'].update(status='UNCERTAIN', draft=None, challenge=None)
+        value['report']['provenance']['oracle'] = {'status': 'UNCERTAIN',
+            'response': None, 'failure_code': 'MODELDOCK_REQUEST_TIMEOUT'}
+        value['report']['provenance']['challenge'] = {'status': 'UNCERTAIN',
+            'response': None, 'failure_code': 'ORACLE_NOT_ACCEPTED'}
+        html = render(value)
+        self.assertIn('Synthesis state uncertain', html)
+        self.assertIn('Not run — Oracle draft was not accepted', html)
+        self.assertNotIn('Oracle draft was rejected/failed', html)
+        self.assertIn('MODELDOCK_REQUEST_TIMEOUT', html)
+
+    def test_failure_diagnostic_and_keyed_prose_are_escaped(self):
+        injection = '<script>alert("x")</script>'
+        value = keyed_fixture()
+        value['report']['draft']['themes'][0]['implications_by_symbol']['NVDA']['trading'] = injection
+        html = render(value)
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('<script>', html)
+        value['report']['draft'] = None
+        value['role_diagnostics'] = {'oracle': {key: injection for key in ('reason', 'rule', 'field')}}
+        html = render(value)
+        self.assertNotIn('<script>', html)
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('Duplicate symbol in Oracle implications', html)
+
     def test_narrative_evaluation_compact_grid_claims_and_original_dissent(self):
         value = evaluated_fixture()
         before = deepcopy(value)

@@ -19,7 +19,7 @@ from blackpod_build_week.hashing import canonical_json_bytes, sha256_bytes
 from blackpod_build_week.modeldock_client import ModelDockClient, HttpResponse
 from blackpod_build_week.shadow_station import atomic_state
 from test_sentry_catalyst import NOW, WATCH, packet
-from test_sentry_synthesis_transport import FixtureTransport, draft, challenge
+from test_sentry_synthesis_transport import FixtureTransport, draft, keyed_draft, challenge
 
 
 class BoundFixtureTransport(FixtureTransport):
@@ -34,10 +34,18 @@ class BoundFixtureTransport(FixtureTransport):
             self.content['draft_sha256'] = sha256_bytes(canonical_json_bytes(supplied['original_oracle_draft']))
             self.content['reviews'][0]['evidence_ids'] = [headline['evidence_id']]
         else:
-            self.content = draft()
+            requested = wire['response_format']['schema']['properties']['schema_version']['const']
+            keyed = requested == 'blackpod.sentry_oracle_draft.v3'
+            self.content = keyed_draft() if keyed else draft()
             self.content['overview']['evidence_ids'] = [headline['evidence_id']]
             self.content['themes'][0]['evidence_ids'] = [headline['evidence_id']]
-            self.content['themes'][0]['implications'][0]['symbol'] = headline['symbols'][0]
+            if keyed:
+                # Author a wire-specific fixture, never normalize production
+                # output or change the source stored by the service.
+                self.content['themes'][0]['implications_by_symbol'] = {
+                    headline['symbols'][0]: self.content['themes'][0]['implications_by_symbol']['NVDA']}
+            else:
+                self.content['themes'][0]['implications'][0]['symbol'] = headline['symbols'][0]
         return super().request(**kwargs)
 
 
@@ -127,7 +135,9 @@ class SentrySynthesisServiceTests(unittest.TestCase):
         self.assertEqual(len(self.http.calls), 2)
         self.assertEqual(len(self.factories), 2)
         requests = [json.loads(call['body']) for call in self.http.calls]
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.SYMBOL_TRANSPORT_VERSION)
+        self.assertEqual(requests[0]['response_format']['schema']['properties']['schema_version']['const'],
+                         'blackpod.sentry_oracle_draft.v3')
         self.assertEqual([item['max_tokens'] for item in requests], [4096, 4096])
         first = requests[0]['metadata']['blackpod_correlation']['request_id']
         second = requests[1]['metadata']['blackpod_correlation']['request_id']
@@ -135,11 +145,50 @@ class SentrySynthesisServiceTests(unittest.TestCase):
         self.assertEqual([call['url'] for call in self.http.calls],
                          ['http://127.0.0.1:8000/text/generate'] * 2)
         report = service.read_report(self.directory(), self.config)
+        self.assertEqual(report['draft']['schema_version'], 'blackpod.sentry_oracle_draft.v3')
         self.assertEqual(report['challenge']['reviews'][0]['status'], 'UNTESTED')
         self.assertEqual(report['challenge']['draft_sha256'], sha256_bytes(canonical_json_bytes(report['draft'])))
         self.assertEqual(report['context']['watchlist'], WATCH)
         self.assertEqual(report['portfolio']['status'], 'UNAVAILABLE_NO_VERIFIED_HOLDINGS')
         self.assertTrue(all(flag is False for flag in report['authority'].values()))
+        self.assertFalse(report['review_independence']['independent_model_verified'])
+        self.assertGreaterEqual(self.off.call_count, 6)
+
+    def test_explicit_v10_background_uses_original_map_and_preserves_v9_replay(self):
+        with patch.object(service, 'BACKGROUND_TRANSPORT_VERSION', service.TEXT_TRANSPORT_VERSION):
+            self.assertEqual(self.cycle(), 'CHALLENGED_INTERPRETATION')
+        old_directory = self.directory()
+        old_report = service.read_report(old_directory,self.config)
+        before = {str(p.relative_to(old_directory)):p.read_bytes()
+                  for p in old_directory.rglob('*') if p.is_file()}
+        old_requests = [call['body'] for call in self.http.calls]
+        self.assertEqual(json.loads(old_requests[0])['response_format']['schema']['properties']['schema_version']['const'],
+                         'blackpod.sentry_oracle_draft.v2')
+        later = NOW+timedelta(hours=1)
+        self.append_capture(later,headline='A new company update',identity=456)
+        with patch.object(service,'BACKGROUND_TRANSPORT_VERSION',service.SYMBOL_TRANSPORT_VERSION):
+            self.assertEqual(self.cycle(later),'CHALLENGED_INTERPRETATION')
+        directory = self.directory()
+        report = service.read_report(directory,self.config)
+        self.assertEqual(report['draft']['schema_version'],'blackpod.sentry_oracle_draft.v3')
+        self.assertEqual(report['challenge']['schema_version'],'blackpod.sentry_challenge.v2')
+        self.assertEqual(report['challenge']['draft_sha256'],sha256_bytes(canonical_json_bytes(report['draft'])))
+        self.assertTrue(all('implications_by_symbol' in theme and 'implications' not in theme
+                            for theme in report['draft']['themes']))
+        requests = [json.loads(call['body']) for call in self.http.calls[2:]]
+        self.assertEqual(len(requests),2)
+        self.assertEqual(requests[0]['response_format']['schema']['properties']['schema_version']['const'],
+                         'blackpod.sentry_oracle_draft.v3')
+        self.assertEqual(json.loads(requests[1]['messages'][1]['content'])['original_oracle_draft'],report['draft'])
+        self.assertEqual(json.loads((directory/'oracle/intent.json').read_bytes())['schema_version'],
+                         service.SYMBOL_TRANSPORT_VERSION)
+        with patch.object(ModelDockClient,'generate_text',side_effect=AssertionError('inference forbidden')):
+            self.assertEqual(service.read_report(old_directory,self.config),old_report)
+            self.assertEqual(service.read_report(directory,self.config),report)
+        self.assertEqual({str(p.relative_to(old_directory)):p.read_bytes()
+                          for p in old_directory.rglob('*') if p.is_file()},before)
+        self.assertEqual([call['body'] for call in self.http.calls[:2]],old_requests)
+        self.assertEqual(len(self.http.calls),4)
         self.assertFalse(report['review_independence']['independent_model_verified'])
         self.assertGreaterEqual(self.off.call_count, 6)
 
@@ -1526,7 +1575,7 @@ class ExplicitContractValidationTests(unittest.TestCase):
             self.assertEqual(intent['wire_request']['max_tokens'], 4096)
         modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
         self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.SYMBOL_TRANSPORT_VERSION)
         self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
         self.assertEqual(self.run_validation(), result)
         self.assertEqual(service.verify(self.config)['attempt_count'], 8)
@@ -1639,7 +1688,7 @@ class ExplicitTextValidationTests(unittest.TestCase):
             self.assertEqual(intent['wire_request']['max_tokens'], 4096)
         modeldock = service.immutable_read(self.child(), 'run-intent.json')['modeldock']
         self.assertEqual((modeldock['timeout_seconds'], modeldock['delivery_grace_seconds']), (900, 30))
-        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.TEXT_TRANSPORT_VERSION)
+        self.assertEqual(service.BACKGROUND_TRANSPORT_VERSION, service.SYMBOL_TRANSPORT_VERSION)
         self.assertEqual(service.read_state(self.helper.root / 'control.json'), self.helper.control)
         self.assertEqual(self.run_validation(), result)
         self.assertEqual(service.verify(self.config)['attempt_count'], 9)

@@ -17,6 +17,7 @@ import stat
 import unicodedata
 
 from .contracts.mission_request import parse_strict_json_object_bytes
+from .contracts.sentry_synthesis import implication_items
 from .decision_journal_store import (JournalStoreError, _absolute_path, _open_root,
     _open_child_directory, _publish_immutable, _read_regular, check_separate_root)
 from .hashing import canonical_json_bytes, sha256_bytes
@@ -124,12 +125,12 @@ def claim_catalog(report):
     _source(report)
     claims = []
     for ti, theme in enumerate(report['draft']['themes']):
-        for ii, implication in enumerate(theme['implications']):
+        for relative_path, implication in implication_items(theme):
             for lens in ('trading', 'investment'):
                 text = implication[lens]
                 if text == 'UNSPECIFIED':
                     continue
-                claims.append({'claim_path': f'/draft/themes/{ti}/implications/{ii}/{lens}',
+                claims.append({'claim_path': f'/draft/themes/{ti}/{relative_path}/{lens}',
                     'symbol': implication['symbol'], 'lens': lens, 'claim_text': text,
                     'cited_evidence_ids': list(theme['evidence_ids'])})
     return claims
@@ -156,11 +157,11 @@ def mechanical_review(report):
         if _normalized(theme['alternative']) == _normalized(theme['title']):
             add('ALTERNATIVE_REPEATS_TITLE', [base + '/alternative', base + '/title'],
                 'Alternative text repeats the theme title after whitespace/case normalization.')
-        for ii, implication in enumerate(theme['implications']):
+        for relative_path, implication in implication_items(theme):
             mentioned.add(implication['symbol'])
             for lens in ('trading', 'investment'):
                 unspecified[lens + '_count'] += implication[lens] == 'UNSPECIFIED'
-                texts.append((f'{base}/implications/{ii}/{lens}', implication[lens]))
+                texts.append((f'{base}/{relative_path}/{lens}', implication[lens]))
         unspecified['horizon_count'] += theme['proposed_review_horizon'] == 'UNSPECIFIED'
         inv = theme['proposed_invalidation']
         unspecified['invalidation_count'] += inv is None or isinstance(inv, dict) and inv.get('status') == 'UNSPECIFIED'

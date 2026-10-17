@@ -69,6 +69,13 @@ reviews the preserved brief against its exact headline packet. Its read-only
 card separates deterministic observations from attributed assistant judgments,
 retaining the original brief and challenge without new inference or trading.
 
+The separately recorded [symbol-keyed Oracle validation](docs/SENTRY_SYMBOL_VALIDATION_2026-10-17.md)
+addresses a rejected duplicate-symbol response with strict v3 maps. It preserves
+the failed parent and historical headlines, distinguishes a blocked challenge
+from an uncertain request, and selects that format for future background work.
+Trading authority is unchanged. The saved-packet check retained a ModelDock
+connection failure; real-model acceptance remains unverified.
+
 The separate [article-content entitlement probe](docs/SENTRY_CONTENT_ENTITLEMENT_PROBE.md)
 checks at most three Alpaca news items in one explicit request after review of
 an accepted brief and challenge. It reports availability metadata and leaves

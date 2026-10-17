@@ -41,8 +41,18 @@ def draft():
             'proposed_review_horizon': 'UNSPECIFIED'}], 'unresolved_questions': ['What is the original company statement?']}
 
 
-def challenge():
-    return {'schema_version': 'blackpod.sentry_challenge.v2', 'draft_sha256': sha256_bytes(canonical_json_bytes(draft())),
+def keyed_draft():
+    original = draft()
+    original['schema_version'] = 'blackpod.sentry_oracle_draft.v3'
+    for theme in original['themes']:
+        theme['implications_by_symbol'] = {
+            row['symbol']:{key:value for key,value in row.items() if key != 'symbol'}
+            for row in theme.pop('implications')}
+    return original
+
+
+def challenge(original=None):
+    return {'schema_version': 'blackpod.sentry_challenge.v2', 'draft_sha256': sha256_bytes(canonical_json_bytes(draft() if original is None else original)),
         'reviews': [{'theme_id': 'theme-1', 'status': 'UNTESTED', 'reason': 'The headline lacks fundamental context.',
             'evidence_ids': ['headline-1'], 'alternative': 'The announcement may be routine.',
             'missing_evidence': ['Original company announcement']}], 'overall_limitations': ['Same provider and evidence.']}
@@ -822,6 +832,123 @@ class SentrySynthesisTransportTests(unittest.TestCase):
         self.assertEqual(self.fixture.calls, [])
 
 
+class KeyedSynthesisTransportTests(unittest.TestCase):
+    factory = SentrySynthesisTransportTests.factory
+    generate = SentrySynthesisTransportTests.generate
+
+    def setUp(self):
+        SentrySynthesisTransportTests.setUp(self)
+        self.config = ModelDockConfig('http://127.0.0.1:8000',900,delivery_grace_seconds=30)
+        self.fixture = FixtureTransport(keyed_draft())
+        self.enterContext(patch.object(socket.socket,'connect',side_effect=AssertionError('network forbidden')))
+
+    def test_v10_is_explicit_and_v9_default_wire_remains_byte_identical(self):
+        self.assertEqual(transport.VERSION,transport.V9_VERSION)
+        self.assertEqual(transport.VERSION,'blackpod.sentry_synthesis_transport.v9')
+        old,old_bindings,_ = transport._request('oracle',packet(),self.config,None)
+        self.assertEqual(sha256_bytes(canonical_json_bytes(old)),
+                         '91cd11240b3f8c156bb881439830cf95f06b8bd17c390e8e8d7d4637d1a739af')
+        self.assertEqual(old['metadata']['blackpod_correlation']['request_id'],
+                         'sentry-oracle-9c1efe027928b8ccc35d5c52a2afb560a9b30760fac180282d373c73d28aa5ed')
+        wire,bindings,_ = transport._request('oracle',packet(),self.config,None,version=transport.SYMBOL_VERSION)
+        self.assertEqual(wire['messages'][0]['content'],old['messages'][0]['content']+transport.KEYED_SYMBOL_GUIDANCE)
+        self.assertEqual(wire['messages'][1:],old['messages'][1:])
+        self.assertEqual(wire['max_tokens'],4096)
+        self.assertEqual(wire['timeout'],900)
+        self.assertEqual(bindings['configuration_sha256'],old_bindings['configuration_sha256'])
+        self.assertNotEqual(wire['metadata'],old['metadata'])
+        self.assertEqual(wire['response_format']['schema']['properties']['schema_version']['const'],
+                         'blackpod.sentry_oracle_draft.v3')
+        self.assertEqual(old['response_format']['schema']['properties']['schema_version']['const'],
+                         'blackpod.sentry_oracle_draft.v2')
+        mapping = wire['response_format']['schema']['properties']['themes']['items']['properties']['implications_by_symbol']
+        self.assertEqual(mapping['required'],[])
+        self.assertEqual(set(mapping['properties']),set(packet()['watchlist']))
+        self.assertNotIn('minProperties',mapping)
+
+    def test_accepted_v10_map_and_v2_challenge_retain_exact_original_hashes(self):
+        original = keyed_draft()
+        first = self.generate(version=transport.SYMBOL_VERSION)
+        self.assertEqual(first['status'],'ACCEPTED')
+        self.assertEqual(first['response'],original)
+        self.assertNotIn('implications',first['response']['themes'][0])
+        oracle_root = self.root
+        before = {p.name:p.read_bytes() for p in oracle_root.iterdir() if p.is_file()}
+        self.root = Path(self.tmp.name)/'challenge'
+        self.fixture = FixtureTransport(challenge(original))
+        reviewed = self.generate('challenge',draft=original,version=transport.SYMBOL_VERSION)
+        self.assertEqual(reviewed['status'],'ACCEPTED')
+        self.assertEqual(reviewed['response']['schema_version'],'blackpod.sentry_challenge.v2')
+        self.assertEqual(reviewed['response']['draft_sha256'],sha256_bytes(canonical_json_bytes(original)))
+        wire = json.loads(self.fixture.calls[0]['body'])
+        self.assertEqual(json.loads(wire['messages'][1]['content'])['original_oracle_draft'],original)
+        with patch.object(transport,'_default_client',side_effect=AssertionError('no inference')):
+            self.assertEqual(transport.read_role('oracle',packet(),oracle_root,self.config),first)
+            self.assertEqual(transport.read_role('challenge',packet(),self.root,self.config,draft=original),reviewed)
+            self.assertEqual(self.generate('challenge',draft=original,version=transport.SYMBOL_VERSION),reviewed)
+        self.assertEqual({p.name:p.read_bytes() for p in oracle_root.iterdir() if p.is_file()},before)
+        self.assertEqual(len(self.fixture.calls),1)
+        self.assertIsNone(transport.read_local_contract_observation('oracle',packet(),oracle_root,self.config))
+
+    def test_v10_rejects_valid_v2_body_and_v9_rejects_valid_v3_body(self):
+        for version,body in ((transport.SYMBOL_VERSION,draft()),(transport.V9_VERSION,keyed_draft())):
+            self.root = Path(self.tmp.name)/version.rsplit('.',1)[1]
+            self.fixture = FixtureTransport(body)
+            with self.subTest(version=version):
+                result = self.generate(version=version)
+                self.assertEqual(result['status'],'REJECTED')
+                self.assertEqual(result['failure_code'],'MODELDOCK_NARRATIVE_SCHEMA_INVALID')
+                self.assertIsNone(result['response'])
+                observation = transport.read_local_contract_observation('oracle',packet(),self.root,self.config)
+                self.assertEqual(observation['reason'],'VALUE_REJECTED')
+                self.assertEqual(observation['schema_version'],transport.LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION)
+
+    def test_v10_empty_map_host_rejection_is_retained_and_never_repaired_or_resent(self):
+        invalid = keyed_draft();invalid['themes'][0]['implications_by_symbol'] = {}
+        self.fixture = FixtureTransport(invalid)
+        result = self.generate(version=transport.SYMBOL_VERSION)
+        self.assertEqual(result['status'],'REJECTED')
+        self.assertEqual(result['failure_code'],'MODELDOCK_NARRATIVE_SCHEMA_INVALID')
+        self.assertIsNone(result['response'])
+        observation = transport.read_local_contract_observation('oracle',packet(),self.root,self.config)
+        self.assertEqual(observation['reason'],'CONTRACT_REJECTED')
+        self.assertEqual(observation['schema_version'],transport.LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION)
+        before = {p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        with patch.object(transport,'_default_client',side_effect=AssertionError('no inference')):
+            self.assertEqual(self.generate(version=transport.SYMBOL_VERSION),result)
+            self.assertEqual(transport.read_role('oracle',packet(),self.root,self.config),result)
+        self.assertEqual({p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()},before)
+        self.assertEqual(len(self.fixture.calls),1)
+
+    def test_v10_raw_duplicate_symbol_keys_never_reach_collapsing_dict_validation(self):
+        original = keyed_draft()
+        entry = json.dumps(original['themes'][0]['implications_by_symbol']['NVDA'])
+        fragment = '"NVDA": '+entry
+        for index,key in enumerate(('"NVDA"','"\\u004eVDA"')):
+            self.root = Path(self.tmp.name)/str(index)
+            content = json.dumps(original).replace(fragment,fragment+', '+key+': '+entry,1)
+            self.fixture = FixtureTransport(original,mutate=lambda envelope: envelope.update(content=content))
+            result = self.generate(version=transport.SYMBOL_VERSION)
+            self.assertEqual(result['status'],'FAILED')
+            self.assertEqual(result['failure_code'],'MODELDOCK_RESPONSE_DUPLICATE_FIELD')
+            self.assertIsNone(result['response'])
+            self.assertEqual(self.generate(version=transport.SYMBOL_VERSION),result)
+            self.assertEqual(len(self.fixture.calls),1)
+            self.assertIsNone(transport.read_local_contract_observation('oracle',packet(),self.root,self.config))
+
+    def test_v10_bound_deadlines_and_gate_fail_before_any_delivery(self):
+        for timeout,grace in ((901,30),(900,31)):
+            config = ModelDockConfig('http://127.0.0.1:8000',timeout,delivery_grace_seconds=grace)
+            with self.subTest(timeout=timeout,grace=grace),self.assertRaises(ValueError):
+                transport._request('oracle',packet(),config,None,version=transport.SYMBOL_VERSION)
+        with self.assertRaises(ValueError):
+            transport.generate_role('oracle',packet(),self.root,self.config,
+                off_check=lambda:False,verify_source=lambda:None,client_factory=self.factory,
+                now=lambda:NOW,version=transport.SYMBOL_VERSION)
+        self.assertEqual(self.fixture.calls,[])
+        self.assertFalse(self.root.exists())
+
+
 class SentryLocalContractObservationTests(unittest.TestCase):
     setUp = SentrySynthesisTransportTests.setUp
     factory = SentrySynthesisTransportTests.factory
@@ -1134,6 +1261,21 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
     def observation(self):
         return transport.read_error_observation('oracle', packet(), self.root, self.config)
 
+    def test_v10_http_error_observation_is_bound_and_read_without_resend(self):
+        self.config = ModelDockConfig('http://127.0.0.1:8000',900,delivery_grace_seconds=30)
+        result = self.generate(version=transport.SYMBOL_VERSION)
+        self.assertEqual(result['failure_code'],'MODELDOCK_HTTP_500')
+        self.assertEqual(json.loads((self.root/'receipt.json').read_bytes())['schema_version'],transport.SYMBOL_VERSION)
+        observation = self.observation()
+        self.assertEqual(observation['code'],'INFERENCE_FAILURE')
+        self.assertEqual(observation['request_id'],result['request_id'])
+        self.assertEqual(observation['receipt_sha256'],sha256_bytes((self.root/'receipt.json').read_bytes()))
+        with patch.object(transport,'_default_client',side_effect=AssertionError('no resend')):
+            self.assertEqual(self.generate(version=transport.SYMBOL_VERSION),result)
+            self.assertEqual(transport.read_role('oracle',packet(),self.root,self.config),result)
+            self.assertEqual(self.observation(),observation)
+        self.assertEqual(len(self.calls),1)
+
     def test_actual_urllib_http_error_stream_retains_only_correlated_safe_metadata(self):
         result = self.generate()
         self.assertEqual(result['status'], 'FAILED')
@@ -1276,7 +1418,7 @@ class SentryHttpErrorObservationTests(unittest.TestCase):
         for index, version in enumerate((transport.LEGACY_VERSION, transport.V2_VERSION,
                                          transport.V3_VERSION, transport.V4_VERSION, transport.V5_VERSION,
                                          transport.V6_VERSION, transport.V7_VERSION, transport.V8_VERSION,
-                                         transport.VERSION)):
+                                         transport.VERSION, transport.SYMBOL_VERSION)):
             self.root = Path(self.tmp.name) / str(index)
             result = self.generate(version=version, client_factory=lambda config:
                 ModelDockClient(config, transport=EmptyHttpFailure(), now=lambda: NOW))
