@@ -4,19 +4,22 @@ The immutable attempt ledger, not the mutable display state, owns retry and
 budget admission. Interrupted roles are inspected, never resent by recovery.
 """
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+from copy import deepcopy
 import argparse
 import json
 import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import threading
 from zoneinfo import ZoneInfo
 
 from .decision_journal_store import JournalStoreError, check_separate_root, _open_root
 from .hashing import canonical_json_bytes, sha256_bytes
 from .modeldock_config import ModelDockConfig
-from .sentry_catalyst import clock, stamp, control as catalyst_control
+from .sentry_catalyst import CatalystStore, clock, stamp, control as catalyst_control
 from .sentry_catalyst_service import paths as catalyst_paths
 from .sentry_synthesis import VERSION, AUTHORITY, current_packet, verify_packet, compose_report
 from .sentry_synthesis_transport import (generate_role, read_role, read_error_observation, read_local_contract_observation, write_json_once, _read,
@@ -25,6 +28,16 @@ from .shadow_station import read_state, atomic_state, service_lock
 from .shadow_station_collection import _off, _pinned_view
 
 CONTROL_VERSION = 'blackpod.sentry_synthesis_control.v1'
+SCHEDULE_CONTROL_VERSION = 'blackpod.sentry_synthesis_control.v2'
+ECONOMIC_CONTROL_VERSION = 'blackpod.sentry_synthesis_control.v3'
+ECONOMIC_ATTEMPT_VERSION = 'blackpod.sentry_synthesis_attempt.v2'
+CODEX_CONTROL_VERSION = 'blackpod.sentry_synthesis_control.v4'
+CODEX_ATTEMPT_VERSION = 'blackpod.sentry_synthesis_attempt.v3'
+CODEX_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v18'
+ECONOMIC_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v15'
+SCHEDULE_ATTEMPT_VERSION = 'blackpod.sentry_synthesis_scheduled_attempt.v1'
+BACKGROUND_ATTEMPT_VERSIONS = frozenset({VERSION, SCHEDULE_ATTEMPT_VERSION, ECONOMIC_ATTEMPT_VERSION, CODEX_ATTEMPT_VERSION})
+COMPARISON_ATTEMPT_VERSION = 'blackpod.sentry_synthesis_comparison.v1'
 VALIDATION_VERSION = 'blackpod.sentry_synthesis_validation.v2'
 VALIDATION_PURPOSE = 'EXPLICIT_V2_VALIDATION'
 VALIDATION_TRANSPORT_VERSION = 'blackpod.sentry_synthesis_transport.v2'
@@ -67,6 +80,26 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+@contextmanager
+def awake_while_generating(modeldock):
+    """Bound idle sleep while awake; this cannot wake a sleeping Mac."""
+    process = None
+    if Path('/usr/bin/caffeinate').exists():
+        seconds = int(2 * (modeldock.timeout_seconds + modeldock.delivery_grace_seconds) + 30)
+        process = subprocess.Popen(['/usr/bin/caffeinate', '-i', '-s', '-t', str(seconds)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        yield
+    finally:
+        if process is not None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+
 def paths(config):
     root = Path(config['station_root']) / 'synthesis'
     for key in ('experiment_root', 'runtime_root', 'historical_root', 'ui_root'):
@@ -76,22 +109,123 @@ def paths(config):
     return root, root / 'runs'
 
 
-def configuration(value):
+def configuration(value, *, allow_codex=False):
     if not isinstance(value, dict) or set(value) != {'base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds'}:
         raise ValueError('invalid synthesis ModelDock configuration')
-    config = ModelDockConfig(**value)
+    if value.get('provider') == 'codex':
+        if not allow_codex:
+            raise ValueError('Codex requires an explicit versioned Sentry policy')
+        from .sentry_modeldock_codex import SentryCodexConfig
+        config = SentryCodexConfig(**value)
+    else:
+        config = ModelDockConfig(**value)
     if config.timeout_seconds > 900 or config.delivery_grace_seconds > 30:
         raise ValueError('synthesis deadline exceeds bound')
     return config
 
 
+def analysis_settings(value):
+    if (not isinstance(value,dict) or set(value) != {'prompt_version','include_article_content'}
+            or value['prompt_version'] not in {'ECONOMIC_V3','ECONOMIC_V4'} or type(value['include_article_content']) is not bool):
+        raise ValueError('invalid economic synthesis settings')
+    return value
+
+
+def codex_qualification(value, *, verify=False):
+    """Bind a full-watchlist accepted proof; verification never invokes models."""
+    fields = {'root', 'packet_sha256', 'oracle_receipt_sha256', 'challenge_receipt_sha256', 'watchlist'}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError('invalid Codex qualification binding')
+    root = value['root']
+    if (not isinstance(root, str) or not Path(root).is_absolute() or '..' in Path(root).parts
+            or any(ord(c) < 32 for c in root)):
+        raise ValueError('invalid Codex qualification root')
+    for key in fields - {'root', 'watchlist'}:
+        if not isinstance(value[key], str) or re.fullmatch('[0-9a-f]{64}', value[key]) is None:
+            raise ValueError('invalid Codex qualification digest')
+    watchlist = value['watchlist']
+    if (not isinstance(watchlist, list) or len(watchlist) != 10
+            or any(not isinstance(symbol, str) or re.fullmatch('[A-Z][A-Z0-9.-]{0,9}', symbol) is None for symbol in watchlist)
+            or len(set(watchlist)) != len(watchlist)):
+        raise ValueError('Codex qualification requires the complete ten-symbol watchlist')
+    if verify:
+        from .sentry_codex_validation import verify_qualification
+        if verify_qualification(Path(root)) != value:
+            raise ValueError('Codex qualification proof differs from its approved binding')
+    return value
+
+
+def codex_evidence_gate(config, packet, qualification):
+    """Recheck OFF, frozen sources, exact evidence and accepted compatibility."""
+    _off(Path(config['runtime_root']))
+    _pinned_view(Path(config['experiment_root']), config['experiment_id'], config['protocol_sha256'])
+    verify_packet(packet, config)
+    codex_qualification(qualification, verify=True)
+    if packet['watchlist'] != qualification['watchlist']:
+        raise ValueError('current Sentry watchlist differs from the qualified Codex watchlist')
+
+
 def control(value):
     if not value:
         return {'schema_version': CONTROL_VERSION, 'enabled': False, 'modeldock': None}
-    if set(value) != {'schema_version', 'enabled', 'modeldock'} or value['schema_version'] != CONTROL_VERSION or type(value['enabled']) is not bool:
+    codex = value.get('schema_version') == CODEX_CONTROL_VERSION
+    enhanced = value.get('schema_version') == ECONOMIC_CONTROL_VERSION or codex
+    scheduled = value.get('schema_version') == SCHEDULE_CONTROL_VERSION or enhanced and 'schedule' in value
+    expected = {'schema_version','enabled','modeldock'} | ({'schedule'} if scheduled else set()) | ({'analysis'} if enhanced else set()) | ({'qualification', 'monitoring'} if codex else set())
+    if set(value) != expected or value['schema_version'] not in {CONTROL_VERSION,SCHEDULE_CONTROL_VERSION,ECONOMIC_CONTROL_VERSION,CODEX_CONTROL_VERSION} or type(value['enabled']) is not bool:
         raise ValueError('invalid synthesis control')
-    configuration(value['modeldock'])
+    dock = configuration(value['modeldock'], allow_codex=codex)
+    if scheduled: schedule(value['schedule'])
+    if enhanced: analysis_settings(value['analysis'])
+    if codex:
+        if dock.provider != 'codex' or value['analysis']['prompt_version'] != 'ECONOMIC_V4':
+            raise ValueError('Codex Sentry requires the explicit economic V4 policy')
+        if value['monitoring'] != ('FINITE_SCHEDULE' if scheduled else 'WEEKDAY_BOUNDED'):
+            raise ValueError('Codex monitoring mode must be deliberate')
+        codex_qualification(value['qualification'])
     return value
+
+
+def schedule(value):
+    """A finite experiment, never an implicit extension of weekday monitoring."""
+    if (not isinstance(value, dict) or set(value) != {'id', 'slots', 'window_seconds'}
+            or not isinstance(value['id'], str) or re.fullmatch('[a-z0-9-]{1,80}', value['id']) is None
+            or type(value['window_seconds']) is not int or not 60 <= value['window_seconds'] <= 1800
+            or not isinstance(value['slots'], list) or not 1 <= len(value['slots']) <= 4):
+        raise ValueError('invalid finite synthesis schedule')
+    times = [clock(t) for t in value['slots']]
+    if (times != sorted(set(times)) or times[-1] - times[0] > timedelta(hours=48)
+            or any(b - a < timedelta(hours=1) for a, b in zip(times, times[1:]))):
+        raise ValueError('invalid synthesis slot spacing or duration')
+    return value
+
+
+def scheduled_due(now, entries, selected):
+    """Reservation consumes a slot even after a crash or inference failure."""
+    plan = schedule(selected['schedule'])
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError('aware synthesis clock required')
+    if not selected['enabled']:
+        return False, 'PAUSED', None
+    if any(clock(row[2]['reserved_at']) > now for row in entries):
+        return False, 'CLOCK_BLOCKED', None
+    claimed = {row[2]['schedule']['slot_at'] for row in entries
+               if row[2]['schema_version'] in {SCHEDULE_ATTEMPT_VERSION, ECONOMIC_ATTEMPT_VERSION, CODEX_ATTEMPT_VERSION} and 'schedule' in row[2]
+               and row[2]['schedule']['id'] == plan['id']}
+    ordinary = [clock(row[2]['reserved_at']) for row in entries
+                if row[2]['schema_version'] in BACKGROUND_ATTEMPT_VERSIONS]
+    for slot in plan['slots']:
+        start = clock(slot)
+        if slot in claimed or now >= start + timedelta(seconds=plan['window_seconds']):
+            continue
+        if now < start:
+            return False, 'WAITING_FOR_SCHEDULED_SLOT', slot
+        if sum(t.astimezone(LA).date() == now.astimezone(LA).date() for t in ordinary) >= 4:
+            return False, 'DAILY_BUDGET_EXHAUSTED', slot
+        if ordinary and now - max(ordinary) < timedelta(hours=1):
+            return False, 'WAITING_FOR_NEXT_SLOT', slot
+        return True, 'DUE', slot
+    return False, 'SCHEDULE_FINISHED', None
 
 
 def immutable_read(root, name):
@@ -211,6 +345,46 @@ def load_attempt(directory):
             raise ValueError('validation schema and purpose differ')
         expected_directory = validation_directory(metadata['parent_report_id'], deadline=deadline, error_diagnostic=error_diagnostic,
             runtime_diagnostic=runtime_diagnostic, model_selection=model_selection, output_budget=output_budget, contract_validation=contract_validation, text_validation=text_validation, symbol_validation=symbol_validation)
+    elif intent.get('schema_version') == COMPARISON_ATTEMPT_VERSION:
+        expected_fields = fields | {'comparison'}
+        comparison = intent.get('comparison')
+        if (not isinstance(comparison,dict) or set(comparison) != {'experiment_id','fixture_id','model_id','transport_version','attempt'}
+                or comparison['experiment_id'] != 'sentry-economic-20261018'
+                or comparison['transport_version'] not in {'blackpod.sentry_synthesis_transport.v11','blackpod.sentry_synthesis_transport.v12','blackpod.sentry_synthesis_transport.v13','blackpod.sentry_synthesis_transport.v14','blackpod.sentry_synthesis_transport.v15','blackpod.sentry_synthesis_transport.v16','blackpod.sentry_synthesis_transport.v17'}
+                or type(comparison['attempt']) is not int or not 0 <= comparison['attempt'] <= 1
+                or any(not isinstance(comparison[k],str) or not comparison[k] for k in ('fixture_id','model_id'))):
+            raise ValueError('invalid explicit comparison reservation')
+        expected_directory = sha256_bytes(canonical_json_bytes({'packet_sha256':intent['packet_sha256'],'comparison':comparison}))
+    elif intent.get('schema_version') in {ECONOMIC_ATTEMPT_VERSION, CODEX_ATTEMPT_VERSION}:
+        codex = intent['schema_version'] == CODEX_ATTEMPT_VERSION
+        expected_fields = fields | {'analysis'} | ({'schedule'} if 'schedule' in intent else set()) | ({'transport_version', 'qualification'} if codex else set())
+        analysis_settings(intent['analysis'])
+        if codex:
+            codex_qualification(intent['qualification'])
+            if (intent['transport_version'] != CODEX_TRANSPORT_VERSION
+                    or intent['analysis']['prompt_version'] != 'ECONOMIC_V4'
+                    or intent['modeldock'].get('provider') != 'codex'
+                    or packet['watchlist'] != intent['qualification']['watchlist']):
+                raise ValueError('Codex attempt differs from its versioned qualified policy')
+        expected_directory = packet['evidence_signature']
+        if 'schedule' in intent:
+            binding = intent['schedule']
+            if not isinstance(binding,dict) or set(binding) != {'id','slot_at','window_seconds'}:
+                raise ValueError('invalid economic scheduled attempt')
+            schedule({'id':binding['id'],'slots':[binding['slot_at']],'window_seconds':binding['window_seconds']})
+            if not clock(binding['slot_at']) <= clock(intent['reserved_at']) < clock(binding['slot_at'])+timedelta(seconds=binding['window_seconds']):
+                raise ValueError('economic reservation outside its slot')
+        if intent['analysis']['include_article_content'] != (packet['schema_version'] == 'blackpod.sentry_synthesis.v2'):
+            raise ValueError('economic content mode differs from retained packet')
+    elif intent.get('schema_version') == SCHEDULE_ATTEMPT_VERSION:
+        expected_fields, expected_directory = fields | {'schedule'}, packet['evidence_signature']
+        binding = intent.get('schedule')
+        if not isinstance(binding, dict) or set(binding) != {'id', 'slot_at', 'window_seconds'}:
+            raise ValueError('invalid scheduled attempt binding')
+        schedule({'id': binding['id'], 'slots': [binding['slot_at']], 'window_seconds': binding['window_seconds']})
+        reserved = clock(intent['reserved_at'])
+        if not clock(binding['slot_at']) <= reserved < clock(binding['slot_at']) + timedelta(seconds=binding['window_seconds']):
+            raise ValueError('scheduled reservation outside its slot')
     elif intent.get('schema_version') == VERSION:
         expected_fields, expected_directory = fields, packet['evidence_signature']
     else:
@@ -220,7 +394,7 @@ def load_attempt(directory):
             or intent['evidence_signature'] != packet['evidence_signature']
             or directory.name != expected_directory or clock(intent['reserved_at']) < clock(packet['as_of'])):
         raise ValueError('synthesis attempt binding differs')
-    modeldock = configuration(intent['modeldock'])
+    modeldock = configuration(intent['modeldock'], allow_codex=intent['schema_version'] == CODEX_ATTEMPT_VERSION)
     if intent['schema_version'] == VALIDATION_VERSION and (modeldock.timeout_seconds > 120 or modeldock.delivery_grace_seconds > 10):
         raise ValueError('legacy v2 validation deadline exceeds its bound')
     if intent['schema_version'] in {DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION, RUNTIME_VALIDATION_VERSION, MODEL_VALIDATION_VERSION, OUTPUT_VALIDATION_VERSION, CONTRACT_VALIDATION_VERSION, TEXT_VALIDATION_VERSION, SYMBOL_VALIDATION_VERSION} and (modeldock.timeout_seconds != 900 or modeldock.delivery_grace_seconds != 30):
@@ -249,7 +423,7 @@ def abandoned_validation(directory, packet):
     return False
 
 
-def ledger(runs):
+def ledger(runs, *, _context=None):
     entries = []
     for directory in inventory(runs):
         if not (directory / 'run-intent.json').exists():
@@ -272,9 +446,68 @@ def ledger(runs):
                         if not packet_path.exists() or not os.path.samestat(info, packet_path.stat()) or info.st_nlink != 2:
                             raise ValueError('unsafe abandoned staging link')
             continue
-        packet, intent, modeldock = load_attempt(directory)
+        packet, intent, modeldock = (_context.attempt(directory) if _context is not None else load_attempt(directory))
         entries.append((directory, packet, intent, modeldock))
     return sorted(entries, key=lambda row: (clock(row[2]['reserved_at']), row[0].name))
+
+
+class _ReplayContext:
+    """One operation's verified snapshot, never a cross-request trust cache.
+
+    The original filesystem and source checks run at first read of every
+    distinct item. Repeated ancestry references reuse those verified bytes.
+    A later operation constructs a fresh context and detects later tampering.
+    No dispatch, role delivery or OFF check relies on this memoization.
+    """
+    def __init__(self, config, *, source=None, entries=None):
+        self.config = deepcopy(config)
+        self._source = source
+        self._entries = entries
+        self.attempts = {}
+        self.documents = {}
+        self.packets = set()
+        self.roles = {}
+        self.reports = {}
+        self.active = set()
+        if entries is not None:
+            self.attempts.update((directory, (packet, intent, dock)) for directory, packet, intent, dock in entries)
+
+    def check(self, config):
+        if config != self.config:
+            raise ValueError('replay context belongs to another operation configuration')
+
+    @property
+    def source(self):
+        if self._source is None:
+            self._source = CatalystStore(catalyst_paths(self.config)[1]).verified_records()
+        return self._source
+
+    def entries(self):
+        if self._entries is None:
+            self._entries = ledger(paths(self.config)[1], _context=self)
+        return self._entries
+
+    def attempt(self, directory):
+        if directory not in self.attempts:
+            self.attempts[directory] = load_attempt(directory)
+        return self.attempts[directory]
+
+    def document(self, directory, name):
+        identity = directory, name
+        if identity not in self.documents:
+            self.documents[identity] = immutable_read(directory, name)
+        return deepcopy(self.documents[identity])
+
+    def packet(self, packet):
+        identity = sha256_bytes(canonical_json_bytes(packet))
+        if identity not in self.packets:
+            verify_packet(packet, self.config, verified_source=self.source)
+            self.packets.add(identity)
+
+    def retained(self, directory, packet, dock):
+        if directory not in self.roles:
+            self.roles[directory] = retained_roles(directory, packet, dock)
+        return deepcopy(self.roles[directory])
 
 
 def due(now, entries, enabled, *, manual_retained=False):
@@ -292,7 +525,7 @@ def due(now, entries, enabled, *, manual_retained=False):
         return False, 'OUTSIDE_MONITORING_HOURS'
     # The ordinary monitoring budget has its own ledger projection. Existing
     # explicit diagnostic records are retained unchanged and do not consume it.
-    times = [clock(row[2]['reserved_at']) for row in entries if row[2]['schema_version'] == VERSION]
+    times = [clock(row[2]['reserved_at']) for row in entries if row[2]['schema_version'] in BACKGROUND_ATTEMPT_VERSIONS]
     if sum(t.astimezone(LA).date() == local.date() for t in times) >= 4:
         return False, 'DAILY_BUDGET_EXHAUSTED'
     if times and now - max(times) < timedelta(hours=1):
@@ -302,7 +535,13 @@ def due(now, entries, enabled, *, manual_retained=False):
 
 def retained_roles(directory, packet, modeldock):
     intent = immutable_read(directory, 'run-intent.json')
-    if 'validation' in intent:
+    if intent['schema_version'] == CODEX_ATTEMPT_VERSION:
+        version = intent['transport_version']
+    elif intent['schema_version'] == ECONOMIC_ATTEMPT_VERSION:
+        version = 'blackpod.sentry_synthesis_transport.v16' if intent['analysis']['prompt_version']=='ECONOMIC_V4' else ECONOMIC_TRANSPORT_VERSION
+    elif 'comparison' in intent:
+        version = intent['comparison']['transport_version']
+    elif 'validation' in intent:
         version = intent['validation']['transport_schema_version']
     elif (directory / 'oracle/intent.json').exists():
         version = immutable_read(directory / 'oracle', 'intent.json')['schema_version']
@@ -329,18 +568,29 @@ def retained_roles(directory, packet, modeldock):
     return oracle, challenge
 
 
-def read_report(directory, config):
-    packet, intent, modeldock = load_attempt(directory)
-    verify_packet(packet, config)
-    metadata = verify_validation_link(directory, packet, intent, config)
-    oracle, challenge = retained_roles(directory, packet, modeldock)
-    completed = immutable_read(directory, 'completion-clock.json')
-    if set(completed) != {'completed_at'} or clock(completed['completed_at']) < minimum_completion(directory, intent):
-        raise ValueError('invalid synthesis completion clock')
-    report = immutable_read(directory, 'report.json')
-    if report != compose_report(packet, oracle, challenge, completed['completed_at'], **({'validation': metadata} if metadata else {})):
-        raise ValueError('synthesis report does not replay')
-    return report
+def read_report(directory, config, *, _source=None, _context=None):
+    context = _context or _ReplayContext(config, source=_source)
+    context.check(config)
+    if directory in context.reports:
+        return deepcopy(context.reports[directory])
+    if directory in context.active:
+        raise ValueError('cyclic synthesis validation ancestry')
+    context.active.add(directory)
+    try:
+        packet, intent, modeldock = context.attempt(directory)
+        context.packet(packet)
+        metadata = verify_validation_link(directory, packet, intent, config, _context=context)
+        oracle, challenge = context.retained(directory, packet, modeldock)
+        completed = context.document(directory, 'completion-clock.json')
+        if set(completed) != {'completed_at'} or clock(completed['completed_at']) < minimum_completion(directory, intent):
+            raise ValueError('invalid synthesis completion clock')
+        report = context.document(directory, 'report.json')
+        if report != compose_report(packet, oracle, challenge, completed['completed_at'], **({'validation': metadata} if metadata else {})):
+            raise ValueError('synthesis report does not replay')
+        context.reports[directory] = deepcopy(report)
+        return report
+    finally:
+        context.active.remove(directory)
 
 
 def minimum_completion(directory, intent):
@@ -355,6 +605,8 @@ def recover_attempt(directory, config, now=None):
     """No client construction or inference, even if a role was never reserved."""
     _off(Path(config['runtime_root']))
     packet, intent, modeldock = load_attempt(directory)
+    if intent['schema_version'] == CODEX_ATTEMPT_VERSION:
+        codex_evidence_gate(config, packet, intent['qualification'])
     verify_packet(packet, config)
     metadata = verify_validation_link(directory, packet, intent, config)
     if (directory / 'report.json').exists():
@@ -369,19 +621,23 @@ def recover_attempt(directory, config, now=None):
     report = compose_report(packet, oracle, challenge, completed, **({'validation': metadata} if metadata else {}))
     _off(Path(config['runtime_root']))
     verify_packet(packet, config)
+    if intent['schema_version'] == CODEX_ATTEMPT_VERSION:
+        codex_evidence_gate(config, packet, intent['qualification'])
     write_json_once(directory, 'report.json', report)
     return read_report(directory, config)
 
 
-def validation_parent(config, parent_report_id, *, deadline=False, error_diagnostic=False, runtime_diagnostic=False, model_selection=False, output_budget=False, contract_validation=False, text_validation=False, symbol_validation=False):
+def validation_parent(config, parent_report_id, *, deadline=False, error_diagnostic=False, runtime_diagnostic=False, model_selection=False, output_budget=False, contract_validation=False, text_validation=False, symbol_validation=False, _source=None, _context=None):
     """Replay a terminal legacy failure; an accepted or uncertain role is ineligible."""
     validation_directory(parent_report_id)
     _, runs = paths(config)
+    context = _context or _ReplayContext(config, source=_source)
+    context.check(config)
     found = None
-    for directory, packet, intent, modeldock in ledger(runs):
+    for directory, packet, intent, modeldock in context.entries():
         if not (directory / 'report.json').exists():
             continue
-        retained = immutable_read(directory, 'report.json')
+        retained = context.document(directory, 'report.json')
         if retained.get('report_id') != parent_report_id:
             continue
         if found is not None:
@@ -412,7 +668,7 @@ def validation_parent(config, parent_report_id, *, deadline=False, error_diagnos
                 raise ValueError('deadline validation source must be the terminal v2 validation')
         elif intent['schema_version'] != VERSION or 'validation' in intent:
             raise ValueError('validation source must be one original failure')
-        report = read_report(directory, config)
+        report = read_report(directory, config, _context=context)
         oracle = report['provenance']['oracle']
         if report['status'] not in {'FAILED', 'REJECTED'} or oracle['status'] not in {'FAILED', 'REJECTED'}:
             raise ValueError('validation source is not a terminal failed Oracle delivery')
@@ -470,7 +726,7 @@ def validation_parent(config, parent_report_id, *, deadline=False, error_diagnos
     return found
 
 
-def verify_validation_link(directory, packet, intent, config):
+def verify_validation_link(directory, packet, intent, config, *, _source=None, _context=None):
     if intent['schema_version'] not in {VALIDATION_VERSION, DEADLINE_VALIDATION_VERSION, ERROR_VALIDATION_VERSION, RUNTIME_VALIDATION_VERSION, MODEL_VALIDATION_VERSION, OUTPUT_VALIDATION_VERSION, CONTRACT_VALIDATION_VERSION, TEXT_VALIDATION_VERSION, SYMBOL_VALIDATION_VERSION}:
         return None
     metadata = validation_metadata(intent['validation'])
@@ -483,7 +739,7 @@ def verify_validation_link(directory, packet, intent, config):
     text_validation = intent['schema_version'] == TEXT_VALIDATION_VERSION
     symbol_validation = intent['schema_version'] == SYMBOL_VALIDATION_VERSION
     parent, original, report = validation_parent(config, metadata['parent_report_id'], deadline=deadline, error_diagnostic=error_diagnostic,
-        runtime_diagnostic=runtime_diagnostic, model_selection=model_selection, output_budget=output_budget, contract_validation=contract_validation, text_validation=text_validation, symbol_validation=symbol_validation)
+        runtime_diagnostic=runtime_diagnostic, model_selection=model_selection, output_budget=output_budget, contract_validation=contract_validation, text_validation=text_validation, symbol_validation=symbol_validation, _source=_source, _context=_context)
     if (sha256_bytes(canonical_json_bytes(report)) != metadata['parent_report_sha256']
             or original != packet or immutable_read(parent, 'packet.json') != immutable_read(directory, 'packet.json')):
         raise ValueError('validation differs from exact original evidence or parent')
@@ -653,17 +909,36 @@ def validate_symbols(config, source_report_id, *, now=None, client_factory=None)
 
 
 def cycle(config, *, now=None, client_factory=None):
+    live_clock = now is None
     root, runs = paths(config)
     with service_lock(root):
         selected = control(read_state(root / 'control.json'))
+        codex = selected['schema_version'] == CODEX_CONTROL_VERSION
         entries = ledger(runs)
         now = now or utc_now()
-        admitted, reason = due(now, entries, selected['enabled'])
+        scheduled = 'schedule' in selected
+        slot = None
+        if scheduled:
+            admitted, reason, slot = scheduled_due(now, entries, selected)
+        else:
+            admitted, reason = due(now, entries, selected['enabled'])
         if not admitted:
             return reason
         _off(Path(config['runtime_root']))
         verify(config)  # No new inference alongside an unverifiable archive.
-        packet = current_packet(config, as_of=now)
+        # Archive replay can be expensive. Live admission must use the clock
+        # after it finishes, never reserve an expired slot with an older time.
+        if live_clock:
+            now = utc_now()
+            if scheduled:
+                admitted, reason, slot = scheduled_due(now, entries, selected)
+            else:
+                admitted, reason = due(now, entries, selected['enabled'])
+            if not admitted:
+                return reason
+        packet = current_packet(config, as_of=now, **({'include_content':selected['analysis']['include_article_content']} if 'analysis' in selected else {}))
+        if codex:
+            codex_evidence_gate(config, packet, selected['qualification'])
         if (now - clock(packet['quality']['latest_capture_at'])).total_seconds() > 600:
             return 'SOURCE_CAPTURE_STALE'
         if not packet['selection']['selected_headline_count']:
@@ -673,22 +948,41 @@ def cycle(config, *, now=None, client_factory=None):
         if len(inventory(runs)) >= MAX_RUNS or sum(p.stat().st_size for p in runs.rglob('*') if p.is_file()) > MAX_BYTES - 8 * 1024 * 1024:
             return 'ARCHIVE_REVIEW_REQUIRED'
         directory = runs / packet['evidence_signature']
-        modeldock = configuration(selected['modeldock'])
+        modeldock = configuration(selected['modeldock'], allow_codex=codex)
         write_json_once(directory, 'packet.json', packet)
-        write_json_once(directory, 'run-intent.json', {'schema_version': VERSION, 'context_id': packet['context_id'],
+        intent = {'schema_version': CODEX_ATTEMPT_VERSION if codex else ECONOMIC_ATTEMPT_VERSION if 'analysis' in selected else SCHEDULE_ATTEMPT_VERSION if scheduled else VERSION, 'context_id': packet['context_id'],
             'packet_sha256': sha256_bytes(canonical_json_bytes(packet)), 'evidence_signature': packet['evidence_signature'],
-            'reserved_at': stamp(now), 'modeldock': selected['modeldock']})
+            'reserved_at': stamp(now), 'modeldock': selected['modeldock']}
+        if scheduled:
+            intent['schedule'] = {'id': selected['schedule']['id'], 'slot_at': slot,
+                                  'window_seconds': selected['schedule']['window_seconds']}
+        if 'analysis' in selected:
+            intent['analysis'] = selected['analysis']
+        if codex:
+            intent.update(transport_version=CODEX_TRANSPORT_VERSION, qualification=selected['qualification'])
+        write_json_once(directory, 'run-intent.json', intent)
+        transport_version = CODEX_TRANSPORT_VERSION if codex else ('blackpod.sentry_synthesis_transport.v16' if selected.get('analysis',{}).get('prompt_version')=='ECONOMIC_V4' else ECONOMIC_TRANSPORT_VERSION) if 'analysis' in selected else BACKGROUND_TRANSPORT_VERSION
         state = {'schema_version': VERSION, 'last_attempt_at': stamp(now), 'last_run': directory.name,
                  'last_result': 'ATTEMPT_STARTED'}
         atomic_state(root / 'state.json', state)  # The durable run intent already consumed budget.
         try:
-            gate = lambda: _off(Path(config['runtime_root']))
+            def gate():
+                _off(Path(config['runtime_root']))
+                if codex:
+                    if control(read_state(root / 'control.json')) != selected:
+                        raise ValueError('Codex Sentry control changed during the reserved attempt')
+                    codex_evidence_gate(config, packet, selected['qualification'])
             source = lambda: verify_packet(packet, config)
-            oracle = generate_role('oracle', packet, directory / 'oracle', modeldock,
-                off_check=gate, verify_source=source, client_factory=client_factory, version=BACKGROUND_TRANSPORT_VERSION)
-            if oracle['status'] == 'ACCEPTED':
-                generate_role('challenge', packet, directory / 'challenge', modeldock, draft=oracle['response'],
-                    off_check=gate, verify_source=source, client_factory=client_factory, version=BACKGROUND_TRANSPORT_VERSION)
+            with awake_while_generating(modeldock):
+                oracle = generate_role('oracle', packet, directory / 'oracle', modeldock,
+                    off_check=gate, verify_source=source, client_factory=client_factory, version=transport_version)
+                if codex:
+                    gate()
+                if oracle['status'] == 'ACCEPTED':
+                    generate_role('challenge', packet, directory / 'challenge', modeldock, draft=oracle['response'],
+                        off_check=gate, verify_source=source, client_factory=client_factory, version=transport_version)
+                    if codex:
+                        gate()
             report = recover_attempt(directory, config)
             state['last_result'] = report['status']
         except ERRORS:
@@ -699,33 +993,40 @@ def cycle(config, *, now=None, client_factory=None):
 
 def verify(config):
     _, runs = paths(config)
-    entries = ledger(runs)
+    context = _ReplayContext(config)
+    source = context.source
+    entries = context.entries()
     orphans = [directory for directory in inventory(runs) if not (directory / 'run-intent.json').exists()]
     for directory in orphans:
         if (directory / 'packet.json').exists():
-            verify_packet(immutable_read(directory, 'packet.json'), config)
+            context.packet(immutable_read(directory, 'packet.json'))
     complete = uncertain = 0
     dispositions = {}
     for directory, packet, intent, modeldock in entries:
-        verify_packet(packet, config)
-        verify_validation_link(directory, packet, intent, config)
-        retained_roles(directory, packet, modeldock)
         if (directory / 'report.json').exists():
-            report = read_report(directory, config)
+            report = read_report(directory, config, _context=context)
             dispositions[report['status']] = dispositions.get(report['status'], 0) + 1
             complete += 1
         else:
+            context.packet(packet)
+            verify_validation_link(directory, packet, intent, config, _context=context)
+            context.retained(directory, packet, modeldock)
             uncertain += 1
     return {'status': 'VERIFIED', 'attempt_count': len(entries), 'report_count': complete,
             'incomplete_attempt_count': uncertain, 'abandoned_pre_reservation_count': len(orphans),
             'report_dispositions': dispositions}
 
 
-def role_diagnostics(directory, report):
+def role_diagnostics(directory, report, *, _context=None):
     """Read closed, receipt-bound failure categories without exposing model text."""
-    _, _, dock = load_attempt(directory)
+    _, _, dock = (_context.attempt(directory) if _context is not None else load_attempt(directory))
     result = {}
     for role in ('oracle', 'challenge'):
+        if _context is not None and not os.path.lexists(directory / role / 'local-contract-error.json'):
+            # The context has already verified the original role. There is no
+            # diagnostic to attach; a symlink still counts as present and is
+            # rejected by the original safe reader rather than skipped.
+            continue
         observation = read_local_contract_observation(role, report['context'], directory / role, dock,
             **({'draft': report['draft']} if role == 'challenge' else {}))
         if observation is not None:
@@ -743,12 +1044,19 @@ def status(config, now=None):
         root, runs = paths(config)
         selected = control(read_state(root / 'control.json'))
         entries = ledger(runs)
+        replay = _ReplayContext(config, entries=entries)
         orphan_count = len(inventory(runs)) - len(entries)
         state = read_state(root / 'state.json')
-        heartbeat = read_state(root / 'health.json').get('heartbeat_at')
-        _, reason = due(now, entries, selected['enabled'])
+        health = read_state(root / 'health.json')
+        heartbeat = health.get('heartbeat_at')
+        scheduled = 'schedule' in selected
+        slot = None
+        if scheduled:
+            _, reason, slot = scheduled_due(now, entries, selected)
+        else:
+            _, reason = due(now, entries, selected['enabled'])
         today = now.astimezone(LA).date()
-        background = [row for row in entries if row[2]['schema_version'] == VERSION]
+        background = [row for row in entries if row[2]['schema_version'] in BACKGROUND_ATTEMPT_VERSIONS]
         health_bound = 300
         processing = False
         if entries and heartbeat:
@@ -770,11 +1078,30 @@ def status(config, now=None):
             'abandoned_pre_reservation_count': orphan_count,
             'attempt_count_today': sum(clock(row[2]['reserved_at']).astimezone(LA).date() == today for row in entries),
             'background_attempt_count_today': sum(clock(row[2]['reserved_at']).astimezone(LA).date() == today for row in background),
-            'manual_attempt_count_today': sum(row[2]['schema_version'] != VERSION and clock(row[2]['reserved_at']).astimezone(LA).date() == today for row in entries),
+            'manual_attempt_count_today': sum(row[2]['schema_version'] not in BACKGROUND_ATTEMPT_VERSIONS and clock(row[2]['reserved_at']).astimezone(LA).date() == today for row in entries),
             'last_attempt_at': entries[-1][2]['reserved_at'] if entries else None,
             'next_eligible_at': stamp(clock(background[-1][2]['reserved_at']) + timedelta(hours=1)) if background and reason == 'WAITING_FOR_NEXT_SLOT' else None,
             'last_result': state.get('last_result', 'NOT_RUN')}
-        packet = current_packet(config, as_of=now)
+        if selected['schema_version'] == CODEX_CONTROL_VERSION:
+            codex_qualification(selected['qualification'], verify=True)
+            _pinned_view(Path(config['experiment_root']), config['experiment_id'], config['protocol_sha256'])
+            value['operational']['provider_policy'] = {'provider': 'codex', 'engine': 'codex-app-server',
+                'prompt_version': 'ECONOMIC_V4', 'transport_version': CODEX_TRANSPORT_VERSION,
+                'monitoring': selected['monitoring'], 'qualification': selected['qualification']}
+        value['operational']['last_check_result'] = health.get('last_check_result', 'NOT_CHECKED')
+        if scheduled:
+            plan = selected['schedule']
+            claimed = {row[2]['schedule']['slot_at']: row[0].name for row in entries
+                       if row[2]['schema_version'] in {SCHEDULE_ATTEMPT_VERSION, ECONOMIC_ATTEMPT_VERSION, CODEX_ATTEMPT_VERSION} and 'schedule' in row[2]
+                       and row[2]['schedule']['id'] == plan['id']}
+            value['operational']['schedule'] = {'id': plan['id'], 'slots': [
+                {'slot_at': t, 'run_id': claimed.get(t), 'status': 'RESERVED' if t in claimed else
+                 'MISSED_NO_ATTEMPT' if now >= clock(t) + timedelta(seconds=plan['window_seconds']) else 'PENDING'}
+                for t in plan['slots']]}
+            value['operational']['next_eligible_at'] = slot
+        packet = current_packet(config, as_of=now, verified_source=replay.source, **({'include_content':selected['analysis']['include_article_content']} if 'analysis' in selected else {}))
+        if selected['schema_version'] == CODEX_CONTROL_VERSION and packet['watchlist'] != selected['qualification']['watchlist']:
+            raise ValueError('current watchlist differs from qualified Codex policy')
         value['current_source_head'] = packet['source']['head_sha256']
         # Current observations are separate from the preserved model input.
         if packet['quality'].get('market_feed') in {'sip', 'delayed_sip'}:
@@ -787,15 +1114,22 @@ def status(config, now=None):
                 'feed_delay_seconds': packet['quality']['feed_delay_seconds'],
                 'contexts': [row['data'] for row in packet['evidence'] if row['kind'] == 'PRICE_CONTEXT'],
             }
-        for directory, _, _, _ in reversed(entries):
+        for directory, _, retained_intent, _ in reversed(entries):
+            # Controlled study subsets (including explicitly authored stress
+            # cases) must not replace the operational market brief.
+            if retained_intent['schema_version'] == COMPARISON_ATTEMPT_VERSION:
+                continue
             if (directory / 'report.json').exists():
-                report = read_report(directory, config)
+                report = read_report(directory, config, _context=replay)
                 value.update(status=report['status'], report=report,
                     brief_age_seconds=int((now-clock(report['context']['as_of'])).total_seconds()),
                     newer_evidence_available=report['context']['source']['head_sha256'] != packet['source']['head_sha256'])
-                value['role_diagnostics'] = role_diagnostics(directory, report)
+                value['role_diagnostics'] = role_diagnostics(directory, report, _context=replay)
+                if (report.get('draft') or {}).get('schema_version') in {'blackpod.sentry_oracle_draft.v4', 'blackpod.sentry_oracle_draft.v5'}:
+                    from .sentry_narrative_evaluation import intake_quality
+                    value['intake_quality'] = intake_quality(report['context'],report['draft'],report['challenge'])
                 break
-        if (entries or orphan_count) and not value['report']:
+        if (any(row[2]['schema_version'] != COMPARISON_ATTEMPT_VERSION for row in entries) or orphan_count) and not value['report']:
             value['status'] = 'UNCERTAIN'
         _off(Path(config['runtime_root']))
     except ERRORS:
@@ -814,10 +1148,16 @@ def worker(config, stop):
     while not stop.is_set():
         try:
             atomic_state(root / 'health.json', {'schema_version': VERSION, 'heartbeat_at': stamp(utc_now())})
-            cycle(config)
+            result = cycle(config)
+            atomic_state(root / 'health.json', {'schema_version': VERSION,
+                'heartbeat_at': stamp(utc_now()), 'last_check_result': result})
         except ERRORS:
             # Failures cannot stop the independent pilot or Sentry collector.
-            pass
+            try:
+                atomic_state(root / 'health.json', {'schema_version': VERSION,
+                    'heartbeat_at': stamp(utc_now()), 'last_check_result': 'SOURCE_OR_OFF_BLOCKED'})
+            except ERRORS:
+                pass
         stop.wait(30)
 
 
@@ -837,8 +1177,32 @@ def main(argv=None):
     parser.add_argument('--modeldock-timeout-seconds', type=float)
     parser.add_argument('--modeldock-delivery-grace-seconds', type=float, default=30)
     parser.add_argument('--modeldock-profile', default='default')
+    parser.add_argument('--modeldock-provider', choices=['mlx', 'codex'], default='mlx')
+    parser.add_argument('--codex-validation-root', type=Path, help='Verified accepted full-watchlist compatibility capsule for Codex configure only')
+    parser.add_argument('--weekday-monitoring', action='store_true', help='Explicitly select existing bounded weekday monitoring for Codex configure')
     parser.add_argument('--source-report-id')
+    parser.add_argument('--schedule', type=Path, help='Finite schedule JSON for configure only')
+    parser.add_argument('--economic-prompt', action='store_true', help='Configure versioned economic reasoning')
+    parser.add_argument('--economic-prompt-version', choices=['ECONOMIC_V3','ECONOMIC_V4'])
+    parser.add_argument('--include-article-content', action='store_true', help='Supply retained provider article text to the economic prompt')
     args = parser.parse_args(argv)
+    if args.schedule is not None and args.command != 'configure':
+        parser.error('--schedule is only valid for configure')
+    if (args.codex_validation_root is not None or args.weekday_monitoring or args.modeldock_provider != 'mlx') and args.command != 'configure':
+        parser.error('provider policy is only valid for configure')
+    if args.modeldock_provider == 'codex':
+        if not args.economic_prompt or args.economic_prompt_version != 'ECONOMIC_V4' or args.codex_validation_root is None:
+            parser.error('Codex configure requires economic V4 and an accepted --codex-validation-root')
+        if args.weekday_monitoring == (args.schedule is not None):
+            parser.error('Codex configure requires exactly one of --weekday-monitoring or --schedule')
+    elif args.codex_validation_root is not None or args.weekday_monitoring:
+        parser.error('Codex qualification and deliberate monitoring apply only to provider codex')
+    if (args.economic_prompt or args.include_article_content or args.economic_prompt_version) and args.command != 'configure':
+        parser.error('economic settings are only valid for configure')
+    if args.economic_prompt_version and not args.economic_prompt:
+        parser.error('--economic-prompt-version requires --economic-prompt')
+    if args.include_article_content and not args.economic_prompt:
+        parser.error('--include-article-content requires --economic-prompt')
     if args.command in {'validate-v2', 'validate-deadline', 'validate-error', 'validate-runtime', 'validate-model', 'validate-output-budget', 'validate-contract', 'validate-text', 'validate-symbols'} and not args.source_report_id:
         parser.error('explicit validation requires --source-report-id identifying its terminal failed source')
     if args.command not in {'validate-v2', 'validate-deadline', 'validate-error', 'validate-runtime', 'validate-model', 'validate-output-budget', 'validate-contract', 'validate-text', 'validate-symbols'} and args.source_report_id is not None:
@@ -847,13 +1211,29 @@ def main(argv=None):
         config = load_config(args.config)
         root, runs = paths(config)
         if args.command == 'configure':
-            dock = ModelDockConfig(args.modeldock_base_url, args.modeldock_timeout_seconds,
-                profile=args.modeldock_profile, delivery_grace_seconds=args.modeldock_delivery_grace_seconds)
+            dock = configuration({'base_url':args.modeldock_base_url, 'timeout_seconds':args.modeldock_timeout_seconds,
+                'profile':args.modeldock_profile, 'provider':args.modeldock_provider,
+                'max_response_bytes':1024 * 1024, 'delivery_grace_seconds':args.modeldock_delivery_grace_seconds},
+                allow_codex=args.modeldock_provider == 'codex')
             document = {'schema_version': CONTROL_VERSION, 'enabled': args.enabled,
                 'modeldock': {key: getattr(dock, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}}
+            if args.schedule is not None:
+                document.update(schema_version=SCHEDULE_CONTROL_VERSION, schedule=read_state(args.schedule))
+            if args.economic_prompt:
+                document.update(schema_version=ECONOMIC_CONTROL_VERSION,
+                    analysis={'prompt_version':args.economic_prompt_version or 'ECONOMIC_V3','include_article_content':args.include_article_content})
+            if args.modeldock_provider == 'codex':
+                from .sentry_codex_validation import verify_qualification
+                qualified = verify_qualification(args.codex_validation_root)
+                document.update(schema_version=CODEX_CONTROL_VERSION, qualification=qualified,
+                    monitoring='FINITE_SCHEDULE' if args.schedule is not None else 'WEEKDAY_BOUNDED')
             control(document)
             _off(Path(config['runtime_root']))
             with service_lock(root):
+                if args.modeldock_provider == 'codex':
+                    packet = current_packet(config, include_content=args.include_article_content)
+                    codex_evidence_gate(config, packet, document['qualification'])
+                    verify(config)
                 atomic_state(root / 'control.json', document)
             result = document
         elif args.command == 'generate':

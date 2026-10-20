@@ -51,6 +51,16 @@ RUBRIC = {
     'meaning': 'Descriptive review of retained headlines; not factual truth, an edge, calibrated confidence or authority.',
 }
 RUBRIC_SHA256 = sha256_bytes(canonical_json_bytes(RUBRIC))
+ECONOMIC_REVIEW_VERSION = 'blackpod.sentry_narrative_review.v2'
+ECONOMIC_RUBRIC_VERSION = 'blackpod.sentry_narrative_rubric.v2'
+ECONOMIC_RUBRIC = {**deepcopy(RUBRIC), 'schema_version':ECONOMIC_RUBRIC_VERSION,
+    'claim_scope':'SYMBOL_IMPLICATIONS_AND_STRUCTURED_ECONOMIC_ANALYSES',
+    'meaning':'Source-bound review of supplied provider headlines and available content, including linkage, materiality and test conditions; not authenticated truth, investment approval or authority.'}
+ECONOMIC_RUBRIC_SHA256 = sha256_bytes(canonical_json_bytes(ECONOMIC_RUBRIC))
+
+def _economic_report(report):
+    return report.get('draft',{}).get('schema_version') in {'blackpod.sentry_oracle_draft.v4', 'blackpod.sentry_oracle_draft.v5'}
+
 LIMITATIONS = [
     'MECHANICAL_PATTERNS_ARE_NOT_SEMANTIC_TRUTH_OR_FALSEHOOD',
     'ASSISTANT_ADJUDICATION_NOT_INDEPENDENT_HUMAN_OR_SOURCE_CORROBORATION',
@@ -67,6 +77,102 @@ _ID = re.compile(r'narrative-eval-[0-9a-f]{64}\Z')
 _REPORT = re.compile(r'sentry-synthesis-[0-9a-f]{64}\Z')
 _TEMP = re.compile(r'\.publish-[0-9a-f]{32}\.tmp\Z')
 ERRORS = (ValueError, TypeError, KeyError, OSError, RuntimeError, JournalStoreError)
+
+
+def analytical_quality(packet, draft, challenge=None):
+    """Deterministic blockers only; source entailment is never a keyword verdict.
+
+    Passing this screen still requires the existing attributed narrative review.
+    It cannot establish materiality, causal truth, economic support or authority.
+    """
+    evidence = {e['evidence_id']:e for e in packet['evidence']}
+    findings = []
+    def flag(code, path, reason):
+        findings.append({'code':code,'path':path,'reason':reason})
+    labels = {'directmention','hypotheticalreadthrough','unknown','tbd','todo','n/a'}
+    def normalized(s): return ''.join(c.lower() for c in s if c.isalnum())
+    for ti, theme in enumerate(draft.get('themes',[])):
+        for _, implication in implication_items(theme):
+            for lens in ('trading','investment'):
+                text = implication[lens]
+                key = normalized(text)
+                path = f'/draft/themes/{ti}/implication/{implication["symbol"]}/{lens}'
+                if key in labels or key in {'directmention','hypotheticalreadthrough'}:
+                    flag('PLACEHOLDER_OR_LINKAGE_PROSE',path,'A label is not an economic implication.')
+                if len(key) >= 20 and any(key in normalized(e['data']['headline']) for e in evidence.values() if e['kind']=='HEADLINE'):
+                    flag('HEADLINE_COPIED_AS_ANALYSIS',path,'The implication is a headline or headline fragment.')
+    for i, review in enumerate((challenge or {}).get('reviews',[])):
+        for j, missing in enumerate(review['missing_evidence']):
+            if missing in evidence:
+                flag('PRESENT_EVIDENCE_LISTED_AS_MISSING',f'/challenge/reviews/{i}/missing_evidence/{j}','The supplied packet already contains this evidence.')
+    candidates = []
+    for i, analysis in enumerate(draft.get('economic_analyses',[])):
+        path = f'/draft/economic_analyses/{i}'
+        for section in ('event','company_linkage'):
+            claim = analysis[section]
+            source = evidence.get(claim['evidence_id'])
+            text = '' if source is None else source['data'].get('headline','') + ' ' + source['data'].get('article_content',{}).get('text','')
+            if not claim['source_quote'] or claim['source_quote'] not in text:
+                flag('SOURCE_QUOTE_NOT_PRESENT',path+'/'+section,'The claimed quotation is not in its supplied source.')
+        if analysis['event']['claim_type'] == 'CONFIRMED_IN_SUPPLIED_PRIMARY_SOURCE':
+            flag('PRIMARY_SOURCE_NOT_ESTABLISHED',path+'/event','This packet contains provider reports, not authenticated primary-source documents.')
+        hypothesis = analysis['hypothesis']
+        if hypothesis['qualification'] == 'NO_ACTIONABLE_HYPOTHESIS':
+            continue
+        candidates.append(analysis['analysis_id'])
+        if analysis['company_linkage']['classification'] in {'UNSUPPORTED','SPECULATIVE'}:
+            flag('COMPANY_EXPOSURE_UNSUPPORTED',path+'/company_linkage','A candidate requires a supported economic linkage, reviewed semantically.')
+        if analysis['mechanism']['channel'] == 'UNKNOWN':
+            flag('MISSING_ECONOMIC_MECHANISM',path+'/mechanism','Unknown transmission cannot qualify a research candidate.')
+        if analysis['materiality']['assessment'] != 'PLAUSIBLY_MATERIAL':
+            flag('MATERIALITY_NOT_ESTABLISHED',path+'/materiality','Unknown or immaterial events cannot qualify automatically.')
+        if hypothesis['direction'] == 'UNDETERMINED' or hypothesis['horizon_days'] <= 0:
+            flag('HYPOTHESIS_NOT_TESTABLE',path+'/hypothesis','A candidate needs a direction and review horizon.')
+        for key in ('validation_conditions','invalidation_conditions'):
+            if not hypothesis[key]:
+                flag('OBSERVABLE_CONDITION_MISSING',path+'/hypothesis/'+key,'A research candidate needs observable validation and invalidation tests.')
+    return {'schema_version':'blackpod.sentry_analytical_quality.v1',
+        'status':'BLOCKED' if findings else 'REQUIRES_SEMANTIC_REVIEW' if candidates else 'NO_QUALIFIED_HYPOTHESIS',
+        'deterministic_findings':findings,'candidate_analysis_ids':candidates,
+        'semantic_review_required':bool(candidates),'semantic_checks':['factual_grounding','company_linkage','economic_mechanism','materiality','contradictions','testability'],
+        'research_handoff_enabled':False,'authority':dict(AUTHORITY)}
+
+
+def intake_quality(packet, draft, challenge=None):
+    """Stricter intake revision; historical report-quality v1 remains replayable."""
+    result = deepcopy(analytical_quality(packet, draft, challenge))
+    result['schema_version'] = 'blackpod.sentry_analytical_quality.v2'
+    findings = result['deterministic_findings']
+    for ti, theme in enumerate(draft.get('themes', [])):
+        for _, implication in implication_items(theme):
+            for lens in ('trading', 'investment'):
+                text=implication[lens].strip()
+                if text.upper() in packet['watchlist']:
+                    findings.append({'code':'TICKER_USED_AS_IMPLICATION',
+                        'path':f'/draft/themes/{ti}/implication/{implication["symbol"]}/{lens}',
+                        'reason':'A ticker alone does not explain a financial implication.'})
+                token=''.join(c.lower() for c in text if c.isalnum())
+                if not any(c.isalpha() for c in text) or token in {'na','speculative','sellsignal','buysignal','sell','buy'}:
+                    findings.append({'code':'PLACEHOLDER_OR_LINKAGE_PROSE',
+                        'path':f'/draft/themes/{ti}/implication/{implication["symbol"]}/{lens}',
+                        'reason':'A punctuation-only value or classification label is not explanatory prose.'})
+    for i, analysis in enumerate(draft.get('economic_analyses', [])):
+        cited = set(analysis['catalyst_evidence_ids'])
+        if any(analysis[key]['evidence_id'] not in cited for key in ('event','company_linkage')):
+            findings.append({'code':'SOURCE_NOT_IN_CATALYST_CITATIONS',
+                'path':f'/draft/economic_analyses/{i}',
+                'reason':'Event and exposure quotations must belong to the declared catalyst evidence.'})
+        hypothesis=analysis['hypothesis']
+        identity=lambda c:tuple(c[k] for k in ('metric','operator','threshold','unit'))
+        validation={identity(c) for c in hypothesis['validation_conditions']}
+        invalidation={identity(c) for c in hypothesis['invalidation_conditions']}
+        if validation & invalidation:
+            findings.append({'code':'VALIDATION_AND_INVALIDATION_IDENTICAL',
+                'path':f'/draft/economic_analyses/{i}/hypothesis',
+                'reason':'The same declared observable cannot both validate and invalidate this test plan.'})
+    if findings:
+        result['status'] = 'BLOCKED'
+    return result
 
 
 def _object(value, keys):
@@ -133,6 +239,14 @@ def claim_catalog(report):
                 claims.append({'claim_path': f'/draft/themes/{ti}/{relative_path}/{lens}',
                     'symbol': implication['symbol'], 'lens': lens, 'claim_text': text,
                     'cited_evidence_ids': list(theme['evidence_ids'])})
+    if _economic_report(report):
+        for index, analysis in enumerate(report['draft']['economic_analyses']):
+            for section, field in (('event','statement'),('company_linkage','basis'),
+                    ('mechanism','explanation'),('materiality','basis'),('hypothesis','statement')):
+                claims.append({'claim_path':f'/draft/economic_analyses/{index}/{section}/{field}',
+                    'symbol':analysis['security'],'lens':'STRUCTURED_ECONOMIC_ANALYSIS',
+                    'claim_text':analysis[section][field],
+                    'cited_evidence_ids':list(analysis['catalyst_evidence_ids'])})
     return claims
 
 
@@ -203,7 +317,9 @@ def validate_review(review, report):
     _source(report)
     value = deepcopy(_object(review, {'schema_version', 'rubric_version', 'review_id', 'reviewed_at', 'reviewer',
         'method', 'source_report_id', 'source_report_sha256', 'packet_sha256', 'criteria', 'claims', 'later_context'}))
-    if (value['schema_version'] != REVIEW_VERSION or value['rubric_version'] != RUBRIC_VERSION
+    expected_review = ECONOMIC_REVIEW_VERSION if _economic_report(report) else REVIEW_VERSION
+    expected_rubric = ECONOMIC_RUBRIC_VERSION if _economic_report(report) else RUBRIC_VERSION
+    if (value['schema_version'] != expected_review or value['rubric_version'] != expected_rubric
             or value['method'] != 'ASSISTANT_ADJUDICATION'
             or value['source_report_id'] != report['report_id']
             or _digest(value['source_report_sha256']) != _hash(report)
@@ -260,19 +376,28 @@ def build_evaluation(report, review):
     counts = {key: sum(row['assessment'] == key for row in criteria) for key in sorted(ASSESSMENTS)}
     status = ('NEEDS_REVISION' if counts['NEEDS_WORK'] else 'REVIEW_INCOMPLETE' if counts['NOT_ASSESSED']
               else 'MIXED_REVIEW' if counts['PARTIAL'] else 'MEETS_REVIEW_RUBRIC')
-    result = {'schema_version': VERSION, 'evaluation_id': evaluation_id(review),
+    economic = _economic_report(report)
+    limitations = list(LIMITATIONS)
+    if economic:
+        limitations.remove('HEADLINE_PACKET_ONLY_NO_LATER_ARTICLE_BODIES_OR_MARKET_OUTCOMES')
+        limitations.remove('CLAIM_SCOPE_IS_SPECIFIED_SYMBOL_IMPLICATIONS_NOT_ALL_PROSE_OR_MARKET_TRUTH')
+        limitations.extend(['PROVIDER_CONTENT_SCOPE_AND_MISSING_BODIES_RETAINED_NO_MARKET_OUTCOMES',
+            'REVIEW_COVERS_STRUCTURED_ECONOMIC_ARGUMENT_NOT_AUTHENTICATED_MARKET_TRUTH'])
+    result = {'schema_version': 'blackpod.sentry_narrative_evaluation.v2' if economic else VERSION, 'evaluation_id': evaluation_id(review),
         'source_report_id': report['report_id'], 'source_report_sha256': _hash(report),
         'packet_sha256': _hash(report['context']), 'context_id': report['context']['context_id'],
         'source_prefix': deepcopy(report['context']['source']),
         'draft_sha256': _hash(report['draft']), 'challenge_sha256': _hash(report['challenge']),
-        'rubric_version': RUBRIC_VERSION, 'rubric_sha256': RUBRIC_SHA256, 'rubric': deepcopy(RUBRIC),
+        'rubric_version': ECONOMIC_RUBRIC_VERSION if economic else RUBRIC_VERSION,
+        'rubric_sha256': ECONOMIC_RUBRIC_SHA256 if economic else RUBRIC_SHA256,
+        'rubric': deepcopy(ECONOMIC_RUBRIC if economic else RUBRIC),
         'review_id': review['review_id'], 'review_sha256': _hash(review), 'reviewed_at': review['reviewed_at'],
         'reviewer': review['reviewer'], 'method': review['method'], 'criteria': criteria,
         'claims': [{**catalog[row['claim_path']], **row} for row in sorted(review['claims'], key=lambda r: r['claim_path'])],
         'later_context': review['later_context'], 'mechanical': mechanical,
         'summary': {'status': status, 'criteria_counts': counts, 'reviewed_claim_count': len(review['claims']),
             'claim_count': len(catalog), 'mechanical_finding_count': len(mechanical['findings'])},
-        'limitations': list(LIMITATIONS), 'authority': dict(AUTHORITY)}
+        'limitations': limitations, 'authority': dict(AUTHORITY)}
     result['evaluation_sha256'] = _hash(result)
     return result
 

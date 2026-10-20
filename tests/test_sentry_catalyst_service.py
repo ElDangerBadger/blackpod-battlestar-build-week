@@ -1,6 +1,6 @@
 """Worker/HTTP integration with authored provider fixtures and no live calls."""
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 import tempfile
@@ -10,7 +10,8 @@ from unittest.mock import patch
 from blackpod_build_week import sentry_catalyst_service as service
 from blackpod_build_week import sentry_catalyst_presentation as presentation
 from blackpod_build_week import shadow_station
-from blackpod_build_week.sentry_catalyst import VERSION, CONSOLIDATED_VERSION, CatalystStore, stamp
+from blackpod_build_week.sentry_catalyst import (VERSION, CONSOLIDATED_VERSION,
+    WINDOW_CONTROL_VERSION, CatalystStore, stamp, control)
 from blackpod_build_week.sentry_catalyst_capture import CatalystCaptureError
 from blackpod_build_week.paper_account_probe import PaperCredentials
 from blackpod_build_week.shadow_station import atomic_state, read_state
@@ -118,6 +119,83 @@ class WorkerTests(unittest.TestCase):
         result = service.status(self.config, NOW)
         self.assertEqual(result['auto_trading'], 'UNVERIFIED')
         self.assertIsNone(result['capture'])
+
+    def window_control(self):
+        return {'schema_version': WINDOW_CONTROL_VERSION, 'enabled': True,
+                'symbols': WATCH, 'feed': 'delayed_sip', 'monitoring_window': {
+                    'start_at': '2026-10-17T23:00:00Z', 'end_at': '2026-10-19T13:30:00Z',
+                    'poll_seconds': 600}}
+
+    def test_weekend_window_collects_with_original_off_and_attempt_gates(self):
+        value = self.window_control()
+        atomic_state(self.root / 'control.json', value)
+        saturday = datetime(2026, 10, 17, 23, tzinfo=timezone.utc)
+        receipt = {'status': 'CAPTURED', 'captured_at': stamp(saturday)}
+        with patch.object(service, 'collect', return_value=receipt) as collect:
+            self.assertEqual(service.cycle(self.config, now=saturday), 'CAPTURED')
+            self.assertEqual(service.cycle(self.config, now=saturday+timedelta(seconds=599)), 'WAITING_FOR_NEXT_SLOT')
+        collect.assert_called_once_with(self.config, WATCH, feed='delayed_sip', getter=service.market_get)
+        self.assertEqual(read_state(self.root / 'state.json')['attempts_today'], 1)
+        self.assertGreater(self.off.call_count, 0)
+        self.off.side_effect = ValueError('off unverified')
+        with patch.object(service, 'collect') as collect, self.assertRaises(ValueError):
+            service.cycle(self.config, now=saturday+timedelta(seconds=600))
+        collect.assert_not_called()
+
+    def test_window_expiry_and_not_yet_started_never_read_keys_or_fall_back(self):
+        atomic_state(self.root / 'control.json', self.window_control())
+        with patch.object(service, 'parse_credentials') as keys, patch.object(service, 'collect') as collect:
+            self.assertEqual(service.cycle(self.config, now=datetime(2026,10,17,22,tzinfo=timezone.utc)), 'BEFORE_MONITORING_WINDOW')
+            # Monday at normal weekday monitoring hours must still stop exactly at expiry.
+            self.assertEqual(service.cycle(self.config, now=datetime(2026,10,19,13,30,tzinfo=timezone.utc)), 'MONITORING_WINDOW_ENDED')
+            keys.assert_not_called()
+            collect.assert_not_called()
+        self.assertFalse((self.root / 'state.json').exists())
+
+    def test_window_preserves_budget_cooldown_backward_clock_and_day_rollover(self):
+        sunday = datetime(2026,10,18,12,tzinfo=timezone.utc)
+        window = self.window_control()['monitoring_window']
+        state = {'attempt_day': '2026-10-18', 'attempts_today': 144,
+                 'last_attempt_at': stamp(sunday-timedelta(minutes=10))}
+        self.assertEqual(service.due(sunday,state,True,window)[1], 'DAILY_BUDGET_EXHAUSTED')
+        state['attempts_today'] = 143
+        state['blocked_until'] = stamp(sunday+timedelta(minutes=15))
+        self.assertEqual(service.due(sunday,state,True,window)[1], 'COOLDOWN')
+        state.pop('blocked_until')
+        self.assertEqual(service.due(sunday-timedelta(minutes=11),state,True,window)[1], 'CLOCK_BLOCKED')
+        monday = datetime(2026,10,19,12,tzinfo=timezone.utc)
+        self.assertTrue(service.due(monday,state,True,window)[0])
+        self.assertEqual(service.due(monday,state,False,window)[1], 'PAUSED')
+
+    def test_window_control_rejects_unbounded_invalid_or_fast_collection(self):
+        value = self.window_control()
+        self.assertEqual(control(value), value)
+        changes = [{'end_at': '2026-10-21T13:30:00Z'}, {'end_at': value['monitoring_window']['start_at']},
+                   {'poll_seconds': 300}, {'poll_seconds': True}, {'poll_seconds': 3601},
+                   {'start_at': '2026-10-17T23:00:00'}]
+        for change in changes:
+            invalid = deepcopy(value)
+            invalid['monitoring_window'].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                control(invalid)
+        for key in value['monitoring_window']:
+            invalid = deepcopy(value)
+            del invalid['monitoring_window'][key]
+            with self.assertRaises(ValueError):
+                control(invalid)
+
+    def test_window_configure_retains_exact_expiry_and_rejects_partial_window(self):
+        from contextlib import redirect_stdout
+        import io
+        args = ['configure','--config','fixture.json','--symbols',','.join(WATCH),
+                '--enabled','--feed','delayed_sip','--window-start','2026-10-17T23:00:00Z',
+                '--window-end','2026-10-19T13:30:00Z']
+        with patch.object(shadow_station,'load_config',return_value=self.config), redirect_stdout(io.StringIO()):
+            self.assertEqual(service.main(args), 0)
+            before = (self.root / 'control.json').read_bytes()
+            self.assertEqual(service.main(args[:-2]), 2)
+        self.assertEqual((self.root / 'control.json').read_bytes(), before)
+        self.assertEqual(read_state(self.root / 'control.json'), self.window_control())
 
 
 class HTTPTests(_LocalHTTPMixin, unittest.TestCase):
@@ -231,3 +309,24 @@ class HTTPTests(_LocalHTTPMixin, unittest.TestCase):
         self.assertIn('HTTP_ERROR',html)
         self.value['capture'] = None
         self.assertIn('No verified headlines recorded',presentation.render(self.value))
+
+    def test_weekend_window_displays_real_interval_and_stop_without_mutating_evidence(self):
+        self.value['monitoring_window'] = {'start_at':'2026-10-17T23:39:57Z',
+            'end_at':'2026-10-19T13:35:00Z','poll_seconds':600}
+        before = deepcopy(self.value)
+        html = presentation.render(self.value)
+        self.assertIn('Monitoring · 10-minute polling',html)
+        self.assertIn('Oct 19 · 06:35:00 AM PDT',html)
+        self.assertIn('pauses at window end',html)
+        self.assertNotIn('five-minute polling',html)
+        self.assertNotIn('weekdays 5 a.m.',html)
+        self.assertEqual(self.value,before)
+        self.value['status'] = 'MONITORING_WINDOW_ENDED'
+        self.assertIn('Collection window ended · collection paused',presentation.render(self.value))
+
+    def test_invalid_window_does_not_invent_a_default_schedule(self):
+        self.value['monitoring_window'] = {'poll_seconds':'<script>bad</script>'}
+        html = presentation.render(self.value)
+        self.assertIn('Monitoring schedule unavailable',html)
+        self.assertNotIn('<script>bad</script>',html)
+        self.assertNotIn('weekdays 5 a.m.',html)

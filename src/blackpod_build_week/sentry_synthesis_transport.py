@@ -1,6 +1,7 @@
 """One-shot local Oracle/challenge delivery over immutable Sentry evidence.
 
-Transport LIVE means local MLX inference, never decision or execution authority.
+Transport LIVE means inference, never decision or execution authority. Legacy
+versions require local MLX; v18 explicitly admits ModelDock's Codex cloud route.
 A reserved or interrupted request is never automatically resent. Reading and
 verifying retained responses cannot create a client or invoke inference.
 """
@@ -10,6 +11,7 @@ from contextlib import contextmanager
 from collections.abc import Mapping
 from datetime import datetime, timezone
 import fcntl
+import base64
 import math
 import os
 from pathlib import Path
@@ -23,8 +25,8 @@ from .decision_journal_store import (
     _read_regular, JournalConflictError,
 )
 from .hashing import canonical_json_bytes, sha256_bytes
-from .modeldock_client import (ModelDockClient, ModelDockCallResult, ModelDockClientError,
-    UrlLibTransport, _safe_token, _model_revision, _set_response_socket_timeout)
+from .modeldock_client import (ModelDockClient, ModelDockCallResult, ModelDockClientError, HttpResponse,
+    UrlLibTransport, _safe_token, _model_revision, _set_response_socket_timeout, _safe_response_projection)
 from .modeldock_config import ModelDockConfig
 
 LEGACY_VERSION = 'blackpod.sentry_synthesis_transport.v1'
@@ -38,6 +40,15 @@ V8_VERSION = 'blackpod.sentry_synthesis_transport.v8'
 VERSION = 'blackpod.sentry_synthesis_transport.v9'
 V9_VERSION = VERSION
 SYMBOL_VERSION = 'blackpod.sentry_synthesis_transport.v10'
+ECONOMIC_BASELINE_VERSION = 'blackpod.sentry_synthesis_transport.v11'
+ECONOMIC_VERSION = 'blackpod.sentry_synthesis_transport.v12'
+ECONOMIC_REVISED_VERSION = 'blackpod.sentry_synthesis_transport.v13'
+CONTENT_BASELINE_VERSION = 'blackpod.sentry_synthesis_transport.v14'
+ECONOMIC_FINAL_VERSION = 'blackpod.sentry_synthesis_transport.v15'
+ECONOMIC_REFINEMENT_VERSION = 'blackpod.sentry_synthesis_transport.v16'
+ECONOMIC_COMPACT_VERSION = 'blackpod.sentry_synthesis_transport.v17'
+CODEX_ECONOMIC_VERSION = 'blackpod.sentry_synthesis_transport.v18'
+RAW_CAPTURE_VERSIONS = frozenset({ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION})
 LEGACY_MAX_TOKENS = 2500
 MAX_TOKENS = 4096
 MAX_FILE_BYTES = 1024 * 1024
@@ -48,7 +59,7 @@ MAX_ERROR_BYTES = 8192
 LOCAL_CONTRACT_OBSERVATION_VERSION = 'blackpod.sentry_local_contract_observation.v1'
 LOCAL_CONTRACT_DETAIL_OBSERVATION_VERSION = 'blackpod.sentry_local_contract_observation.v2'
 LOCAL_CONTRACT_V1_TRANSPORT_VERSIONS = frozenset({'blackpod.sentry_synthesis_transport.v8'})
-LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS = frozenset({V9_VERSION, SYMBOL_VERSION})
+LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS = frozenset({V9_VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION})
 LOCAL_CONTRACT_TRANSPORT_VERSIONS = LOCAL_CONTRACT_V1_TRANSPORT_VERSIONS | LOCAL_CONTRACT_DETAIL_TRANSPORT_VERSIONS
 MAX_LOCAL_CONTRACT_BYTES = 1024
 LOCAL_CONTRACT_REASONS = frozenset({'DUPLICATE_CITATIONS', 'DUPLICATE_THEME_ID', 'DUPLICATE_SYMBOL',
@@ -124,21 +135,31 @@ class _NamedSentryTransport:
     ModelDock observes this optional header as a client name (maximum 100
     characters). It grants no capability, routing or execution authority.
     """
-    def __init__(self):
+    def __init__(self, capture=None):
         self.transport = UrlLibTransport()
+        self.capture = capture
+        self.captured = False
         self.error_observation = None
+
+    def _capture(self, request_bytes, result):
+        if self.capture is not None and not self.captured:
+            self.capture(request_bytes, result)
+            self.captured = True
 
     def request(self, *, method, url, headers, body, timeout_seconds, max_response_bytes):
         labeled = dict(headers)
         labeled['X-ModelDock-Client'] = 'BlackPod-Sentry'
         self.error_observation = None
+        self.captured = False
         # This adapter owns its transport. Observe only the local HTTPError
         # stream, then re-raise that same error to the unchanged generic
         # transport, which still returns status + an empty incomplete body.
         opener = getattr(self.transport, '_opener', None)
         if opener is None:  # Authored/injected transports need no observer.
-            return self.transport.request(method=method, url=url, headers=labeled, body=body,
+            result = self.transport.request(method=method, url=url, headers=labeled, body=body,
                 timeout_seconds=timeout_seconds, max_response_bytes=max_response_bytes)
+            self._capture(body, result)
+            return result
         monotonic = self.transport._monotonic
         deadline = monotonic() + timeout_seconds
         owner = self
@@ -148,7 +169,8 @@ class _NamedSentryTransport:
                     return opener.open(request, timeout=timeout)
                 except HTTPError as exc:
                     try:
-                        owner.error_observation = _observe_http_error(exc, body, deadline, monotonic)
+                        owner.error_observation = _observe_http_error(exc, body, deadline, monotonic,
+                            capture=owner._capture if owner.capture is not None else None)
                     except Exception:
                         # Diagnostics must not replace the original status or
                         # turn a handled HTTP failure into a retry.
@@ -159,8 +181,10 @@ class _NamedSentryTransport:
                     raise
         self.transport._opener = ObservedOpener()
         try:
-            return self.transport.request(method=method, url=url, headers=labeled, body=body,
+            result = self.transport.request(method=method, url=url, headers=labeled, body=body,
                 timeout_seconds=timeout_seconds, max_response_bytes=max_response_bytes)
+            self._capture(body, result)
+            return result
         finally:
             self.transport._opener = opener
 
@@ -212,7 +236,7 @@ def _validation_diagnostic(value):
     return dict(value)
 
 
-def _observe_http_error(error, request_bytes, deadline, monotonic):
+def _observe_http_error(error, request_bytes, deadline, monotonic, capture=None):
     result = _empty_http_observation(error.code, request_bytes)
     if result is None:
         return None
@@ -247,6 +271,8 @@ def _observe_http_error(error, request_bytes, deadline, monotonic):
         if not complete or declared is not None and size != declared:
             return result
         raw = b''.join(parts)
+        if capture is not None:
+            capture(request_bytes, HttpResponse(error.code, {}, raw, complete=True))
         result.update(body_sha256=sha256_bytes(raw), size_bytes=len(raw), body_complete=True)
         value = parse_strict_json_object_bytes(raw)
         detail = value.get('error')
@@ -269,6 +295,9 @@ def _observe_http_error(error, request_bytes, deadline, monotonic):
 
 
 def _default_client(config):
+    if config.provider == 'codex':
+        from .sentry_modeldock_codex import CodexSentryClient
+        return CodexSentryClient(config, transport=_NamedSentryTransport())
     return ModelDockClient(config, transport=_NamedSentryTransport())
 
 
@@ -288,14 +317,16 @@ def _contracts():
 
 
 def _configuration(config, *, version=VERSION):
-    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION} else (120, 10)
+    timeout, grace = (900, 30) if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION} else (120, 10)
     if not isinstance(config, ModelDockConfig) or config.timeout_seconds > timeout or config.delivery_grace_seconds > grace:
         raise ValueError('synthesis deadline exceeds its versioned local MLX bound')
+    if config.provider != ('codex' if version == CODEX_ECONOMIC_VERSION else 'mlx'):
+        raise ValueError('synthesis provider differs from its reserved transport policy')
     return {key: getattr(config, key) for key in ('base_url', 'timeout_seconds', 'profile', 'provider', 'max_response_bytes', 'delivery_grace_seconds')}
 
 
 def _request(role, packet, config, draft, *, version=VERSION):
-    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION}:
+    if version not in {LEGACY_VERSION, V2_VERSION, V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION}:
         raise ValueError('unsupported synthesis transport version')
     configuration = _configuration(config, version=version)
     if role not in ROLE_INSTRUCTIONS or not isinstance(packet, dict):
@@ -316,7 +347,7 @@ def _request(role, packet, config, draft, *, version=VERSION):
     bindings = {'role': role, 'context_id': context, 'packet_sha256': sha256_bytes(packet_bytes), 'draft_sha256': draft_sha256}
     if version != LEGACY_VERSION:
         bindings['transport_schema_version'] = version
-    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION}:
+    if version in {V3_VERSION, V4_VERSION, V5_VERSION, V6_VERSION, V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION}:
         bindings['configuration_sha256'] = sha256_bytes(canonical_json_bytes(configuration))
     request_id = 'sentry-' + role + '-' + sha256_bytes(canonical_json_bytes(bindings))
     schema_builder, _ = _contracts()
@@ -330,17 +361,38 @@ def _request(role, packet, config, draft, *, version=VERSION):
         system += (' For proposed_invalidation, explicitly use {"status":"UNSPECIFIED","text":""} '
                    'when no condition is proposed, or {"status":"PROPOSED","text":"a nonblank condition"}. '
                    'UNSPECIFIED must have empty text; PROPOSED must have nonblank text. Never invent a missing historical condition.')
-    if version in {V8_VERSION, VERSION, SYMBOL_VERSION}:
+    if version in {V8_VERSION, VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION}:
         system += CONTRACT_GUIDANCE
-    if version in {VERSION, SYMBOL_VERSION}:
+    if version in {VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION}:
         system += COMPACT_GUIDANCE
-    if version == SYMBOL_VERSION:
+    if version in {SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION}:
         system += KEYED_SYMBOL_GUIDANCE
+    if version == ECONOMIC_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_SYSTEM, ECONOMIC_ROLE
+        system = ECONOMIC_SYSTEM + ECONOMIC_ROLE[role]
+    if version == ECONOMIC_REVISED_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_SYSTEM, ECONOMIC_ROLE, ECONOMIC_PROMPT_V2_SUFFIX
+        system = ECONOMIC_SYSTEM + ECONOMIC_ROLE[role] + ECONOMIC_PROMPT_V2_SUFFIX
+    if version == ECONOMIC_FINAL_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_SYSTEM, ECONOMIC_ROLE, ECONOMIC_PROMPT_V3_SUFFIX
+        system = ECONOMIC_SYSTEM + ECONOMIC_ROLE[role] + ECONOMIC_PROMPT_V3_SUFFIX
+    if version == ECONOMIC_REFINEMENT_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_SYSTEM, ECONOMIC_ROLE, ECONOMIC_PROMPT_V4_SUFFIX
+        system = ECONOMIC_SYSTEM + ECONOMIC_ROLE[role] + ECONOMIC_PROMPT_V4_SUFFIX
+    if version == CODEX_ECONOMIC_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_SYSTEM, ECONOMIC_ROLE, ECONOMIC_PROMPT_V4_SUFFIX
+        system = ECONOMIC_SYSTEM + ECONOMIC_ROLE[role] + ECONOMIC_PROMPT_V4_SUFFIX
+        system = system.replace('use implications_by_symbol keyed by the exact watchlist symbol, not the legacy implications array.',
+            'use implications as a nonempty array of symbol, linkage, trading and investment entries; include only relevant watchlist symbols, without duplicates.')
+        system += ' Oracle v5 retains the original array representation and all economic fields. No symbol placeholders, output repair, execution or policy authority. The experiment is frozen and auto-trading stays OFF.'
+    if version == ECONOMIC_COMPACT_VERSION:
+        from .sentry_economic_reasoning import ECONOMIC_COMPACT_SYSTEMS
+        system = ECONOMIC_COMPACT_SYSTEMS[role]
     wire = {'profile': config.profile, 'capabilities': ['text'],
         'response_format': {'type': 'json_schema', 'schema': schema_builder(role, packet, draft=draft,
-            version='v1' if version == LEGACY_VERSION else 'v3' if version == SYMBOL_VERSION else 'v2')},
+            version='v5' if version == CODEX_ECONOMIC_VERSION else 'v4' if version in {ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION} else 'v1' if version == LEGACY_VERSION else 'v3' if version == SYMBOL_VERSION else 'v2')},
         'timeout': max(1, math.ceil(config.timeout_seconds)),
-        'max_tokens': MAX_TOKENS if version in {V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION} else LEGACY_MAX_TOKENS,
+        'max_tokens': MAX_TOKENS if version in {V7_VERSION, V8_VERSION, VERSION, SYMBOL_VERSION, ECONOMIC_BASELINE_VERSION, ECONOMIC_VERSION, ECONOMIC_REVISED_VERSION, CONTENT_BASELINE_VERSION, ECONOMIC_FINAL_VERSION, ECONOMIC_REFINEMENT_VERSION, ECONOMIC_COMPACT_VERSION, CODEX_ECONOMIC_VERSION} else LEGACY_MAX_TOKENS,
         'messages': [{'role': 'system', 'content': system},
                      {'role': 'user', 'content': canonical_json_bytes(evidence).decode('utf-8')}],
         'metadata': {'blackpod_correlation': {'mission_id': context, 'request_id': request_id, 'symbol': 'WATCHLIST', 'run_mode': 'LIVE'}}}
@@ -360,7 +412,7 @@ def _directory(role_root, *, create, locked):
     lock = staging = None
     try:
         names = set(os.listdir(root))
-        if names - {'intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json', 'staging', '.role.lock'}:
+        if names - {'intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json', 'raw-response.json', 'staging', '.role.lock'}:
             raise ValueError('unexpected synthesis attempt file')
         if locked:
             lock = os.open('.role.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=root)
@@ -475,6 +527,15 @@ def _validated_projection(provenance, wire, config, role, packet, draft):
         raise ValueError('invalid retained ModelDock projection')
     if sha256_bytes(canonical_json_bytes(envelope)) != provenance['safe_response_sha256']:
         raise ValueError('retained synthesis response hash differs')
+    if config.provider == 'codex':
+        from .sentry_modeldock_codex import validate_projection
+        content = validate_projection(envelope, wire, started_at=provenance['started_at'], observed_at=provenance['observed_at'])
+        if provenance['model_revision'] is not None:
+            raise ValueError('Codex model revision is unavailable')
+        for field in ('provider', 'model', 'trace_id', 'mocked'):
+            if provenance[field] != envelope[field]:
+                raise ValueError('Codex provenance differs')
+        return _validate_response(role, content, packet, draft, wire)
     if (envelope['status'] != 'ok' or envelope['request_type'] != 'text.generate' or envelope['profile'] != config.profile
             or envelope['provider'] != 'mlx' or envelope['mocked'] is not False):
         raise ValueError('unverified local synthesis provenance')
@@ -578,6 +639,12 @@ def _result(status, wire, *, response=None, provenance=None, failure_code=None, 
     # UI receives only the accepted structured response and small provenance.
     public = None if provenance is None else {key: provenance[key] for key in
         ('provider', 'model', 'model_revision', 'trace_id', 'mocked', 'latency_ms', 'started_at', 'observed_at')}
+    if public is not None and public['provider'] == 'codex':
+        metadata = provenance['safe_response']['metadata']
+        public.update({key: metadata[key] for key in (
+            'engine', 'codex_model', 'codex_thread_id', 'codex_turn_id',
+            'generated_token_count', 'generated_token_count_source',
+            'max_tokens_enforced', 'stop_reason', 'stop_reason_source')})
     return {'status': status, 'response': response, 'provenance': public, 'failure_code': failure_code,
             'request_id': wire['metadata']['blackpod_correlation']['request_id'], 'receipt_sha256': receipt_sha256}
 
@@ -668,16 +735,67 @@ def _read_local_contract_observation(root, wire, receipt, receipt_bytes):
     return _verify_local_contract_observation(value, wire, receipt, receipt_bytes)
 
 
+def _read_raw_capture(root, wire, receipt, version):
+    names = os.listdir(root)
+    expected = receipt.get('raw_response_capture_sha256')
+    if version not in RAW_CAPTURE_VERSIONS:
+        if 'raw-response.json' in names:
+            raise ValueError('raw response unsupported by historical version')
+        return None
+    if expected is None:
+        if version == CODEX_ECONOMIC_VERSION and receipt['status'] == 'ACCEPTED':
+            raise ValueError('accepted Codex response lacks retained raw evidence')
+        if 'raw-response.json' in names:
+            raise ValueError('unbound raw response')
+        return None
+    value, raw = _read(root, 'raw-response.json')
+    fields = {'schema_version','request_sha256','http_status','body_sha256','received_bytes',
+              'complete','retained_bytes','retained_complete','body_base64'}
+    if (set(value) != fields or raw != canonical_json_bytes(value)
+            or sha256_bytes(raw) != expected or value['schema_version'] != 'blackpod.sentry_raw_response.v1'
+            or value['request_sha256'] != sha256_bytes(canonical_json_bytes(wire))
+            or type(value['http_status']) is not int or not 100 <= value['http_status'] <= 599
+            or type(value['received_bytes']) is not int or not 0 <= value['received_bytes'] <= MAX_FILE_BYTES
+            or type(value['retained_bytes']) is not int or not 0 <= value['retained_bytes'] <= 512*1024
+            or type(value['complete']) is not bool or type(value['retained_complete']) is not bool
+            or not isinstance(value['body_base64'],str) or not isinstance(value['body_sha256'],str)
+            or re.fullmatch('[0-9a-f]{64}',value['body_sha256']) is None):
+        raise ValueError('raw response binding differs')
+    body = base64.b64decode(value['body_base64'], validate=True)
+    if (len(body) != value['retained_bytes'] or value['retained_bytes'] > value['received_bytes']
+            or value['retained_complete'] != (value['retained_bytes'] == value['received_bytes'])
+            or value['retained_complete'] and sha256_bytes(body) != value['body_sha256']):
+        raise ValueError('raw response content differs')
+    if (receipt['status'] == 'ACCEPTED'
+            and (receipt['provenance']['raw_response_sha256'] != value['body_sha256']
+                 or receipt['provenance']['response_byte_size'] != value['received_bytes'])):
+        raise ValueError('raw response provenance differs')
+    if version == CODEX_ECONOMIC_VERSION and receipt['status'] == 'ACCEPTED' and not (value['http_status'] == 200 and value['complete'] and value['retained_complete']):
+        raise ValueError('accepted Codex response requires complete retained raw evidence')
+    if receipt['status'] == 'ACCEPTED' and value['complete'] and value['retained_complete']:
+        original = parse_strict_json_object_bytes(body)
+        if version == CODEX_ECONOMIC_VERSION:
+            from .sentry_modeldock_codex import codex_projection
+            projection = codex_projection(original)
+        else:
+            projection = _safe_response_projection(original,include_content=True)
+        if projection != receipt['provenance']['safe_response']:
+            raise ValueError('accepted projection differs from original raw response')
+    return value
+
+
 def _read_role(role, packet, root, config, draft, wire, bindings, configuration):
     names = os.listdir(root)
     if 'intent.json' not in names:
-        if 'receipt.json' in names or 'http-error.json' in names or 'local-contract-error.json' in names:
+        if any(name in names for name in ('receipt.json','http-error.json','local-contract-error.json','raw-response.json')):
             raise ValueError('synthesis receipt lacks intent')
         return _result('UNCERTAIN', wire, failure_code='NOT_RESERVED')
     intent, intent_bytes = _read(root, 'intent.json')
     # Reconstruct the exact historical request, never replace an older attempt
     # with the current schema or route a retry because the contract evolved.
     version = intent.get('schema_version')
+    if 'raw-response.json' in names and version not in RAW_CAPTURE_VERSIONS:
+        raise ValueError('raw response unsupported by historical version')
     wire, bindings, configuration = _request(role, packet, config, draft, version=version)
     if (set(intent) != {'schema_version', 'bindings', 'configuration', 'wire_request', 'request_sha256', 'reserved_at'}
             or intent['schema_version'] != version or intent['bindings'] != bindings or intent['configuration'] != configuration
@@ -692,6 +810,8 @@ def _read_role(role, packet, root, config, draft, wire, bindings, configuration)
         return _result('UNCERTAIN', wire, failure_code='INTERRUPTED_OR_IN_PROGRESS')
     receipt, receipt_bytes = _read(root, 'receipt.json')
     fields = {'schema_version', 'bindings', 'intent_sha256', 'status', 'finished_at', 'response', 'provenance', 'failure_code', 'receipt_sha256'}
+    if version in RAW_CAPTURE_VERSIONS:
+        fields.add('raw_response_capture_sha256')
     if set(receipt) != fields:
         raise ValueError('invalid synthesis receipt')
     payload = {key: value for key, value in receipt.items() if key != 'receipt_sha256'}
@@ -710,6 +830,7 @@ def _read_role(role, packet, root, config, draft, wire, bindings, configuration)
     elif (receipt['status'] not in {'REJECTED', 'FAILED'} or receipt['response'] is not None or receipt['provenance'] is not None
           or not isinstance(receipt['failure_code'], str) or re.fullmatch(r'[A-Z][A-Z0-9_]{0,90}', receipt['failure_code']) is None):
         raise ValueError('invalid failed synthesis receipt')
+    _read_raw_capture(root, wire, receipt, version)
     _read_http_observation(root, wire, receipt, receipt_bytes)
     _read_local_contract_observation(root, wire, receipt, receipt_bytes)
     return _result(receipt['status'], wire, response=receipt['response'], provenance=receipt['provenance'],
@@ -783,7 +904,7 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
     wire, bindings, configuration = _request(role, packet, config, draft, version=version)
     _gates(off_check, verify_source)
     with _directory(role_root, create=True, locked=True) as (root, staging):
-        if any(name in os.listdir(root) for name in ('intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json')):
+        if any(name in os.listdir(root) for name in ('intent.json', 'receipt.json', 'http-error.json', 'local-contract-error.json','raw-response.json')):
             return _read_role(role, packet, root, config, draft, wire, bindings, configuration)
         reserved_at = _stamp(now())
         if parse_rfc3339(reserved_at, 'reserved_at') < parse_rfc3339(packet['as_of'], 'packet as_of'):
@@ -794,6 +915,19 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
         status, response, provenance, failure_code = 'FAILED', None, None, None
         client = None
         callback_details = None
+        raw_capture_sha256 = None
+        def capture_raw(request_bytes, delivered):
+            nonlocal raw_capture_sha256
+            raw = delivered.body
+            supplied = raw[:512 * 1024]
+            value = {'schema_version':'blackpod.sentry_raw_response.v1',
+                'request_sha256':sha256_bytes(request_bytes), 'http_status':delivered.status,
+                'body_sha256':sha256_bytes(raw), 'received_bytes':len(raw),
+                'complete':bool(delivered.complete), 'retained_bytes':len(supplied),
+                'retained_complete':len(supplied) == len(raw),
+                'body_base64':base64.b64encode(supplied).decode('ascii')}
+            _publish(root, staging, 'raw-response.json', value)
+            raw_capture_sha256 = sha256_bytes(canonical_json_bytes(value))
         def validate_content(value):
             nonlocal callback_details
             try:
@@ -802,8 +936,16 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
                 callback_details = _local_contract_details(error)
                 raise
         try:
-            factory = client_factory or _default_client
-            client = factory(config)
+            if client_factory is None and version in RAW_CAPTURE_VERSIONS:
+                if version == CODEX_ECONOMIC_VERSION:
+                    from .sentry_modeldock_codex import CodexSentryClient
+                    client = CodexSentryClient(config, transport=_NamedSentryTransport(capture_raw),
+                        before_post=lambda: _gates(off_check, verify_source))
+                else:
+                    client = ModelDockClient(config, transport=_NamedSentryTransport(capture_raw))
+            else:
+                factory = client_factory or _default_client
+                client = factory(config)
             result = client.generate_text(wire, mission_id=packet['context_id'],
                 request_id=wire['metadata']['blackpod_correlation']['request_id'], symbol='WATCHLIST', run_mode='LIVE',
                 content_validator=validate_content, content_requires_correlation=False)
@@ -811,6 +953,8 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
                 raise ValueError('unsupported synthesis client result')
             if result.safe_response_bytes != canonical_json_bytes(dict(result.safe_response)):
                 raise ValueError('synthesis client response projection differs')
+            if version == CODEX_ECONOMIC_VERSION and raw_capture_sha256 is None:
+                raise ValueError('Codex acceptance requires retained raw response')
             provenance = {key: getattr(result, key) for key in ('request_sha256', 'raw_response_sha256', 'response_byte_size',
                 'provider', 'model', 'model_revision', 'trace_id', 'mocked', 'latency_ms', 'started_at', 'observed_at')}
             provenance.update(safe_response=dict(result.safe_response), safe_response_sha256=sha256_bytes(result.safe_response_bytes))
@@ -840,6 +984,8 @@ def generate_role(role, packet, role_root, config, *, draft=None, off_check, ver
         finished = _stamp(now())
         receipt = {'schema_version': version, 'bindings': bindings, 'intent_sha256': sha256_bytes(canonical_json_bytes(intent)),
                    'status': status, 'finished_at': finished, 'response': response, 'provenance': provenance, 'failure_code': failure_code}
+        if version in RAW_CAPTURE_VERSIONS:
+            receipt['raw_response_capture_sha256'] = raw_capture_sha256
         receipt['receipt_sha256'] = sha256_bytes(canonical_json_bytes(receipt))
         _publish(root, staging, 'receipt.json', receipt)
         if (version in LOCAL_CONTRACT_TRANSPORT_VERSIONS and callback_details is not None

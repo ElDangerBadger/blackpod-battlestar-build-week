@@ -111,19 +111,38 @@ def build_packet(records, verification, as_of):
     return packet
 
 
-def current_packet(config,as_of=None):
-    records,verification=CatalystStore(catalyst_paths(config)[1]).verified_records()
-    return build_packet(records,verification,as_of or datetime.now(timezone.utc))
+def current_packet(config,as_of=None,*,include_content=False,verified_source=None):
+    # A caller may share one freshly verified prefix within this operation.
+    # No snapshot or trust survives a later status or dispatch boundary.
+    records,verification=(verified_source if verified_source is not None
+        else CatalystStore(catalyst_paths(config)[1]).verified_records())
+    packet = build_packet(records,verification,as_of or datetime.now(timezone.utc))
+    if include_content:
+        from .sentry_content import enrich_packet
+        root = catalyst_paths(config)[1] / 'evidence'
+        packet = enrich_packet(packet, records, lambda digest: read_regular(root / digest))
+    return packet
 
 
-def verify_packet(packet,config):
+def verify_packet(packet,config,*,verified_source=None):
     """Replay original selected prefix; later source appends do not rewrite it."""
-    records,_=CatalystStore(catalyst_paths(config)[1]).verified_records()
+    # A caller replaying one archive may share its freshly verified immutable
+    # source prefix across ancestor checks. No cache survives that operation.
+    records,_=verified_source if verified_source is not None else CatalystStore(catalyst_paths(config)[1]).verified_records()
     count=packet['source']['capture_count']
     if type(count) is not int or not 1<=count<=len(records):raise ValueError('source prefix unavailable')
     root=catalyst_paths(config)[1]
     head=sha256_bytes(read_regular(root/'entries'/f'{count:08}.json'))
-    if head!=packet['source']['head_sha256'] or build_packet(records[:count],packet['source'],clock(packet['as_of']))!=packet:
+    expected = build_packet(records[:count],packet['source'],clock(packet['as_of']))
+    if packet['schema_version'] == 'blackpod.sentry_synthesis.v2':
+        from .sentry_content import enrich_packet
+        expected = enrich_packet(expected, records[:count], lambda digest: read_regular(root / 'evidence' / digest))
+    if 'derivation' in packet:
+        from .sentry_content import comparison_fixture
+        if sha256_bytes(canonical_json_bytes(expected)) != packet['derivation']['parent_packet_sha256']:
+            raise ValueError('comparison parent differs')
+        expected = comparison_fixture(expected, packet['derivation']['recipe'])
+    if head!=packet['source']['head_sha256'] or expected!=packet:
         raise ValueError('packet does not replay retained source')
     return packet
 
@@ -137,6 +156,9 @@ def compose_report(packet,oracle,challenge,completed_at,*,validation=None):
         'provenance':{'oracle':oracle,'challenge':challenge},'completed_at':completed_at,
         'review_independence':{'separate_review_pass':review is not None,'independent_model_verified':False,'independent_sources_verified':False},
         'portfolio':dict(packet['portfolio']),'authority':dict(AUTHORITY)}
+    if draft and draft.get('schema_version') in {'blackpod.sentry_oracle_draft.v4', 'blackpod.sentry_oracle_draft.v5'}:
+        from .sentry_narrative_evaluation import analytical_quality
+        result['analytical_quality'] = analytical_quality(packet,draft,review)
     if validation is not None:
         versions={'EXPLICIT_V2_VALIDATION':'blackpod.sentry_synthesis_transport.v2',
             'EXPLICIT_DEADLINE_VALIDATION':'blackpod.sentry_synthesis_transport.v3',

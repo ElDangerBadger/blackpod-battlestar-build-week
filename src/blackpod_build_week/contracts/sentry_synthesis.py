@@ -19,6 +19,7 @@ LEGACY_ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v1"
 LEGACY_CHALLENGE_SCHEMA_VERSION = "blackpod.sentry_challenge.v1"
 ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v2"
 KEYED_ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v3"
+ARRAY_ECONOMIC_ORACLE_SCHEMA_VERSION = "blackpod.sentry_oracle_draft.v5"
 CHALLENGE_SCHEMA_VERSION = "blackpod.sentry_challenge.v2"
 MAX_RESPONSE_BYTES = 64 * 1024
 ROLES = frozenset({"oracle", "challenge"})
@@ -228,13 +229,23 @@ def validate_response(role, value, packet, draft=None):
     _enum(role, ROLES, "role")
     watchlist, evidence = _packet(packet)
     value = _parse(value)
+    if role == 'oracle' and value.get('schema_version') in {
+            'blackpod.sentry_oracle_draft.v4', ARRAY_ECONOMIC_ORACLE_SCHEMA_VERSION}:
+        if draft is not None:
+            raise ContractValidationError('Oracle cannot receive another draft')
+        from ..sentry_economic_reasoning import validate_economic
+        return validate_economic(value, packet)
     if role == "oracle":
         if draft is not None:
             raise ContractValidationError("Oracle response must not receive another draft")
         return _oracle(value, watchlist, evidence)
     if draft is None:
         raise ContractValidationError("challenge requires the original Oracle draft")
-    original = _oracle(_parse(draft), watchlist, evidence)
+    parsed_draft = _parse(draft)
+    original = (validate_response('oracle', parsed_draft, packet)
+                if isinstance(parsed_draft, dict) and parsed_draft.get('schema_version') in {
+                    'blackpod.sentry_oracle_draft.v4', ARRAY_ECONOMIC_ORACLE_SCHEMA_VERSION}
+                else _oracle(parsed_draft, watchlist, evidence))
     return _challenge(value, evidence, original)
 
 
@@ -261,10 +272,21 @@ def response_schema(role, packet, draft=None, *, version="v2"):
     layer synthesizes absent symbols or repairs rejected output. Raw JSON must
     reach a duplicate-key-rejecting parser; a previously collapsed mapping
     cannot prove that its upstream serialization contained no repeated keys.
+    V5 adds the existing economic fields to v2's array representation. Every
+    row is explicit, so strict providers need no optional map keys or union;
+    duplicate symbols still fail on the host instead of being deduplicated.
     """
-    _enum(version, {"v1", "v2", "v3"}, "response schema version")
+    _enum(version, {"v1", "v2", "v3", "v4", "v5"}, "response schema version")
     _enum(role, ROLES, "role")
     watchlist, evidence = _packet(packet)
+    if version in {'v4', 'v5'} and role == 'oracle':
+        from ..sentry_economic_reasoning import economic_schema
+        # V5 retains array implications as its original representation. It does
+        # not synthesize absent watchlist keys or convert model output to v4.
+        base_version = 'v2' if version == 'v5' else 'v3'
+        oracle_version = ARRAY_ECONOMIC_ORACLE_SCHEMA_VERSION if version == 'v5' else 'blackpod.sentry_oracle_draft.v4'
+        return economic_schema(packet, response_schema('oracle', packet, version=base_version),
+                               version=oracle_version)
     citations = lambda maximum=None: _array_schema(
         {"type": "string", "enum": list(evidence)}, maximum or len(evidence), 1)
     if role == "oracle":
@@ -301,7 +323,7 @@ def response_schema(role, packet, draft=None, *, version="v2"):
         })
     if draft is None:
         raise ContractValidationError("challenge requires the original Oracle draft")
-    original = _oracle(_parse(draft), watchlist, evidence)
+    original = validate_response('oracle',draft,packet) if version in {'v4', 'v5'} else _oracle(_parse(draft), watchlist, evidence)
     theme_ids = [row["theme_id"] for row in original["themes"]]
     # Empty draft: maxItems=0 rejects every review. Avoid an invalid empty enum.
     theme_schema = {"type": "string", "enum": theme_ids} if theme_ids else _text_schema(20)

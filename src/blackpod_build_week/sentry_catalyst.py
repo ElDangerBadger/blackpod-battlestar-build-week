@@ -19,6 +19,8 @@ from .trading_historical_intake import parse_historical_json
 
 VERSION = 'blackpod.sentry_catalyst.v1'
 CONSOLIDATED_VERSION = 'blackpod.sentry_catalyst.v2'
+WINDOW_CONTROL_VERSION = 'blackpod.sentry_catalyst_control.v3'
+CONTENT_CONTROL_VERSION = 'blackpod.sentry_catalyst_control.v4'
 CONSOLIDATED_FEEDS = ('sip', 'delayed_sip')
 MAX_CAPTURES = 4096
 MAX_STORE_BYTES = 256 * 1024 * 1024
@@ -57,13 +59,39 @@ def control(value):
     if value.get('schema_version') == VERSION:
         if set(value) != {'schema_version', 'enabled', 'symbols'}:
             raise ValueError('invalid legacy catalyst control')
-    elif value.get('schema_version') == CONSOLIDATED_VERSION:
-        if (set(value) != {'schema_version', 'enabled', 'symbols', 'feed'}
+    elif value.get('schema_version') in (CONSOLIDATED_VERSION, WINDOW_CONTROL_VERSION, CONTENT_CONTROL_VERSION):
+        keys = {'schema_version', 'enabled', 'symbols', 'feed'}
+        if value['schema_version'] in (WINDOW_CONTROL_VERSION, CONTENT_CONTROL_VERSION) and 'monitoring_window' in value:
+            keys.add('monitoring_window')
+            monitoring_window(value.get('monitoring_window'))
+        elif value['schema_version'] == WINDOW_CONTROL_VERSION:
+            raise ValueError('monitoring window required')
+        if value['schema_version'] == CONTENT_CONTROL_VERSION:
+            keys.add('include_content')
+            if type(value.get('include_content')) is not bool:
+                raise ValueError('explicit article-content choice required')
+        if (set(value) != keys
                 or value['feed'] not in CONSOLIDATED_FEEDS):
             raise ValueError('invalid consolidated catalyst control')
     else:
         raise ValueError('invalid catalyst control')
     return {**value, 'symbols': symbols(value['symbols'])}
+
+
+def monitoring_window(value):
+    """Explicit finite collection, including weekends; never an exchange clock.
+
+    Ten-minute or slower polling can cover a whole LA day inside the unchanged
+    144-attempt budget. Expiry pauses collection rather than restoring a schedule
+    that might overlap the user's paper session.
+    """
+    if not isinstance(value, dict) or set(value) != {'start_at', 'end_at', 'poll_seconds'}:
+        raise ValueError('explicit bounded monitoring window required')
+    if not timedelta(0) < clock(value['end_at']) - clock(value['start_at']) <= timedelta(hours=72):
+        raise ValueError('monitoring window must be positive and at most 72 hours')
+    if type(value['poll_seconds']) is not int or not 600 <= value['poll_seconds'] <= 3600:
+        raise ValueError('window polling must be 600–3600 seconds')
+    return dict(value)
 
 
 def _text(value, maximum):

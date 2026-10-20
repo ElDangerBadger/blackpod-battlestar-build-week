@@ -53,6 +53,21 @@ def market_feed_scope(capture):
     return next(iter(scopes)) if len(scopes) == 1 else volume_scope({})
 
 
+def monitoring_schedule(status):
+    window = status.get('monitoring_window')
+    if window is None:
+        return 'five-minute polling', 'Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles'
+    from .sentry_catalyst import monitoring_window
+    try:
+        window = monitoring_window(window)
+    except (ValueError, TypeError, KeyError):
+        return 'schedule unavailable', 'Monitoring schedule unavailable'
+    seconds = window['poll_seconds']
+    interval = f'{seconds // 60}-minute polling' if seconds % 60 == 0 else f'{seconds}-second polling'
+    return interval, ('Collection window: ' + when(window['start_at']) + ' to ' + when(window['end_at']) +
+                      ' · ' + interval + ' · pauses at window end')
+
+
 def market_tiles(rows, symbols=None):
     contexts = {row['symbol']: row for row in rows if isinstance(row, dict) and 'symbol' in row}
     tiles = []
@@ -70,7 +85,8 @@ def market_tiles(rows, symbols=None):
 
 
 def render(status):
-    labels = {'WAITING_FOR_NEXT_SLOT': 'Monitoring · five-minute polling', 'OUTSIDE_MONITORING_HOURS': 'Outside monitoring hours', 'COOLDOWN': 'Capture paused after a failure', 'WORKER_STALE_OR_STOPPED': 'Collector needs attention', 'PAUSED': 'Collection paused'}
+    interval, schedule = monitoring_schedule(status)
+    labels = {'WAITING_FOR_NEXT_SLOT': 'Monitoring · ' + interval, 'OUTSIDE_MONITORING_HOURS': 'Outside monitoring hours', 'COOLDOWN': 'Capture paused after a failure', 'WORKER_STALE_OR_STOPPED': 'Collector needs attention', 'PAUSED': 'Collection paused', 'BEFORE_MONITORING_WINDOW': 'Collection window has not started', 'MONITORING_WINDOW_ENDED': 'Collection window ended · collection paused'}
     label = labels.get(status.get('status'), str(status.get('status', 'Unavailable')).replace('_', ' ').capitalize())
     capture = status.get('capture') or {}
     collector = status.get('collector') or {}
@@ -99,4 +115,4 @@ def render(status):
         '</span><span class="badge">' + text(feed_badge) + '</span></div><p>Captured ' + text(when(capture.get('captured_at'))) + \
         ' · ' + text(label) + '</p><p><a href="/sentry-synthesis">Market brief + challenge →</a> · <a href="/sentry-audit">Feed quality audit →</a></p>' + warning + '<div class="grid">' + tiles + \
         '</div><h2>Latest retained headlines</h2>' + (''.join(cards) or '<p>No verified headlines recorded yet. This does not mean there is no news.</p>') + \
-        '<footer>Five-minute polling · weekdays 5 a.m.–5 p.m. Los Angeles · maximum 10 symbols.<br>' + text(volume_note) + ' Volume is not relative volume. Saved bars may be stale or incomplete. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'
+        '<footer>' + text(schedule) + ' · maximum 10 symbols.<br>' + text(volume_note) + ' Volume is not relative volume. Saved bars may be stale or incomplete. Price movement does not establish news causation. No sentiment scoring, trade recommendations or orders. Analyst, insider, legal-event and earnings verification are unavailable.<br>Cards refresh from saved evidence every minute; refreshing does not call providers. Source links open in your browser.</footer><nav><a href="http://127.0.0.1:5183/">Station status</a> · <a href="http://127.0.0.1:5181/?view=research">Frozen experiment</a></nav></main></html>'

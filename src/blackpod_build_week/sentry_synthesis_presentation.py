@@ -183,13 +183,26 @@ def render(value):
     auto = 'OFF' if value.get('auto_trading') == 'OFF' else 'UNVERIFIED'
     body = '<div class="badges"><b class="badge">' + _text(labels.get(status, 'Synthesis unavailable')) + '</b><span class="badge">Auto-trading ' + auto + '</span><span class="badge">NOT TRADE AUTHORITY</span></div>'
     body += _current_market_context(value.get('current_market_context'))
-    body += '<p class="warning">Unverified headline-based interpretation. Structured validation checks format and evidence references; it does not establish truth, causation, consensus or a trading edge.</p>'
+    input_label = 'evidence-based' if report and report.get('context',{}).get('schema_version') == 'blackpod.sentry_synthesis.v2' else 'headline-based'
+    body += '<p class="warning">Unverified ' + input_label + ' interpretation. Structured validation checks format and evidence references; it does not establish truth, causation, consensus or a trading edge.</p>'
     if operational:
         body += '<p class="muted">Synthesis worker: ' + ('enabled' if operational.get('enabled') is True else 'paused or unavailable') + ' · Last attempt: ' + _text(operational.get('last_result', 'NOT_RUN')) + '</p>'
+        policy = operational.get('provider_policy')
+        if isinstance(policy, dict):
+            body += '<p class="muted">Scheduled route: ModelDock → ' + _text(policy.get('provider')) + ' (cloud) · Economic prompt: ' + _text(policy.get('prompt_version')) + '</p>'
+            if policy.get('monitoring') == 'WEEKDAY_BOUNDED':
+                body += '<p class="muted">Weekdays, 5 a.m.–5 p.m. Los Angeles · Up to four assessments per day, at least one hour apart. Model provenance below belongs to the retained report.</p>'
+        if operational.get('last_check_result'):
+            body += '<p class="muted">Latest scheduling check: ' + _text(operational['last_check_result']) + '</p>'
         if operational.get('last_attempt_at'):
             body += '<p class="muted">Last attempt time: ' + _text(_when(operational['last_attempt_at'])) + ' · Attempts today: ' + _text(operational.get('attempt_count_today')) + '</p>'
         if 'background_attempt_count_today' in operational:
             body += '<p class="muted">Background attempts today: ' + _text(operational['background_attempt_count_today']) + '/4 · Explicit manual diagnostics: ' + _text(operational.get('manual_attempt_count_today')) + ' · separate schedule allowance.</p>'
+        if operational.get('schedule'):
+            body += '<article class="card"><h2>Scheduled Sentry assessments</h2><p>Finite scheduled checks; no catch-up after a missed window. New headline evidence and a fresh capture are required. Inference failures remain failures.</p><ul>'
+            for slot in operational['schedule']['slots']:
+                body += '<li>' + _text(_when(slot['slot_at'])) + ' · ' + _text(slot['status']) + '</li>'
+            body += '</ul><p>Original input packets, responses and dissent are retained. These assessments cannot approve trades or change policy.</p></article>'
         if operational.get('last_result') == 'ATTEMPT_STARTED':
             body += '<p class="warning">An attempt is reserved and awaiting a retained completion. Any report below is from an earlier completed attempt. This status does not establish model progress.</p>'
         if operational.get('next_eligible_at'):
@@ -255,7 +268,10 @@ def render(value):
         completion_note = 'Los Angeles time · original draft preserved' if report.get('draft') else 'No accepted draft; processing outcome retained'
         body += '<div class="grid"><article class="tile"><span>Source snapshot</span><strong>' + _text(_when(packet.get('as_of'))) + '</strong><small>Los Angeles time · retained inputs, not a live view</small></article><article class="tile"><span>' + completion_label + '</span><strong>' + _text(_when(report.get('completed_at'))) + '</strong><small>' + completion_note + '</small></article><article class="tile"><span>Headlines selected / omitted</span><strong>' + _text(selected.get('selected_headline_count')) + ' / ' + _text(selected.get('omitted_headline_count')) + '</strong><small>Omitted items were not supplied to the model</small></article></div>'
         body += '<p class="watchlist">Watchlist: ' + ' · '.join(_text(s) for s in packet.get('watchlist', [])) + '</p>'
-        warnings = ['Headline-only evidence; article bodies and paywalled content were not read.',
+        content_available = any(e.get('data',{}).get('article_content',{}).get('text') for e in evidence if e.get('kind')=='HEADLINE')
+        content_label = 'Provider article content' if content_available else 'Headlines only'
+        content_note = 'Available provider article text was supplied; content scope and missing bodies are explicit below. Publisher completeness is unverified.' if content_available else 'Headline-only evidence; article bodies and paywalled content were not read.'
+        warnings = [content_note,
                     'Independent sources are not verified. Repeated coverage is not independent confirmation.',
                     'Holdings and desk exposures are unavailable. This is a watchlist brief, not a portfolio assessment.',
                     'Price snapshots do not establish the response after a headline or performance relative to SPY/QQQ.']
@@ -270,7 +286,7 @@ def render(value):
         if value.get('newer_evidence_available') is True:
             warnings.append('Newer Sentry evidence exists. This brief remains bound to its original snapshot.')
         coverage_label = 'coverage incomplete' if quality.get('news_truncated') is True else 'coverage unknown'
-        body += '<details class="warning evidence-limits"><summary>Headlines only · ' + coverage_label + ' · no verified holdings</summary>' + _list(warnings) + '</details>'
+        body += '<details class="warning evidence-limits"><summary>' + content_label + ' · ' + coverage_label + ' · no verified holdings</summary>' + _list(warnings) + '</details>'
         body += '<details class="card"><summary>Snapshot identity and retained limitations</summary><p>Context: ' + _text(packet.get('context_id')) + '</p><p>Source head: <code>' + _text(source.get('head_sha256')) + '</code> · Verified captures: ' + _text(source.get('capture_count')) + '</p>' + _list(packet.get('limitations') or [], 'No additional packet limitations recorded.') + '</details>'
         if validation:
             body += '<details class="card"><summary>Preserved parent attempt</summary><p>Parent report: <code>' + _text(validation.get('parent_report_id')) + '</code></p><p>Parent SHA-256: <code>' + _text(validation.get('parent_report_sha256')) + '</code></p><p>Purpose: ' + _text(validation.get('purpose')) + ' · Transport: ' + _text(validation.get('transport_schema_version')) + '</p></details>'
@@ -295,6 +311,25 @@ def render(value):
                     linkage = {'DIRECT_MENTION': 'Provider symbol tag · textual connection unverified', 'HYPOTHETICAL_READ_THROUGH': 'Hypothetical read-through · not established'}.get(implication.get('linkage'), 'Linkage unavailable')
                     body += '<div class="implication"><h4>' + _text(implication.get('symbol')) + ' <small>' + _text(linkage) + '</small></h4><div class="grid"><section><b>Trading lens</b><p>' + _text(implication.get('trading')) + '</p></section><section><b>Investment lens</b><p>' + _text(implication.get('investment')) + '</p></section></div></div>'
                 body += '<div class="alternative"><b>Original alternative explanation</b><p>' + _text(theme.get('alternative')) + '</p></div><p><b>Proposed invalidation:</b> ' + _text(_invalidation(theme.get('proposed_invalidation'))) + '</p><p><b>Proposed review horizon:</b> ' + _text(theme.get('proposed_review_horizon', 'UNSPECIFIED')) + ' · not an approved investment horizon</p></article>'
+            for analysis in draft.get('economic_analyses',[]):
+                h=analysis['hypothesis']
+                body += '<article class="card economic-analysis"><h3>Economic research question · ' + _text(analysis['security']) + '</h3>'
+                for title,text in [('Reported event',analysis['event']['statement']),
+                    ('Company exposure · '+analysis['company_linkage']['classification'],analysis['company_linkage']['basis']),
+                    ('Financial mechanism · '+analysis['mechanism']['channel'],analysis['mechanism']['explanation']),
+                    ('Materiality · '+analysis['materiality']['assessment'],analysis['materiality']['basis']),
+                    ('Proposed hypothesis · '+h['qualification'],h['statement']),('Alternative',h['alternative']),
+                    ('How to distinguish it',h['distinguish_by'])]:
+                    body += '<h4>'+_text(title)+'</h4><p>'+_text(text)+'</p>'
+                body += citations(analysis['catalyst_evidence_ids'])
+                body += '<p>Direction: '+_text(h['direction'])+' · Horizon: '+_text(h['horizon_days'])+' days · Model confidence: '+_text(h['confidence'])+' (uncalibrated)</p>'
+                for key,title in [('validation_conditions','Would support the hypothesis'),('invalidation_conditions','Would invalidate the hypothesis')]:
+                    body += '<h4>'+title+'</h4>'+_list([c['description']+' ['+c['metric']+' '+c['operator']+' '+c['threshold']+'; '+c['unit']+']' for c in h[key]],'No observable test supplied.')
+                body += '<h4>Uncertainty and missing inputs</h4>'+_list(h['uncertainties']+analysis['materiality']['missing_information'])
+                body += '<p class="muted">A model-proposed candidate requires source-bound review and the existing Research evaluator. This is not an approved investment decision.</p></article>'
+            gate=value.get('intake_quality') or report.get('analytical_quality')
+            if gate:
+                body += '<article class="card"><h3>Research intake screen · '+_text(gate['status'])+'</h3>'+_list([f['code']+': '+f['reason'] for f in gate['deterministic_findings']],'No deterministic findings; semantic review remains required for a candidate.')+'</article>'
             body += '<details class="card" open><summary>Unresolved questions</summary>' + _list(draft.get('unresolved_questions') or [], 'No questions recorded in the draft; this does not mean the evidence is complete.') + '</details>'
         blocked = _blocked_challenge(report)
         body += '<h2>Separate challenge · dissent retained</h2><p class="muted">' + ('The Oracle acceptance gate blocked this role before a challenge request. ' if blocked else 'A separate review pass of the same evidence and original draft. ') + 'This is not independent-source or independent-model consensus. EVIDENCE_BOUND means a reviewer assessment, not verified truth or approval.</p>'
@@ -312,7 +347,8 @@ def render(value):
             result = (report.get('provenance') or {}).get(role) or {}
             provenance = result.get('provenance') or {}
             fields = [('Status', result.get('status')), ('Processing result', result.get('failure_code'))]
-            fields += [(key.replace('_', ' ').capitalize(), provenance[key]) for key in ('provider', 'model', 'model_revision', 'trace_id', 'requested_model', 'observed_model') if key in provenance]
+            labels = {'model': 'Registry alias' if provenance.get('provider') == 'codex' else 'Model', 'codex_model': 'Actual Codex model'}
+            fields += [(labels.get(key, key.replace('_', ' ').capitalize()), provenance[key]) for key in ('provider', 'model', 'model_revision', 'trace_id', 'requested_model', 'observed_model', 'engine', 'codex_model', 'codex_thread_id', 'codex_turn_id', 'generated_token_count', 'generated_token_count_source', 'max_tokens_enforced', 'stop_reason', 'stop_reason_source') if key in provenance]
             body += '<h3>' + title + '</h3><dl>' + ''.join('<dt>' + _text(key) + '</dt><dd>' + _text(v) + '</dd>' for key, v in fields if v is not None) + '</dl>'
             if not provenance:
                 body += '<p>Model identity metadata unavailable; no model independence is claimed.</p>'
@@ -325,6 +361,12 @@ def render(value):
                 target = _url(data.get('url'))
                 title = _text(data.get('headline'))
                 body += '<h3>' + ('<a href="' + _text(target) + '" target="_blank" rel="noopener noreferrer">' + title + '</a>' if target else title) + '</h3><p>Named source: ' + _text(data.get('source')) + '</p><p class="muted">Published ' + _text(_when(data.get('published_at'))) + ' · Updated ' + _text(_when(data.get('updated_at'))) + '<br>First seen ' + _text(_when(data.get('first_seen_at'))) + ' · Last seen ' + _text(_when(data.get('last_seen_at'))) + '</p>'
+                content=data.get('article_content')
+                if content:
+                    body += '<p>Content: '+_text(content.get('status'))+' · '+_text(content.get('scope'))+' · retrieved '+_text(_when(content.get('retrieved_at')))+'</p>'
+                    body += '<p class="muted">Information state: '+_text(data.get('information_state'))+' · Publisher completeness is unverified.</p>'
+                    if content.get('text'):
+                        body += '<details><summary>Exact provider text supplied to the model</summary><p>'+_text(content['text'])+'</p></details>'
             elif kind == 'PRICE_CONTEXT':
                 volume_label, feed_badge, volume_note = volume_scope(data)
                 body += '<h3>Original price context · ' + _text(data.get('status', 'UNAVAILABLE')) + '</h3><p>' + _text(feed_badge) + ' · historical model input</p><p>Change versus previous daily close: ' + _text(data.get('change_from_previous_close_pct')) + '% · ' + _text(volume_label) + ': ' + _text(data.get('day_volume')) + ' shares</p><p class="muted">Minute bar: ' + _text(_when(data.get('minute_at'))) + ' · Daily bar start: ' + _text(_when(data.get('day_bar_at'))) + ' · Previous daily bar: ' + _text(_when(data.get('previous_day_bar_at'))) + '</p><p>' + _text(volume_note) + ' Volume is not relative volume. Saved bars may be stale or incomplete. This is not an event-time or benchmark comparison.</p>'

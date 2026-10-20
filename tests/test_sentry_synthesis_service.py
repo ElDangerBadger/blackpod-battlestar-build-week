@@ -103,6 +103,108 @@ class SentrySynthesisServiceTests(unittest.TestCase):
     def directory(self):
         return service.ledger(self.runs)[-1][0]
 
+    def trial(self, start=None):
+        start = start or NOW
+        self.control = {**self.control, 'schema_version': service.SCHEDULE_CONTROL_VERSION,
+            'schedule': {'id': 'overnight-trial', 'slots': [catalyst.stamp(start),
+                catalyst.stamp(start + timedelta(hours=2))], 'window_seconds': 1800}}
+        atomic_state(self.root / 'control.json', self.control)
+        return self.control
+
+    def test_finite_schedule_runs_weekend_once_and_survives_deleted_display_state(self):
+        weekend = NOW + timedelta(days=2)
+        self.trial(weekend)
+        self.append_capture(weekend)
+        self.assertEqual(self.cycle(weekend), 'CHALLENGED_INTERPRETATION')
+        intent = service.immutable_read(self.directory(), 'run-intent.json')
+        self.assertEqual(intent['schema_version'], service.SCHEDULE_ATTEMPT_VERSION)
+        self.assertEqual(intent['schedule']['slot_at'], catalyst.stamp(weekend))
+        atomic_state(self.root / 'state.json', {})
+        self.append_capture(weekend + timedelta(minutes=1), headline='Different evidence', identity=999)
+        self.assertEqual(self.cycle(weekend + timedelta(minutes=1)), 'WAITING_FOR_SCHEDULED_SLOT')
+        self.assertEqual(len(self.http.calls), 2)
+        self.assertEqual(service.verify(self.config)['report_count'], 1)
+
+    def test_finite_schedule_misses_sleeping_slot_without_catchup_or_weekday_fallback(self):
+        self.trial()
+        self.assertEqual(self.cycle(NOW - timedelta(seconds=1)), 'WAITING_FOR_SCHEDULED_SLOT')
+        self.assertEqual(self.cycle(NOW + timedelta(minutes=31)), 'WAITING_FOR_SCHEDULED_SLOT')
+        self.assertEqual(self.cycle(NOW + timedelta(hours=3)), 'SCHEDULE_FINISHED')
+        status = service.status(self.config, NOW + timedelta(hours=3))
+        self.assertTrue(all(slot['status'] == 'MISSED_NO_ATTEMPT'
+                            for slot in status['operational']['schedule']['slots']))
+        self.assertEqual(self.factories, [])
+
+    def test_finite_schedule_crashed_reservation_is_not_retried_and_off_gate_remains(self):
+        self.trial()
+        with patch.object(service, 'generate_role', side_effect=OSError('interrupted')):
+            self.assertEqual(self.cycle(), 'SOURCE_OR_OFF_BLOCKED')
+        self.assertEqual(self.cycle(NOW + timedelta(seconds=1)), 'WAITING_FOR_SCHEDULED_SLOT')
+        self.assertEqual(len(service.ledger(self.runs)), 1)
+        self.assertEqual(self.factories, [])
+        later = NOW + timedelta(hours=2)
+        self.append_capture(later, headline='New later evidence', identity=999)
+        self.off.side_effect = ValueError('OFF required')
+        with self.assertRaises(ValueError):
+            self.cycle(later)
+        self.assertEqual(len(service.ledger(self.runs)), 1)
+
+    def test_finite_schedule_rejects_bad_bounds_and_tampered_reservation(self):
+        selected = self.trial()
+        for slots in ([], ['not-a-time'], [catalyst.stamp(NOW)] * 2,
+                      [catalyst.stamp(NOW), catalyst.stamp(NOW + timedelta(minutes=59))],
+                      [catalyst.stamp(NOW), catalyst.stamp(NOW + timedelta(hours=49))]):
+            with self.assertRaises((ValueError, TypeError)):
+                service.control({**selected, 'schedule': {**selected['schedule'], 'slots': slots}})
+        self.assertEqual(self.cycle(), 'CHALLENGED_INTERPRETATION')
+        intent_path = self.directory() / 'run-intent.json'
+        original = service.immutable_read(self.directory(), 'run-intent.json')
+        original['schedule']['slot_at'] = catalyst.stamp(NOW + timedelta(hours=1))
+        intent_path.chmod(0o600)
+        intent_path.write_bytes(canonical_json_bytes(original))
+        with self.assertRaises(ValueError):
+            service.verify(self.config)
+
+    def test_finite_schedule_still_requires_fresh_evidence_and_preserves_daily_cap(self):
+        selected = self.trial()
+        self.assertEqual(self.cycle(NOW + timedelta(minutes=11)), 'SOURCE_CAPTURE_STALE')
+        self.assertEqual(self.factories, [])
+        entries = [(None, None, {'schema_version': service.VERSION,
+                    'reserved_at': catalyst.stamp(NOW - timedelta(hours=i + 1))}, None) for i in range(4)]
+        self.assertEqual(service.scheduled_due(NOW, entries, selected)[1], 'DAILY_BUDGET_EXHAUSTED')
+        selected['enabled'] = False
+        self.assertEqual(service.scheduled_due(NOW, [], selected)[1], 'PAUSED')
+
+    def test_sleep_assertion_is_bounded_and_released_after_generation_failure(self):
+        with patch.object(service.subprocess, 'Popen') as spawn, patch.object(service.Path, 'exists', return_value=True):
+            with self.assertRaises(ValueError):
+                with service.awake_while_generating(service.configuration(self.modeldock)):
+                    raise ValueError('failed inference')
+            self.assertEqual(spawn.call_args.args[0], ['/usr/bin/caffeinate', '-i', '-s', '-t', '160'])
+            spawn.return_value.terminate.assert_called_once_with()
+            spawn.return_value.wait.assert_called_once_with(timeout=5)
+
+    def test_live_admission_does_not_backdate_slot_after_slow_archive_verification(self):
+        self.trial()
+        def slow_replay(config):
+            self.now = NOW + timedelta(minutes=31)
+        with patch.object(service, 'verify', side_effect=slow_replay):
+            self.assertEqual(service.cycle(self.config, client_factory=self.factory), 'WAITING_FOR_SCHEDULED_SLOT')
+        self.assertEqual(self.factories, [])
+        self.assertFalse(self.runs.exists())
+
+    def test_archive_replay_verifies_source_once_per_operation_and_detects_later_corruption(self):
+        self.cycle()
+        original = service.CatalystStore.verified_records
+        with patch.object(service.CatalystStore, 'verified_records', autospec=True, side_effect=original) as reader:
+            self.assertEqual(service.verify(self.config)['report_count'], 1)
+            self.assertEqual(reader.call_count, 1)
+        source = self.store.root / 'entries/00000001.json'
+        source.chmod(0o600)
+        source.write_bytes(b'{}')
+        with self.assertRaises(Exception):
+            service.verify(self.config)
+
     def test_current_consolidated_context_is_separate_from_original_model_input(self):
         self.assertEqual(self.cycle(), 'CHALLENGED_INTERPRETATION')
         directory = self.directory()

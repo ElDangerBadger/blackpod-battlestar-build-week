@@ -18,6 +18,7 @@ URLS = {"news": "https://data.alpaca.markets/v1beta1/news",
 MAX_BYTES = 1024 * 1024
 LEGACY_RECEIPT_VERSION = 'blackpod.sentry_catalyst_get.v1'
 CONSOLIDATED_RECEIPT_VERSION = 'blackpod.sentry_catalyst_get.v2'
+CONTENT_RECEIPT_VERSION = 'blackpod.sentry_catalyst_get.v3'
 SNAPSHOT_FEEDS = ('iex', 'sip', 'delayed_sip')
 
 class CatalystCaptureError(ValueError):
@@ -28,7 +29,7 @@ class CatalystCaptureError(ValueError):
 def utc_now():
     return stamp(datetime.now(timezone.utc))
 
-def validate_query(kind, query):
+def validate_query(kind, query, *, allow_content=False):
     try:
         if kind not in URLS or not isinstance(query, dict):
             raise ValueError()
@@ -39,7 +40,7 @@ def validate_query(kind, query):
         else:
             if (set(query) != {'symbols', 'start', 'end', 'limit', 'sort', 'include_content'}
                     or type(query['limit']) is not int or query['limit'] != 50
-                    or query['sort'] != 'desc' or query['include_content'] != 'false'
+                    or query['sort'] != 'desc' or query['include_content'] not in (('false', 'true') if allow_content else ('false',))
                     or not timedelta(0) < clock(query['end']) - clock(query['start']) <= timedelta(hours=24)):
                 raise ValueError()
         return dict(query)
@@ -48,13 +49,13 @@ def validate_query(kind, query):
 
 def validate_receipt(value, kind):
     if (not isinstance(value, dict) or set(value) != {'schema_version','method','url','query','captured_at','status','body_sha256','size_bytes'}
-            or value['schema_version'] not in (LEGACY_RECEIPT_VERSION, CONSOLIDATED_RECEIPT_VERSION)
+            or value['schema_version'] not in (LEGACY_RECEIPT_VERSION, CONSOLIDATED_RECEIPT_VERSION, CONTENT_RECEIPT_VERSION)
             or value['method'] != 'GET'
             or value['url'] != URLS.get(kind) or type(value['status']) is not int or value['status'] != 200
             or not isinstance(value['body_sha256'], str) or not re.fullmatch('[a-f0-9]{64}', value['body_sha256'])
             or type(value['size_bytes']) is not int or not 0 < value['size_bytes'] <= MAX_BYTES):
         raise CatalystCaptureError('RECEIPT_REFUSED')
-    query = validate_query(kind, value['query'])
+    query = validate_query(kind, value['query'], allow_content=value['schema_version'] == CONTENT_RECEIPT_VERSION)
     if value['schema_version'] != _receipt_version(kind, query):
         raise CatalystCaptureError('RECEIPT_REFUSED')
     clock(value['captured_at'])
@@ -62,6 +63,8 @@ def validate_receipt(value, kind):
 
 def _receipt_version(kind, query):
     """Preserve old news/IEX receipts; consolidated snapshots have a new contract."""
+    if kind == 'news' and query['include_content'] == 'true':
+        return CONTENT_RECEIPT_VERSION
     if kind == 'snapshots' and query['feed'] in ('sip', 'delayed_sip'):
         return CONSOLIDATED_RECEIPT_VERSION
     return LEGACY_RECEIPT_VERSION
@@ -74,7 +77,7 @@ class _RefuseRedirects(HTTPRedirectHandler):
 
 def market_get(kind, query, credentials, *, timeout=20):
     """Fixed HTTPS hosts, GET only, no proxy/redirect/ambient endpoint override."""
-    query = validate_query(kind, query)
+    query = validate_query(kind, query, allow_content=isinstance(query, dict) and query.get('include_content') == 'true')
     if (not isinstance(credentials, PaperCredentials) or type(timeout) not in {int, float}
             or not 0 < timeout <= 30):
         raise CatalystCaptureError("INPUT_REFUSED")

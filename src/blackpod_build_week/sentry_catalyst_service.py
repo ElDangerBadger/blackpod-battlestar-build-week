@@ -13,6 +13,7 @@ from .decision_journal_store import JournalStoreError, check_separate_root
 from .hashing import canonical_json_bytes
 from .paper_account_probe import MAX_CREDENTIAL_BYTES, _read_regular, parse_credentials
 from .sentry_catalyst import (CatalystStore, VERSION, CONSOLIDATED_VERSION,
+    WINDOW_CONTROL_VERSION, CONTENT_CONTROL_VERSION, monitoring_window,
     CONSOLIDATED_FEEDS, DEFAULT_SYMBOLS, clock, stamp, control, project, symbols)
 from .sentry_catalyst_capture import market_get, CatalystCaptureError
 from .shadow_station import atomic_state, read_state, service_lock
@@ -34,18 +35,27 @@ def paths(config):
     return root, root / 'evidence-store'
 
 
-def due(now, state, enabled):
+def due(now, state, enabled, window=None):
     """No catch-up requests: one attempt per five-minute slot, max 144/day.
 
-    No exchange calendar is invented: these are weekday LA monitoring hours,
-    including holidays, not a claim that an exchange is open.
+    The default is weekday LA monitoring hours, including holidays. An explicit
+    finite window also admits overnight/weekend observations. Neither schedule
+    is a claim that an exchange is open.
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError('aware monitoring clock required')
     local = now.astimezone(LA)
     if not enabled:
         return False, 'PAUSED'
-    if local.weekday() >= 5 or not 5 <= local.hour < 17:
+    delay = 300
+    if window is not None:
+        window = monitoring_window(window)
+        if now < clock(window['start_at']):
+            return False, 'BEFORE_MONITORING_WINDOW'
+        if now >= clock(window['end_at']):
+            return False, 'MONITORING_WINDOW_ENDED'
+        delay = window['poll_seconds']
+    elif local.weekday() >= 5 or not 5 <= local.hour < 17:
         return False, 'OUTSIDE_MONITORING_HOURS'
     last = state.get('last_attempt_at')
     if last and clock(last) > now:
@@ -60,16 +70,18 @@ def due(now, state, enabled):
     if last and int(clock(last).timestamp()) // 300 == int(now.timestamp()) // 300:
         return False, 'WAITING_FOR_NEXT_SLOT'
     # Retained minimum delay also prevents two calls straddling a slot boundary.
-    if last and (now - clock(last)).total_seconds() < 300:
+    if last and (now - clock(last)).total_seconds() < delay:
         return False, 'WAITING_FOR_NEXT_SLOT'
     return True, 'DUE'
 
 
-def collect(config, selected, *, feed='sip', getter=market_get):
+def collect(config, selected, *, feed='sip', include_content=False, getter=market_get):
     """At most two GETs, retaining any successful first request on second failure."""
     if feed not in CONSOLIDATED_FEEDS:
         raise ValueError('new catalyst captures require consolidated market data')
     selected = symbols(selected)
+    if type(include_content) is not bool:
+        raise ValueError('explicit boolean content choice required')
     root, store_root = paths(config)
     _off(Path(config['runtime_root']))
     store = CatalystStore(store_root)
@@ -81,7 +93,7 @@ def collect(config, selected, *, feed='sip', getter=market_get):
     now = utc_now()
     named = ','.join(selected)
     query = {'symbols': named, 'start': stamp(now - timedelta(hours=24)), 'end': stamp(now),
-             'limit': 50, 'sort': 'desc', 'include_content': 'false'}
+             'limit': 50, 'sort': 'desc', 'include_content': 'true' if include_content else 'false'}
     blobs = {}
     # Separate, bounded pending receipt preserves a successful response if the
     # other endpoint fails. These are not complete observations or alert cards.
@@ -103,7 +115,7 @@ def collect(config, selected, *, feed='sip', getter=market_get):
 def cycle(config, *, now=None, getter=market_get):
     root, _ = paths(config)
     selected = control(read_state(root / 'control.json'))
-    if selected['schema_version'] != CONSOLIDATED_VERSION:
+    if selected['schema_version'] not in (CONSOLIDATED_VERSION, WINDOW_CONTROL_VERSION, CONTENT_CONTROL_VERSION):
         # Retain legacy evidence and controls, but require an explicit choice
         # before new transport. In particular, do not silently request IEX.
         return 'MARKET_FEED_CONFIGURATION_REQUIRED'
@@ -111,7 +123,7 @@ def cycle(config, *, now=None, getter=market_get):
     if state and state.get('schema_version') != VERSION:
         raise ValueError('unsupported catalyst state')
     now = now or utc_now()
-    admitted, reason = due(now, state, selected['enabled'])
+    admitted, reason = due(now, state, selected['enabled'], selected.get('monitoring_window'))
     if not admitted:
         return reason
     _off(Path(config['runtime_root']))
@@ -121,7 +133,8 @@ def cycle(config, *, now=None, getter=market_get):
                  attempts_today=attempts + 1, status='ATTEMPT_STARTED', http_status=None, blocked_until=None)
     atomic_state(root / 'state.json', state)  # Consume budget before reading credentials or GETs.
     try:
-        receipt = collect(config, selected['symbols'], feed=selected['feed'], getter=getter)
+        content = {'include_content': selected['include_content']} if selected['schema_version'] == CONTENT_CONTROL_VERSION else {}
+        receipt = collect(config, selected['symbols'], feed=selected['feed'], getter=getter, **content)
         state.update(receipt, last_success_at=receipt['captured_at'])
     except CatalystCaptureError as exc:
         state.update(status=exc.code, http_status=exc.http_status,
@@ -171,11 +184,13 @@ def status(config, now=None):
         health = read_state(root / 'health.json')
         heartbeat = health.get('heartbeat_at')
         alive = heartbeat is not None and 0 <= (now - clock(heartbeat)).total_seconds() < 120
-        admitted, reason = due(now, state, selected['enabled'])
+        admitted, reason = due(now, state, selected['enabled'], selected.get('monitoring_window'))
         selected_feed = selected.get('feed')
         if selected_feed is None:
             reason = 'MARKET_FEED_CONFIGURATION_REQUIRED'
         result.update(symbols=selected['symbols'], market_feed=selected_feed,
+            include_content=selected.get('include_content', False),
+            monitoring_window=selected.get('monitoring_window'),
             feed_delay_seconds=(900 if selected_feed == 'delayed_sip' else 0) if selected_feed else None,
             status=reason if alive or selected_feed is None else 'WORKER_STALE_OR_STOPPED',
             collector={'enabled': selected['enabled'], 'reason': reason, 'worker_healthy': alive, 'last_attempt_at': state.get('last_attempt_at'),
@@ -200,8 +215,13 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--symbols', help='Explicit comma-separated watchlist, maximum 10 symbols')
     parser.add_argument('--enabled', action='store_true')
+    parser.add_argument('--include-content', action='store_true', help='Request provider content when available; missing bodies remain explicit')
     parser.add_argument('--feed', choices=CONSOLIDATED_FEEDS, default='sip',
                         help='Consolidated market feed; SIP needs entitlement, delayed SIP is 15 minutes delayed')
+    parser.add_argument('--window-start', help='Explicit RFC3339 collection start, including weekends')
+    parser.add_argument('--window-end', help='RFC3339 stop; at most 72 hours after start; pauses at expiry')
+    parser.add_argument('--window-poll-seconds', type=int, default=600,
+                        help='Finite-window interval, 600–3600 seconds; daily request budget unchanged')
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -209,8 +229,15 @@ def main(argv=None):
         if args.command == 'configure':
             if not args.symbols:
                 raise ValueError('explicit watchlist required')
-            selected = control({'schema_version': CONSOLIDATED_VERSION, 'enabled': args.enabled,
-                                'symbols': args.symbols.split(','), 'feed': args.feed})
+            value = {'schema_version': CONSOLIDATED_VERSION, 'enabled': args.enabled,
+                     'symbols': args.symbols.split(','), 'feed': args.feed}
+            if args.window_start or args.window_end:
+                value.update(schema_version=WINDOW_CONTROL_VERSION, monitoring_window={
+                    'start_at': args.window_start, 'end_at': args.window_end,
+                    'poll_seconds': args.window_poll_seconds})
+            if args.include_content:
+                value.update(schema_version=CONTENT_CONTROL_VERSION, include_content=True)
+            selected = control(value)
             _off(Path(config['runtime_root']))
             atomic_state(root / 'control.json', selected)
             result = selected
